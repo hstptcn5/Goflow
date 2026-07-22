@@ -1,0 +1,235 @@
+:root {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  --bg-card: #ffffff;
+  
+  --border-color: #e2e8f0;
+  --border-focus: #2563eb;
+  
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  
+  --accent-blue: #2563eb;
+  --accent-purple: #7c3aed;
+  --accent-cyan: #0284c7;
+  --accent-green: #16a34a;
+  --accent-red: #dc2626;
+  --accent-amber: #d97706;
+  
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Panel & Card styling */
+.glass-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.06);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.btn-primary {
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+.btn-primary:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+.btn-secondary:hover {
+  background: #e2e8f0;
+}
+
+.btn-success {
+  background: #16a34a;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(22, 163, 74, 0.25);
+}
+
+.btn-success:hover {
+  background: #15803d;
+}
+
+.btn-danger {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+/* Form Controls */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.form-group label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #334155;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #0f172a;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-textarea {
+  font-family: var(--font-mono);
+  font-size: 0.825rem;
+  resize: vertical;
+  min-height: 80px;
+}
+
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+/* Vue Flow Light Theme Styling */
+.vue-flow {
+  background-color: #f8fafc !important;
+}
+
+.vue-flow__edge-path {
+  stroke: #2563eb !important;
+  stroke-width: 3 !important;
+}
+
+.vue-flow__edge.selected .vue-flow__edge-path {
+  stroke: #dc2626 !important;
+  stroke-width: 4 !important;
+}
+
+/* High Visibility Canvas Nodes */
+.vue-flow__node {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border: 2px solid #2563eb !important;
+  border-radius: 12px !important;
+  padding: 12px 20px !important;
+  font-weight: 700 !important;
+  font-size: 0.95rem !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1) !important;
+  transition: all 0.15s ease !important;
+  min-width: 160px !important;
+  text-align: center !important;
+}
+
+.vue-flow__node:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 12px 30px -5px rgba(37, 99, 235, 0.25) !important;
+}
+
+.vue-flow__node.selected {
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.25), 0 10px 25px -5px rgba(0, 0, 0, 0.1) !important;
+}
+
+.vue-flow__handle {
+  width: 12px !important;
+  height: 12px !important;
+  background: #2563eb !important;
+  border: 2px solid #ffffff !important;
+}
+
+.vue-flow__handle:hover {
+  transform: scale(1.4) !important;
+  background: #7c3aed !important;
+}
+
+.vue-flow__minimap {
+  background-color: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important;
+}
+
+.vue-flow__controls {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+
+.vue-flow__controls-button {
+  background: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+  fill: #0f172a !important;
+}
+
+.vue-flow__controls-button:hover {
+  background: #f1f5f9 !important;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

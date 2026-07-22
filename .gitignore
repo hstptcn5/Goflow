@@ -1,0 +1,51 @@
+# Compiled Go Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+goflow
+goflow.exe
+main
+
+# Local SQLite Databases & WAL Journal Files
+*.db
+*.sqlite
+*.db-wal
+*.db-shm
+goflow.db
+
+# Node.js & Vue Frontend Dependencies
+ui/node_modules/
+ui/npm-debug.log*
+ui/yarn-debug.log*
+ui/yarn-error.log*
+ui/pnpm-debug.log*
+ui/.pnpm-debug.log*
+
+# Environment & Secret Files
+.env
+.env.local
+.env.*.local
+*.secret
+*.pem
+
+# IDE & Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Temporary Files & Logs
+*.log
+*.tmp
+*.out
+*.test
+coverage.txt
+
+# Exported Workflow JSON Test Files
+goflow_workflow_*.json
+workflow_export.json

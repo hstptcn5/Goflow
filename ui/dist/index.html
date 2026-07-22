@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Goflow - Super Lightweight Workflow Automation</title>
+
+  <!-- Google Fonts Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+
+  <style>
+    :root {
+      --bg-primary: #f8fafc;
+      --bg-secondary: #ffffff;
+      --bg-tertiary: #f1f5f9;
+      --border-color: #cbd5e1;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --accent-blue: #2563eb;
+      --accent-purple: #7c3aed;
+      --accent-green: #16a34a;
+      --accent-red: #dc2626;
+      --font-sans: 'Inter', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font-sans); background: var(--bg-primary); color: var(--text-primary); height: 100vh; overflow: hidden; }
+
+    /* Header Navbar */
+    .navbar {
+      height: 60px;
+      background: #ffffff;
+      border-bottom: 2px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand-icon { font-size: 1.6rem; }
+    .brand-title { font-size: 1.3rem; font-weight: 800; color: #0f172a; }
+    .brand-badge { font-size: 0.65rem; font-weight: 800; padding: 2px 6px; background: #dbeafe; color: #2563eb; border-radius: 4px; }
+
+    .nav-actions { display: flex; align-items: center; gap: 8px; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px;
+      font-size: 0.85rem; font-weight: 700; border-radius: 8px; border: 1px solid transparent;
+      cursor: pointer; transition: all 0.15s ease;
+    }
+    .btn-primary { background: #2563eb; color: #fff; box-shadow: 0 2px 8px rgba(37,99,235,0.3); }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-success { background: #16a34a; color: #fff; box-shadow: 0 2px 8px rgba(22,163,74,0.3); }
+    .btn-success:hover { background: #15803d; }
+    .btn-secondary { background: #f1f5f9; color: #0f172a; border-color: #cbd5e1; }
+    .btn-secondary:hover { background: #e2e8f0; }
+    .btn-danger { background: #fef2f2; color: #dc2626; border-color: #fca5a5; }
+    .btn-danger:hover { background: #dc2626; color: #fff; }
+
+    /* Layout */
+    .app-main { display: flex; height: calc(100vh - 60px); width: 100vw; position: relative; }
+
+    /* Sidebar Left: Node Palette */
+    .sidebar-palette {
+      width: 260px; background: #ffffff; border-right: 2px solid var(--border-color);
+      display: flex; flex-direction: column; padding: 16px; gap: 16px; overflow-y: auto;
+    }
+    .palette-title { font-size: 0.9rem; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .node-item {
+      display: flex; align-items: center; gap: 10px; padding: 12px;
+      background: #ffffff; border: 2px solid #cbd5e1; border-radius: 10px;
+      cursor: grab; transition: all 0.15s; box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    }
+    .node-item:hover { border-color: #2563eb; transform: translateY(-2px); box-shadow: 0 6px 16px rgba(37,99,235,0.15); }
+    .node-item-icon { font-size: 1.3rem; }
+    .node-item-name { font-size: 0.875rem; font-weight: 700; color: #0f172a; }
+    .node-item-desc { font-size: 0.725rem; color: #64748b; }
+
+    /* Canvas Center */
+    .canvas-wrapper { flex: 1; height: 100%; position: relative; background: #f8fafc; overflow: auto; padding: 40px; }
+    .canvas-grid {
+      min-width: 1600px; min-height: 1200px; position: relative;
+      background-image: radial-gradient(#cbd5e1 1.5px, transparent 1.5px);
+      background-size: 24px 24px;
+    }
+
+    /* Node Cards on Canvas */
+    .canvas-node {
+      position: absolute; width: 220px; background: #ffffff;
+      border: 3px solid #2563eb; border-radius: 12px; padding: 14px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.08); cursor: pointer; transition: all 0.15s;
+      user-select: none;
+    }
+    .canvas-node:hover { transform: scale(1.02); box-shadow: 0 12px 32px rgba(37,99,235,0.2); }
+    .canvas-node.selected { border-color: #7c3aed; box-shadow: 0 0 0 4px rgba(124,58,237,0.25), 0 8px 24px rgba(0,0,0,0.1); }
+    .canvas-node-title { font-weight: 800; font-size: 0.95rem; color: #0f172a; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; }
+    .canvas-node-type { font-size: 0.65rem; font-weight: 800; padding: 2px 6px; background: #eff6ff; color: #2563eb; border-radius: 4px; text-transform: uppercase; }
+    .canvas-node-body { font-size: 0.75rem; color: #475569; font-family: var(--font-mono); background: #f1f5f9; padding: 6px 8px; border-radius: 6px; margin-top: 6px; word-break: break-all; }
+
+    /* SVG Connecting Wires */
+    .svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+    .wire { stroke: #2563eb; stroke-width: 4; fill: none; stroke-dasharray: 6 3; animation: dash 1s linear infinite; pointer-events: stroke; cursor: pointer; }
+    .wire:hover { stroke: #dc2626; stroke-width: 6; }
+
+    /* Sidebar Right: Properties Panel */
+    .panel-right {
+      width: 340px; background: #ffffff; border-left: 2px solid var(--border-color);
+      display: flex; flex-direction: column; padding: 20px; z-index: 100; box-shadow: -4px 0 20px rgba(0,0,0,0.05);
+      overflow-y: auto;
+    }
+    .panel-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 14px; border-bottom: 2px solid var(--border-color); margin-bottom: 16px; }
+    .panel-title { font-size: 1rem; font-weight: 800; color: #0f172a; }
+
+    .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+    .form-group label { font-size: 0.775rem; font-weight: 800; color: #334155; text-transform: uppercase; }
+    .form-input, .form-select, .form-textarea {
+      width: 100%; padding: 10px 12px; background: #f8fafc; border: 2px solid #cbd5e1;
+      border-radius: 8px; color: #0f172a; font-family: var(--font-sans); font-size: 0.9rem; font-weight: 600; outline: none;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: #2563eb; background: #ffffff; }
+    .form-textarea { font-family: var(--font-mono); font-size: 0.825rem; min-height: 90px; }
+
+    .wire-chip {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 10px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;
+      font-size: 0.775rem; font-weight: 700; color: #1e40af; margin-bottom: 6px;
+    }
+
+    /* Modals & Backdrop */
+    .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); z-index: 200; display: flex; align-items: center; justify-content: center; }
+    .modal-card { width: 750px; max-height: 85vh; background: #ffffff; border-radius: 16px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); border: 2px solid var(--border-color); overflow-y: auto; }
+    .modal-title { font-size: 1.2rem; font-weight: 800; margin-bottom: 16px; border-bottom: 2px solid var(--border-color); padding-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+    .wf-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 10px; margin-bottom: 8px; cursor: pointer; }
+    .wf-row:hover { border-color: #2563eb; }
+    .wf-row.active { border-color: #7c3aed; background: #f3e8ff; }
+
+    /* Executions Timeline */
+    .exec-timeline { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+    .exec-step { background: #f8fafc; border: 2px solid #e2e8f0; border-left: 6px solid #16a34a; border-radius: 10px; padding: 12px 16px; }
+    .exec-step.failed { border-left-color: #dc2626; }
+    .json-box { background: #0f172a; color: #38bdf8; padding: 10px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.775rem; overflow-x: auto; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- Navbar Header -->
+    <header class="navbar">
+      <div class="brand">
+        <span class="brand-icon">⚡</span>
+        <span class="brand-title">Goflow</span>
+        <span class="brand-badge">PHASE 2</span>
+      </div>
+
+      <div v-if="currentWorkflow" style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-weight: 800; font-size: 1.05rem; color: #0f172a;">{{ currentWorkflow.name }}</span>
+        <span class="brand-badge" :style="{ background: currentWorkflow.is_active ? '#dcfce7' : '#f1f5f9', color: currentWorkflow.is_active ? '#16a34a' : '#64748b' }">
+          {{ currentWorkflow.is_active ? 'Active' : 'Inactive' }}
+        </span>
+      </div>
+
+      <div class="nav-actions">
+        <button class="btn btn-secondary" @click="showWfModal = true">📁 Workflows</button>
+        <button class="btn btn-secondary" @click="openExecutionsModal">📜 Executions</button>
+        <button class="btn btn-secondary" @click="exportWorkflowJson">📤 Export JSON</button>
+        <button class="btn btn-secondary" @click="triggerImportClick">📥 Import JSON</button>
+        <input type="file" ref="importFileInput" style="display: none;" accept=".json" @change="importWorkflowJson" />
+
+        <button class="btn btn-primary" :disabled="running" @click="runWorkflow">
+          {{ running ? '⌛ Executing...' : '▶ Run Workflow' }}
+        </button>
+        <button class="btn btn-success" @click="saveWorkflow">💾 Save</button>
+      </div>
+    </header>
+
+    <!-- App Main Layout -->
+    <div class="app-main">
+      <!-- Left Sidebar Palette -->
+      <aside class="sidebar-palette">
+        <div class="palette-title">🧩 Node Library</div>
+        <div v-for="nodeDef in nodeDefs" :key="nodeDef.type" class="node-item" draggable="true" @dragstart="onDragStart($event, nodeDef)">
+          <span class="node-item-icon">⚡</span>
+          <div>
+            <div class="node-item-name">{{ nodeDef.name }}</div>
+            <div class="node-item-desc">{{ nodeDef.description }}</div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center Canvas Area -->
+      <main class="canvas-wrapper" @dragover.prevent @drop="onDrop">
+        <div class="canvas-grid">
+          <svg class="svg-layer">
+            <line v-for="edge in edges" :key="edge.id"
+                  :x1="getNodeX(edge.source) + 110" :y1="getNodeY(edge.source) + 40"
+                  :x2="getNodeX(edge.target) + 110" :y2="getNodeY(edge.target) + 40"
+                  class="wire"
+                  @click.stop="deleteWire(edge.id)" />
+          </svg>
+
+          <!-- Nodes on Canvas -->
+          <div v-for="node in nodes" :key="node.id"
+               class="canvas-node"
+               :class="{ selected: selectedNodeId === node.id }"
+               :style="{ left: node.position.x + 'px', top: node.position.y + 'px' }"
+               @mousedown="startDragNode($event, node)"
+               @click.stop="selectNode(node.id)">
+            <div class="canvas-node-title">
+              <span>{{ node.name }}</span>
+              <span class="canvas-node-type">{{ node.type }}</span>
+            </div>
+            <div class="canvas-node-body" v-if="node.params.url">{{ node.params.url }}</div>
+            <div class="canvas-node-body" v-else-if="node.params.to">To: {{ node.params.to }}</div>
+            <div class="canvas-node-body" v-else-if="node.params.seconds">Delay {{ node.params.seconds }}s</div>
+            <div class="canvas-node-body" v-else-if="node.params.message">{{ node.params.message }}</div>
+            <div class="canvas-node-body" v-else>Configured</div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Right Sidebar Properties Panel -->
+      <aside class="panel-right" v-if="selectedNode">
+        <div class="panel-header">
+          <span class="panel-title">⚙️ Configure Node</span>
+          <button class="btn btn-secondary" style="padding: 4px 8px;" @click="selectedNodeId = null">✕</button>
+        </div>
+
+        <div class="form-group">
+          <label>Node Name</label>
+          <input type="text" v-model="selectedNode.name" class="form-input" />
+        </div>
+
+        <!-- Connection Manager -->
+        <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1;">
+          <label>🔗 Connect Wire To Node</label>
+          <div style="display: flex; gap: 6px; margin-top: 6px;">
+            <select v-model="targetConnectId" class="form-select">
+              <option value="">-- Choose Target Node --</option>
+              <option v-for="n in otherNodes" :key="n.id" :value="n.id">{{ n.name }} ({{ n.type }})</option>
+            </select>
+            <button class="btn btn-primary" style="padding: 6px 12px;" :disabled="!targetConnectId" @click="connectWire">+ Wire</button>
+          </div>
+
+          <!-- Existing Outgoing Wires -->
+          <div v-if="outgoingWires.length > 0" style="margin-top: 10px;">
+            <label style="font-size: 0.7rem; color: #64748b;">Connected Output Wires:</label>
+            <div v-for="w in outgoingWires" :key="w.id" class="wire-chip">
+              <span>➔ {{ getNodeName(w.target) }}</span>
+              <button style="background: none; border: none; cursor: pointer; color: #dc2626;" @click="deleteWire(w.id)">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group" v-if="selectedNode.type === 'httpRequest'">
+          <label>HTTP Method</label>
+          <select v-model="selectedNode.params.method" class="form-select">
+            <option value="GET">GET</option>
+            <option value="POST">POST</option>
+            <option value="PUT">PUT</option>
+            <option value="DELETE">DELETE</option>
+          </select>
+
+          <label style="margin-top: 10px;">Target URL</label>
+          <input type="text" v-model="selectedNode.params.url" placeholder="https://api.example.com" class="form-input" />
+
+          <label style="margin-top: 10px;">Request Body</label>
+          <textarea v-model="selectedNode.params.body" class="form-textarea" placeholder="{ }"></textarea>
+        </div>
+
+        <div class="form-group" v-else-if="selectedNode.type === 'emailSMTP'">
+          <label>SMTP Host</label>
+          <input type="text" v-model="selectedNode.params.host" placeholder="smtp.gmail.com" class="form-input" />
+
+          <label style="margin-top: 10px;">SMTP Port</label>
+          <input type="text" v-model="selectedNode.params.port" placeholder="587" class="form-input" />
+
+          <label style="margin-top: 10px;">SMTP Username / Sender</label>
+          <input type="text" v-model="selectedNode.params.username" placeholder="user@gmail.com" class="form-input" />
+
+          <label style="margin-top: 10px;">SMTP Password</label>
+          <input type="password" v-model="selectedNode.params.password" class="form-input" />
+
+          <label style="margin-top: 10px;">Recipient (To)</label>
+          <input type="text" v-model="selectedNode.params.to" placeholder="target@example.com" class="form-input" />
+
+          <label style="margin-top: 10px;">Subject</label>
+          <input type="text" v-model="selectedNode.params.subject" class="form-input" />
+
+          <label style="margin-top: 10px;">Email Body (HTML)</label>
+          <textarea v-model="selectedNode.params.body" class="form-textarea"></textarea>
+        </div>
+
+        <div class="form-group" v-else-if="selectedNode.type === 'delaySleep'">
+          <label>Delay Duration (Seconds)</label>
+          <input type="text" v-model="selectedNode.params.seconds" placeholder="3" class="form-input" />
+        </div>
+
+        <div class="form-group" v-else-if="selectedNode.type === 'telegramBot'">
+          <label>Bot Token</label>
+          <input type="text" v-model="selectedNode.params.bot_token" class="form-input" placeholder="Token from @BotFather" />
+
+          <label style="margin-top: 10px;">Chat ID</label>
+          <input type="text" v-model="selectedNode.params.chat_id" class="form-input" placeholder="@channel or 123456" />
+
+          <label style="margin-top: 10px;">Message Content</label>
+          <textarea v-model="selectedNode.params.message" class="form-textarea"></textarea>
+        </div>
+
+        <div class="form-group" v-else-if="selectedNode.type === 'cronTrigger'">
+          <label>Cron Schedule</label>
+          <input type="text" v-model="selectedNode.params.cron_expression" class="form-input" placeholder="*/5 * * * *" />
+        </div>
+
+        <div style="margin-top: auto; padding-top: 20px;">
+          <button class="btn btn-danger" style="width: 100%; justify-content: center;" @click="deleteSelectedNode">
+            🗑️ Delete Node
+          </button>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Modal Executions History -->
+    <div class="modal-backdrop" v-if="showExecModal" @click.self="showExecModal = false">
+      <div class="modal-card">
+        <div class="modal-title">
+          <span>📜 Executions History Timeline</span>
+          <button class="btn btn-secondary" style="padding: 4px 8px;" @click="showExecModal = false">✕</button>
+        </div>
+
+        <div style="display: flex; gap: 16px; height: 500px;">
+          <div style="width: 240px; border-right: 2px solid #e2e8f0; padding-right: 12px; overflow-y: auto;">
+            <div v-for="exec in executions" :key="exec.id"
+                 class="wf-row" :class="{ active: selectedExec?.id === exec.id }"
+                 @click="selectedExec = exec">
+              <div>
+                <div style="font-weight: 800; font-size: 0.85rem;" :style="{ color: exec.status === 'SUCCESS' ? '#16a34a' : '#dc2626' }">
+                  {{ exec.status }} ({{ exec.duration_ms }}ms)
+                </div>
+                <div style="font-size: 0.7rem; color: #64748b;">{{ formatDate(exec.started_at) }}</div>
+              </div>
+            </div>
+            <div v-if="executions.length === 0" style="font-size: 0.8rem; color: #64748b; padding: 10px;">
+              No executions recorded yet.
+            </div>
+          </div>
+
+          <div style="flex: 1; overflow-y: auto; padding-left: 8px;" v-if="selectedExec">
+            <div style="font-size: 0.85rem; font-weight: 700; color: #0f172a; margin-bottom: 10px;">
+              Execution ID: #{{ selectedExec.id }}
+            </div>
+
+            <div class="exec-timeline">
+              <div v-for="step in parseLogs(selectedExec.logs_json)" :key="step.node_id"
+                   class="exec-step" :class="{ failed: step.status === 'FAILED' }">
+                <div style="display: flex; justify-content: space-between; font-weight: 800; font-size: 0.875rem;">
+                  <span>Node: {{ getNodeName(step.node_id) }}</span>
+                  <span style="font-family: var(--font-mono); color: #0284c7;">{{ step.duration_ms }}ms ({{ step.attempts || 1 }} attempt)</span>
+                </div>
+                <div v-if="step.output">
+                  <div class="json-box"><pre>{{ JSON.stringify(step.output, null, 2) }}</pre></div>
+                </div>
+                <div v-if="step.error" style="color: #dc2626; font-weight: 700; margin-top: 6px; font-size: 0.8rem;">
+                  ❌ Error: {{ step.error }}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else style="flex: 1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.875rem;">
+            👈 Select an execution from the left list to inspect JSON payload steps!
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Workflows Manager -->
+    <div class="modal-backdrop" v-if="showWfModal" @click.self="showWfModal = false">
+      <div class="modal-card" style="width: 540px;">
+        <div class="modal-title">
+          <span>📋 Workflows Manager</span>
+          <button class="btn btn-secondary" style="padding: 4px 8px;" @click="showWfModal = false">✕</button>
+        </div>
+
+        <div class="form-group">
+          <label>Workflow Name</label>
+          <input type="text" v-model="newWfName" placeholder="e.g. My Email Alert Flow" class="form-input" />
+          <button class="btn btn-primary" style="margin-top: 8px;" @click="createNewWorkflow">+ Create New Workflow</button>
+        </div>
+
+        <div style="margin-top: 20px;">
+          <div v-for="wf in workflows" :key="wf.id" class="wf-row" :class="{ active: currentWorkflow?.id === wf.id }" @click="selectWorkflow(wf)">
+            <div>
+              <div style="font-weight: 800; font-size: 0.95rem;">{{ wf.name }}</div>
+              <div style="font-size: 0.75rem; color: #64748b;">ID: {{ wf.id }}</div>
+            </div>
+            <button class="btn btn-danger" style="padding: 4px 8px;" @click.stop="deleteWf(wf.id)">🗑️</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    createApp({
+      setup() {
+        const workflows = ref([]);
+        const currentWorkflow = ref(null);
+        const nodeDefs = ref([]);
+        const nodes = ref([]);
+        const edges = ref([]);
+        const selectedNodeId = ref(null);
+        const targetConnectId = ref('');
+        const showWfModal = ref(false);
+        const showExecModal = ref(false);
+        const showCredModal = ref(false);
+        const executions = ref([]);
+        const selectedExec = ref(null);
+        const newWfName = ref('');
+        const running = ref(false);
+        const importFileInput = ref(null);
+
+        const selectedNode = computed(() => {
+          return nodes.value.find(n => n.id === selectedNodeId.value) || null;
+        });
+
+        const otherNodes = computed(() => {
+          return nodes.value.filter(n => n.id !== selectedNodeId.value);
+        });
+
+        const outgoingWires = computed(() => {
+          if (!selectedNodeId.value) return [];
+          return edges.value.filter(e => e.source === selectedNodeId.value);
+        });
+
+        const fetchWorkflows = async () => {
+          const res = await fetch('/api/v1/workflows');
+          workflows.value = await res.json() || [];
+          if (workflows.value.length > 0 && !currentWorkflow.value) {
+            selectWorkflow(workflows.value[0]);
+          }
+        };
+
+        const fetchNodeDefs = async () => {
+          const res = await fetch('/api/v1/nodes/definitions');
+          nodeDefs.value = await res.json() || [];
+        };
+
+        const openExecutionsModal = async () => {
+          if (!currentWorkflow.value) return;
+          const res = await fetch(`/api/v1/workflows/${currentWorkflow.value.id}/executions`);
+          executions.value = await res.json() || [];
+          if (executions.value.length > 0) {
+            selectedExec.value = executions.value[0];
+          }
+          showExecModal.value = true;
+        };
+
+        const exportWorkflowJson = () => {
+          if (!currentWorkflow.value) return;
+          const exportData = {
+            name: currentWorkflow.value.name,
+            description: currentWorkflow.value.description,
+            nodes: nodes.value,
+            edges: edges.value
+          };
+          const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+          const dlAnchorElem = document.createElement('a');
+          dlAnchorElem.setAttribute("href", dataStr);
+          dlAnchorElem.setAttribute("download", `goflow_workflow_${currentWorkflow.value.name.toLowerCase().replace(/\s+/g, '_')}.json`);
+          dlAnchorElem.click();
+        };
+
+        const triggerImportClick = () => {
+          if (importFileInput.value) {
+            importFileInput.value.click();
+          }
+        };
+
+        const importWorkflowJson = (evt) => {
+          const file = evt.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = async (e) => {
+            try {
+              const imported = JSON.parse(e.target.result);
+              const name = imported.name ? `${imported.name} (Imported)` : 'Imported Workflow';
+              const res = await fetch('/api/v1/workflows', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: name,
+                  nodes_json: JSON.stringify(imported.nodes || []),
+                  edges_json: JSON.stringify(imported.edges || [])
+                })
+              });
+              const newWf = await res.json();
+              await fetchWorkflows();
+              selectWorkflow(newWf);
+              alert('📥 Workflow Imported Successfully!');
+            } catch (err) {
+              alert('Failed to import JSON: ' + err.message);
+            }
+          };
+          reader.readAsText(file);
+        };
+
+        const parseLogs = (logsJsonStr) => {
+          try { return JSON.parse(logsJsonStr || '[]'); } catch { return []; }
+        };
+
+        const formatDate = (dateStr) => {
+          if (!dateStr) return '';
+          return new Date(dateStr).toLocaleString();
+        };
+
+        const selectWorkflow = (wf) => {
+          currentWorkflow.value = wf;
+          nodes.value = JSON.parse(wf.nodes_json || '[]');
+          edges.value = JSON.parse(wf.edges_json || '[]');
+          selectedNodeId.value = null;
+          showWfModal.value = false;
+        };
+
+        const createNewWorkflow = async () => {
+          if (!newWfName.value.trim()) return;
+          const res = await fetch('/api/v1/workflows', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: newWfName.value, nodes_json: '[]', edges_json: '[]' })
+          });
+          const newWf = await res.json();
+          newWfName.value = '';
+          await fetchWorkflows();
+          selectWorkflow(newWf);
+        };
+
+        const saveWorkflow = async () => {
+          if (!currentWorkflow.value) return;
+          await fetch(`/api/v1/workflows/${currentWorkflow.value.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: currentWorkflow.value.name,
+              is_active: currentWorkflow.value.is_active,
+              nodes_json: JSON.stringify(nodes.value),
+              edges_json: JSON.stringify(edges.value)
+            })
+          });
+          alert('✅ Workflow Saved Successfully!');
+        };
+
+        const runWorkflow = async () => {
+          if (!currentWorkflow.value) return;
+          running.value = true;
+          try {
+            const res = await fetch(`/api/v1/workflows/${currentWorkflow.value.id}/trigger`, { method: 'POST' });
+            const result = await res.json();
+            alert(`🚀 Execution Completed! Status: ${result.status} (${result.duration_ms}ms)`);
+            openExecutionsModal();
+          } catch (err) {
+            alert('Execution failed: ' + err.message);
+          } finally {
+            running.value = false;
+          }
+        };
+
+        const onDragStart = (evt, nodeDef) => {
+          evt.dataTransfer.setData('goflow-node', JSON.stringify(nodeDef));
+        };
+
+        const onDrop = (evt) => {
+          const raw = evt.dataTransfer.getData('goflow-node');
+          if (!raw) return;
+          const def = JSON.parse(raw);
+          const newNode = {
+            id: 'node_' + Date.now(),
+            type: def.type,
+            name: def.name,
+            position: { x: evt.offsetX, y: evt.offsetY },
+            params: {
+              url: 'https://httpbin.org/get', method: 'GET', message: 'Hello Goflow!',
+              host: 'smtp.gmail.com', port: '587', username: 'sender@gmail.com', to: 'recipient@example.com', subject: 'Notification',
+              seconds: '3'
+            }
+          };
+          nodes.value.push(newNode);
+          selectedNodeId.value = newNode.id;
+        };
+
+        const connectWire = () => {
+          if (!selectedNodeId.value || !targetConnectId.value) return;
+          const exists = edges.value.some(e => e.source === selectedNodeId.value && e.target === targetConnectId.value);
+          if (!exists) {
+            edges.value.push({
+              id: 'edge_' + Date.now(),
+              source: selectedNodeId.value,
+              target: targetConnectId.value
+            });
+          }
+          targetConnectId.value = '';
+        };
+
+        const deleteWire = (wireId) => {
+          edges.value = edges.value.filter(e => e.id !== wireId);
+        };
+
+        const selectNode = (id) => {
+          selectedNodeId.value = id;
+        };
+
+        const deleteSelectedNode = () => {
+          if (!selectedNodeId.value) return;
+          nodes.value = nodes.value.filter(n => n.id !== selectedNodeId.value);
+          edges.value = edges.value.filter(e => e.source !== selectedNodeId.value && e.target !== selectedNodeId.value);
+          selectedNodeId.value = null;
+        };
+
+        const getNodeX = (id) => nodes.value.find(n => n.id === id)?.position.x || 0;
+        const getNodeY = (id) => nodes.value.find(n => n.id === id)?.position.y || 0;
+        const getNodeName = (id) => nodes.value.find(n => n.id === id)?.name || id;
+
+        let draggingNode = null;
+        let dragOffset = { x: 0, y: 0 };
+
+        const startDragNode = (evt, node) => {
+          draggingNode = node;
+          dragOffset = { x: evt.clientX - node.position.x, y: evt.clientY - node.position.y };
+          window.addEventListener('mousemove', onMouseMove);
+          window.addEventListener('mouseup', onMouseUp);
+        };
+
+        const onMouseMove = (evt) => {
+          if (draggingNode) {
+            draggingNode.position.x = Math.max(10, evt.clientX - dragOffset.x);
+            draggingNode.position.y = Math.max(10, evt.clientY - dragOffset.y);
+          }
+        };
+
+        const onMouseUp = () => {
+          draggingNode = null;
+          window.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mouseup', onMouseUp);
+        };
+
+        const deleteWf = async (id) => {
+          if (confirm('Delete workflow?')) {
+            await fetch(`/api/v1/workflows/${id}`, { method: 'DELETE' });
+            await fetchWorkflows();
+          }
+        };
+
+        onMounted(() => {
+          fetchWorkflows();
+          fetchNodeDefs();
+        });
+
+        return {
+          workflows, currentWorkflow, nodeDefs, nodes, edges, selectedNodeId, selectedNode, otherNodes, outgoingWires, targetConnectId,
+          showWfModal, showExecModal, showCredModal, executions, selectedExec, newWfName, running, importFileInput,
+          onDragStart, onDrop, connectWire, deleteWire, selectNode, deleteSelectedNode, startDragNode, openExecutionsModal, parseLogs, formatDate,
+          exportWorkflowJson, triggerImportClick, importWorkflowJson,
+          getNodeX, getNodeY, getNodeName, saveWorkflow, runWorkflow, selectWorkflow, createNewWorkflow, deleteWf
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
