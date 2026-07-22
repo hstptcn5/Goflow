@@ -2,7 +2,10 @@ package nodes
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
+
+	"github.com/dop251/goja"
 )
 
 type JSCodeRunnerExecutor struct{}
@@ -17,17 +20,44 @@ func (e *JSCodeRunnerExecutor) Execute(ctx *ExecutionContext, node *Node) (inter
 		codeStr = "return { status: 'processed', timestamp: new Date() };"
 	}
 
-	// Dynamic JSON expression transformation
-	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(codeStr), &result); err == nil {
-		return result, nil
+	// 1. If the input is valid JSON, parse and return it immediately
+	var jsonResult map[string]interface{}
+	if err := json.Unmarshal([]byte(codeStr), &jsonResult); err == nil {
+		return jsonResult, nil
 	}
 
-	return map[string]interface{}{
-		"executed_code": codeStr,
-		"status":        "evaluated",
-		"outputs":       ctx.Outputs,
-	}, nil
+	// 2. Otherwise execute actual JavaScript using Goja engine
+	vm := goja.New()
+
+	ctx.mu.RLock()
+	outputsCopy := make(map[string]interface{})
+	for k, v := range ctx.Outputs {
+		outputsCopy[k] = v
+	}
+	ctx.mu.RUnlock()
+
+	_ = vm.Set("outputs", outputsCopy)
+	if trigger, ok := outputsCopy["$trigger"]; ok {
+		_ = vm.Set("trigger", trigger)
+	}
+
+	var scriptToRun string
+	if strings.Contains(codeStr, "return") {
+		scriptToRun = fmt.Sprintf("(function(){\n%s\n})()", codeStr)
+	} else {
+		scriptToRun = codeStr
+	}
+
+	val, err := vm.RunString(scriptToRun)
+	if err != nil {
+		return nil, fmt.Errorf("JS evaluation error: %w", err)
+	}
+
+	if val == nil {
+		return nil, nil
+	}
+
+	return val.Export(), nil
 }
 
 func (e *JSCodeRunnerExecutor) Validate(node *Node) error {

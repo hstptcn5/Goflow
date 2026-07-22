@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -25,7 +26,7 @@ func (e *ConditionIFExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 	case "not_equals", "!=":
 		isTrue = field != value
 	case "contains":
-		isTrue = len(field) > 0 && len(value) > 0 && field != "" && value != ""
+		isTrue = strings.Contains(field, value)
 	case "is_not_empty":
 		isTrue = field != ""
 	default:

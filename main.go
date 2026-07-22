@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -67,18 +68,89 @@ func main() {
 	cScheduler.Start()
 	defer cScheduler.Stop()
 
+	// Track scheduled workflows and their entries
+	type cronJob struct {
+		entryID  cron.EntryID
+		cronExpr string
+	}
+	scheduledJobs := make(map[string]cronJob)
+
 	// Background task to scan active workflows and register cron schedules
 	go func() {
 		for {
 			wfs, err := wfStore.ListAll()
 			if err == nil {
+				activeCronWfs := make(map[string]string) // workflowID -> cronExpr
+
 				for _, wf := range wfs {
-					if wf.IsActive {
-						// Cron scheduling logic
+					if !wf.IsActive {
+						continue
+					}
+
+					var nodeList []nodes.Node
+					if err := json.Unmarshal([]byte(wf.NodesJSON), &nodeList); err != nil {
+						continue
+					}
+
+					// Find if this workflow has a Cron Trigger node
+					for _, node := range nodeList {
+						if node.Type == nodes.TypeCronTrigger {
+							if cronExpr, ok := node.Params["cron_expression"].(string); ok && cronExpr != "" {
+								activeCronWfs[wf.ID] = cronExpr
+								break
+							}
+						}
+					}
+				}
+
+				// 1. Remove jobs that are no longer active, or have a different cron expression
+				for wfID, job := range scheduledJobs {
+					currentCronExpr, active := activeCronWfs[wfID]
+					if !active || currentCronExpr != job.cronExpr {
+						cScheduler.Remove(job.entryID)
+						delete(scheduledJobs, wfID)
+						log.Printf("[Cron] Removed scheduler for workflow %s", wfID)
+					}
+				}
+
+				// 2. Add or update active cron workflows
+				for wfID, cronExpr := range activeCronWfs {
+					if _, scheduled := scheduledJobs[wfID]; !scheduled {
+						wfIDCopy := wfID
+						cronExprCopy := cronExpr
+						entryID, err := cScheduler.AddFunc(cronExprCopy, func() {
+							log.Printf("[Cron] Triggering workflow %s...", wfIDCopy)
+							latestWf, err := wfStore.GetByID(wfIDCopy)
+							if err != nil {
+								log.Printf("[Cron] Error fetching latest workflow %s: %v", wfIDCopy, err)
+								return
+							}
+							if !latestWf.IsActive {
+								log.Printf("[Cron] Workflow %s is no longer active, skipping execution", wfIDCopy)
+								return
+							}
+							payload := map[string]interface{}{
+								"triggered_at": time.Now().Format(time.RFC3339),
+								"schedule":     cronExprCopy,
+							}
+							_, err = eng.ExecuteWorkflow(latestWf, payload)
+							if err != nil {
+								log.Printf("[Cron] Error executing workflow %s: %v", wfIDCopy, err)
+							}
+						})
+						if err == nil {
+							scheduledJobs[wfID] = cronJob{
+								entryID:  entryID,
+								cronExpr: cronExpr,
+							}
+							log.Printf("[Cron] Scheduled workflow %s with pattern %s", wfID, cronExpr)
+						} else {
+							log.Printf("[Cron] Failed to schedule workflow %s with pattern %s: %v", wfID, cronExpr, err)
+						}
 					}
 				}
 			}
-			time.Sleep(1 * time.Minute)
+			time.Sleep(10 * time.Second)
 		}
 	}()
 

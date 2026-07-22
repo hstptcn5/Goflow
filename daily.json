@@ -1,0 +1,95 @@
+{
+    "name": "Daily Crypto Report & AI Insights",
+    "description": "Quét giá BTC hàng ngày, lấy nhận định AI DeepSeek và gửi báo cáo Telegram",
+    "is_active": true,
+    "nodes": [
+        {
+            "id": "cron_trigger_1",
+            "type": "cronTrigger",
+            "name": "Daily 8 AM",
+            "position": {
+                "x": 50,
+                "y": 180
+            },
+            "params": {
+                "cron_expression": "0 8 * * *"
+            }
+        },
+        {
+            "id": "get_btc_price",
+            "type": "httpRequest",
+            "name": "Fetch BTC Price",
+            "position": {
+                "x": 280,
+                "y": 180
+            },
+            "params": {
+                "method": "GET",
+                "url": "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true"
+            }
+        },
+        {
+            "id": "format_data",
+            "type": "jsCodeRunner",
+            "name": "Format Price Report",
+            "position": {
+                "x": 510,
+                "y": 180
+            },
+            "params": {
+                "code": "var data = outputs.get_btc_price.data.bitcoin;\nreturn {\n  price: '$' + data.usd.toFixed(2).replace(/\\d(?=(\\d{3})+\\.)/g, '$&,'),\n  change_24h: data.usd_24h_change.toFixed(2) + '%',\n  raw_change: data.usd_24h_change\n};"
+            }
+        },
+        {
+            "id": "ai_analyst",
+            "type": "deepseekAI",
+            "name": "DeepSeek Market Analyst",
+            "position": {
+                "x": 740,
+                "y": 180
+            },
+            "params": {
+                "model": "deepseek-reasoner",
+                "prompt": "Giá BTC hiện tại là: {{format_data.price}}, Biến động 24h: {{format_data.change_24h}}. Hãy đưa ra 3 gạch đầu dòng nhận định thị trường ngắn gọn cho nhà đầu tư.",
+                "system_message": "Bạn là trợ lý phân tích thị trường tài chính chuyên nghiệp.",
+                "credential_id": ""
+            }
+        },
+        {
+            "id": "send_tele",
+            "type": "telegramBot",
+            "name": "Telegram Alert",
+            "position": {
+                "x": 970,
+                "y": 180
+            },
+            "params": {
+                "chat_id": "",
+                "message": "<b>📊 BÁO CÁO THỊ TRƯỜNG BTC MỖI SÁNG</b>\n\n💵 Giá hiện tại: {{format_data.price}}\n📉 Biến động 24h: {{format_data.change_24h}}\n\n🤖 <b>Nhận định AI (DeepSeek-R1):</b>\n{{ai_analyst.ai_response}}",
+                "credential_id": ""
+            }
+        }
+    ],
+    "edges": [
+        {
+            "id": "e1",
+            "source": "cron_trigger_1",
+            "target": "get_btc_price"
+        },
+        {
+            "id": "e2",
+            "source": "get_btc_price",
+            "target": "format_data"
+        },
+        {
+            "id": "e3",
+            "source": "format_data",
+            "target": "ai_analyst"
+        },
+        {
+            "id": "e4",
+            "source": "ai_analyst",
+            "target": "send_tele"
+        }
+    ]
+}

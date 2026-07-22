@@ -149,6 +149,16 @@ func (e *Engine) ExecuteWorkflow(wf *storage.Workflow, triggerPayload interface{
 					return
 				}
 
+				// Resolve parameters dynamically using ctx before execution
+				resolvedParams := nodes.ResolveParams(ctx, nodeObj.Params)
+				evaluatedNode := &nodes.Node{
+					ID:       nodeObj.ID,
+					Type:     nodeObj.Type,
+					Name:     nodeObj.Name,
+					Position: nodeObj.Position,
+					Params:   resolvedParams,
+				}
+
 				// Auto-retry Loop (Tối đa 3 lần thử khi gặp lỗi)
 				maxRetries := 3
 				var lastErr error
@@ -157,7 +167,7 @@ func (e *Engine) ExecuteWorkflow(wf *storage.Workflow, triggerPayload interface{
 
 				for attempt := 1; attempt <= maxRetries; attempt++ {
 					attemptsUsed = attempt
-					output, lastErr = executor.Execute(ctx, nodeObj)
+					output, lastErr = executor.Execute(ctx, evaluatedNode)
 					if lastErr == nil {
 						break
 					}
