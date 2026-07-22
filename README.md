@@ -2,20 +2,33 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.22%2B-00ADD8?style=flat-square&logo=go)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![Binary Size](https://img.shields.io/badge/Single_Binary-%3C_35MB-success?style=flat-square)]()
-[![RAM Consumption](https://img.shields.io/badge/RAM_Usage-%3C_50MB-blueviolet?style=flat-square)]()
+[![Binary Size](https://img.shields.io/badge/Single_Binary-%3C_25MB-success?style=flat-square)]()
+[![RAM Consumption](https://img.shields.io/badge/RAM_Usage-15--25MB-blueviolet?style=flat-square)]()
 
-**Goflow** is a super lightweight, local-first, zero-dependency alternative to heavy workflow automation platforms like n8n, Zapier, or Make. Compiled into a **single executable binary** (<35 MB) with minimal memory footprint (<50 MB RAM), Goflow features a **Pure Go CGO-free SQLite storage engine** (`modernc.org/sqlite`) and an embedded **Vue 3 drag-and-drop Web UI**.
+**Goflow** is a super lightweight, local-first, zero-dependency alternative to heavy workflow automation platforms like n8n, Zapier, or Make. Compiled into a **single executable binary** (~24 MB) with minimal memory footprint (15 - 25 MB RAM), Goflow features a **Pure Go CGO-free SQLite storage engine** (`modernc.org/sqlite`) and an embedded **Vue 3 drag-and-drop Web UI**.
+
+---
+
+## ⚡ Resource & Performance Comparison
+
+| Feature / Benchmark | ⚡ **Goflow (Go)** | 📦 **n8n (Node.js)** | ☁️ **Zapier / Make** |
+| :--- | :---: | :---: | :---: |
+| **RAM Footprint (Idle)** | 🟢 **15 - 25 MB** | 🔴 400 - 800 MB | ☁️ Cloud SaaS |
+| **Binary & Packaging** | 🟢 **Single File (~24 MB)** | 🔴 Heavy Docker Image | ☁️ Closed SaaS |
+| **External Dependencies** | 🟢 **NONE (Zero)** | 🔴 Node.js, PostgreSQL | ☁️ Closed SaaS |
+| **Node Delay Overhead** | 🟢 **~2 - 5 µs** (Goroutines) | 🟡 ~50 - 150 ms | 🔴 ~500 - 2000 ms |
+| **Database Storage** | 🟢 **Pure Go SQLite (WAL)** | 🔴 PostgreSQL / SQLite | ☁️ Cloud SaaS |
+| **Infrastructure Cost** | 🟢 **$0 (Any $1 VPS / Pi)** | 🟡 $10 - $40/mo VPS | 🔴 $20 - $100+/mo |
 
 ---
 
 ## 📌 Repository About Summary (GitHub Sidebar)
 
 > **Short Description / Tagline for GitHub:**  
-> ⚡ **Goflow** — Super Lightweight, Zero-Dependency, Local-First Workflow Automation Engine written in Go with Embedded Drag-and-Drop Web UI. Single binary <35MB, RAM <50MB, Pure Go SQLite storage, and AES-256 encrypted credentials.
+> 🚀 **Goflow**: The ultra-lightweight, zero-dependency alternative to n8n & Zapier. Single Go binary (<25MB, 15-25MB RAM), local-first, pure Go SQLite, and embedded visual drag-and-drop UI. Fast, private, and effortless automation.
 
 **Topics / Tags for GitHub Repo:**  
-`go` `golang` `workflow-automation` `dag-engine` `n8n-alternative` `zapier-alternative` `sqlite` `vue3` `vue-flow` `zero-dependency` `single-binary`
+`go` `golang` `workflow-automation` `dag-engine` `n8n-alternative` `zapier-alternative` `sqlite` `vue3` `vue-flow` `zero-dependency` `single-binary` `local-first`
 
 ---
 

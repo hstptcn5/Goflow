@@ -111,7 +111,7 @@
 
     /* Sidebar Right: Properties Panel */
     .panel-right {
-      width: 340px; background: #ffffff; border-left: 2px solid var(--border-color);
+      width: 360px; background: #ffffff; border-left: 2px solid var(--border-color);
       display: flex; flex-direction: column; padding: 20px; z-index: 100; box-shadow: -4px 0 20px rgba(0,0,0,0.05);
       overflow-y: auto;
     }
@@ -135,17 +135,17 @@
 
     /* Modals & Backdrop */
     .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); z-index: 200; display: flex; align-items: center; justify-content: center; }
-    .modal-card { width: 750px; max-height: 85vh; background: #ffffff; border-radius: 16px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); border: 2px solid var(--border-color); overflow-y: auto; }
+    .modal-card { width: 880px; max-height: 85vh; background: #ffffff; border-radius: 16px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); border: 2px solid var(--border-color); overflow-y: auto; }
     .modal-title { font-size: 1.2rem; font-weight: 800; margin-bottom: 16px; border-bottom: 2px solid var(--border-color); padding-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
     .wf-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 10px; margin-bottom: 8px; cursor: pointer; }
     .wf-row:hover { border-color: #2563eb; }
     .wf-row.active { border-color: #7c3aed; background: #f3e8ff; }
 
     /* Executions Timeline */
-    .exec-timeline { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
-    .exec-step { background: #f8fafc; border: 2px solid #e2e8f0; border-left: 6px solid #16a34a; border-radius: 10px; padding: 12px 16px; }
-    .exec-step.failed { border-left-color: #dc2626; }
-    .json-box { background: #0f172a; color: #38bdf8; padding: 10px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.775rem; overflow-x: auto; margin-top: 8px; }
+    .exec-timeline { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+    .exec-step { background: #ffffff; border: 2px solid #cbd5e1; border-left: 6px solid #16a34a; border-radius: 10px; padding: 14px 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+    .exec-step.failed { border-left-color: #dc2626; border-color: #fca5a5; }
+    .json-box { background: #0f172a; color: #38bdf8; padding: 12px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.8rem; overflow-x: auto; margin-top: 8px; line-height: 1.4; max-height: 300px; }
   </style>
 </head>
 <body>
@@ -257,6 +257,7 @@
           </div>
         </div>
 
+        <!-- Node Parameters Form -->
         <div class="form-group" v-if="selectedNode.type === 'httpRequest'">
           <label>HTTP Method</label>
           <select v-model="selectedNode.params.method" class="form-select">
@@ -317,6 +318,12 @@
           <input type="text" v-model="selectedNode.params.cron_expression" class="form-input" placeholder="*/5 * * * *" />
         </div>
 
+        <!-- Node Last Execution Output Inspector -->
+        <div v-if="getNodeLastOutput(selectedNode.id)" class="form-group" style="margin-top: 10px; background: #e0f2fe; padding: 12px; border-radius: 8px; border: 1px solid #bae6fd;">
+          <label style="color: #0369a1;">📥 Last Execution Output Data</label>
+          <div class="json-box" style="max-height: 180px;"><pre>{{ JSON.stringify(getNodeLastOutput(selectedNode.id), null, 2) }}</pre></div>
+        </div>
+
         <div style="margin-top: auto; padding-top: 20px;">
           <button class="btn btn-danger" style="width: 100%; justify-content: center;" @click="deleteSelectedNode">
             🗑️ Delete Node
@@ -329,17 +336,18 @@
     <div class="modal-backdrop" v-if="showExecModal" @click.self="showExecModal = false">
       <div class="modal-card">
         <div class="modal-title">
-          <span>📜 Executions History Timeline</span>
+          <span>📜 Executions History Timeline & Output Inspector</span>
           <button class="btn btn-secondary" style="padding: 4px 8px;" @click="showExecModal = false">✕</button>
         </div>
 
-        <div style="display: flex; gap: 16px; height: 500px;">
-          <div style="width: 240px; border-right: 2px solid #e2e8f0; padding-right: 12px; overflow-y: auto;">
+        <div style="display: flex; gap: 16px; min-height: 520px;">
+          <!-- Left List of Executions -->
+          <div style="width: 260px; border-right: 2px solid #e2e8f0; padding-right: 12px; overflow-y: auto;">
             <div v-for="exec in executions" :key="exec.id"
                  class="wf-row" :class="{ active: selectedExec?.id === exec.id }"
                  @click="selectedExec = exec">
               <div>
-                <div style="font-weight: 800; font-size: 0.85rem;" :style="{ color: exec.status === 'SUCCESS' ? '#16a34a' : '#dc2626' }">
+                <div style="font-weight: 800; font-size: 0.875rem;" :style="{ color: exec.status === 'SUCCESS' ? '#16a34a' : '#dc2626' }">
                   {{ exec.status }} ({{ exec.duration_ms }}ms)
                 </div>
                 <div style="font-size: 0.7rem; color: #64748b;">{{ formatDate(exec.started_at) }}</div>
@@ -350,27 +358,38 @@
             </div>
           </div>
 
-          <div style="flex: 1; overflow-y: auto; padding-left: 8px;" v-if="selectedExec">
-            <div style="font-size: 0.85rem; font-weight: 700; color: #0f172a; margin-bottom: 10px;">
-              Execution ID: #{{ selectedExec.id }}
+          <!-- Right Timeline Step Inspector -->
+          <div style="flex: 1; overflow-y: auto; padding-left: 12px;" v-if="selectedExec">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; font-weight: 800; color: #0f172a; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #cbd5e1;">
+              <span>Execution ID: #{{ selectedExec.id }}</span>
+              <span class="brand-badge" :style="{ background: selectedExec.status === 'SUCCESS' ? '#dcfce7' : '#fee2e2', color: selectedExec.status === 'SUCCESS' ? '#16a34a' : '#dc2626' }">
+                {{ selectedExec.status }} ({{ selectedExec.duration_ms }}ms)
+              </span>
             </div>
 
-            <div class="exec-timeline">
-              <div v-for="step in parseLogs(selectedExec.logs_json)" :key="step.node_id"
+            <div class="exec-timeline" v-if="currentExecutionLogs.length > 0">
+              <div v-for="step in currentExecutionLogs" :key="step.node_id"
                    class="exec-step" :class="{ failed: step.status === 'FAILED' }">
-                <div style="display: flex; justify-content: space-between; font-weight: 800; font-size: 0.875rem;">
-                  <span>Node: {{ getNodeName(step.node_id) }}</span>
-                  <span style="font-family: var(--font-mono); color: #0284c7;">{{ step.duration_ms }}ms ({{ step.attempts || 1 }} attempt)</span>
+                <div style="display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 0.9rem; color: #0f172a;">
+                  <span>📌 Node: {{ getNodeName(step.node_id) }}</span>
+                  <span style="font-family: var(--font-mono); color: #0284c7; background: #e0f2fe; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">
+                    {{ step.duration_ms }}ms ({{ step.attempts || 1 }} attempt)
+                  </span>
                 </div>
-                <div v-if="step.output">
+                <div v-if="step.output" style="margin-top: 8px;">
+                  <div style="font-size: 0.725rem; font-weight: 800; color: #475569; text-transform: uppercase;">📥 Returned Payload / Output Data:</div>
                   <div class="json-box"><pre>{{ JSON.stringify(step.output, null, 2) }}</pre></div>
                 </div>
-                <div v-if="step.error" style="color: #dc2626; font-weight: 700; margin-top: 6px; font-size: 0.8rem;">
+                <div v-if="step.error" style="color: #dc2626; font-weight: 800; margin-top: 8px; font-size: 0.85rem; background: #fef2f2; padding: 8px; border-radius: 6px; border: 1px solid #fca5a5;">
                   ❌ Error: {{ step.error }}
                 </div>
               </div>
             </div>
+            <div v-else style="color: #64748b; font-size: 0.85rem; padding: 12px;">
+              No detailed step logs recorded for this execution.
+            </div>
           </div>
+
           <div v-else style="flex: 1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.875rem;">
             👈 Select an execution from the left list to inspect JSON payload steps!
           </div>
@@ -439,6 +458,20 @@
           return edges.value.filter(e => e.source === selectedNodeId.value);
         });
 
+        const currentExecutionLogs = computed(() => {
+          if (!selectedExec.value) return [];
+          const logsStr = selectedExec.value.logs_json || selectedExec.value.LogsJSON;
+          return parseLogs(logsStr);
+        });
+
+        const getNodeLastOutput = (nodeId) => {
+          if (currentExecutionLogs.value && currentExecutionLogs.value.length > 0) {
+            const step = currentExecutionLogs.value.find(s => s.node_id === nodeId);
+            return step?.output || null;
+          }
+          return null;
+        };
+
         const fetchWorkflows = async () => {
           const res = await fetch('/api/v1/workflows');
           workflows.value = await res.json() || [];
@@ -460,6 +493,48 @@
             selectedExec.value = executions.value[0];
           }
           showExecModal.value = true;
+        };
+
+        const parseLogs = (logs) => {
+          if (!logs) return [];
+          if (Array.isArray(logs)) return logs;
+          if (typeof logs === 'object') return [logs];
+          try {
+            const parsed = typeof logs === 'string' ? JSON.parse(logs) : logs;
+            if (typeof parsed === 'string') {
+              return JSON.parse(parsed);
+            }
+            return Array.isArray(parsed) ? parsed : [];
+          } catch (err) {
+            console.error("parseLogs error:", err);
+            return [];
+          }
+        };
+
+        const formatDate = (dateStr) => {
+          if (!dateStr) return '';
+          return new Date(dateStr).toLocaleString();
+        };
+
+        const selectWorkflow = (wf) => {
+          currentWorkflow.value = wf;
+          nodes.value = JSON.parse(wf.nodes_json || '[]');
+          edges.value = JSON.parse(wf.edges_json || '[]');
+          selectedNodeId.value = null;
+          showWfModal.value = false;
+        };
+
+        const createNewWorkflow = async () => {
+          if (!newWfName.value.trim()) return;
+          const res = await fetch('/api/v1/workflows', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: newWfName.value, nodes_json: '[]', edges_json: '[]' })
+          });
+          const newWf = await res.json();
+          newWfName.value = '';
+          await fetchWorkflows();
+          selectWorkflow(newWf);
         };
 
         const exportWorkflowJson = () => {
@@ -509,36 +584,6 @@
             }
           };
           reader.readAsText(file);
-        };
-
-        const parseLogs = (logsJsonStr) => {
-          try { return JSON.parse(logsJsonStr || '[]'); } catch { return []; }
-        };
-
-        const formatDate = (dateStr) => {
-          if (!dateStr) return '';
-          return new Date(dateStr).toLocaleString();
-        };
-
-        const selectWorkflow = (wf) => {
-          currentWorkflow.value = wf;
-          nodes.value = JSON.parse(wf.nodes_json || '[]');
-          edges.value = JSON.parse(wf.edges_json || '[]');
-          selectedNodeId.value = null;
-          showWfModal.value = false;
-        };
-
-        const createNewWorkflow = async () => {
-          if (!newWfName.value.trim()) return;
-          const res = await fetch('/api/v1/workflows', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: newWfName.value, nodes_json: '[]', edges_json: '[]' })
-          });
-          const newWf = await res.json();
-          newWfName.value = '';
-          await fetchWorkflows();
-          selectWorkflow(newWf);
         };
 
         const saveWorkflow = async () => {
@@ -663,7 +708,7 @@
 
         return {
           workflows, currentWorkflow, nodeDefs, nodes, edges, selectedNodeId, selectedNode, otherNodes, outgoingWires, targetConnectId,
-          showWfModal, showExecModal, showCredModal, executions, selectedExec, newWfName, running, importFileInput,
+          showWfModal, showExecModal, showCredModal, executions, selectedExec, currentExecutionLogs, getNodeLastOutput, newWfName, running, importFileInput,
           onDragStart, onDrop, connectWire, deleteWire, selectNode, deleteSelectedNode, startDragNode, openExecutionsModal, parseLogs, formatDate,
           exportWorkflowJson, triggerImportClick, importWorkflowJson,
           getNodeX, getNodeY, getNodeName, saveWorkflow, runWorkflow, selectWorkflow, createNewWorkflow, deleteWf
