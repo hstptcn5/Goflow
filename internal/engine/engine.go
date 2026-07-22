@@ -49,6 +49,10 @@ func (e *Engine) ExecuteWorkflow(wf *storage.Workflow, triggerPayload interface{
 		return nil, fmt.Errorf("invalid workflow nodes_json: %w", err)
 	}
 
+	if len(nodeList) == 0 {
+		return nil, fmt.Errorf("cannot execute empty workflow: workflow contains no nodes in DB")
+	}
+
 	var edgeList []nodes.Edge
 	if err := json.Unmarshal([]byte(wf.EdgesJSON), &edgeList); err != nil {
 		return nil, fmt.Errorf("invalid workflow edges_json: %w", err)
@@ -115,7 +119,7 @@ func (e *Engine) ExecuteWorkflow(wf *storage.Workflow, triggerPayload interface{
 					ExecutionID: executionID,
 					NodeID:      nid,
 					Status:      "RUNNING",
-					Timestamp:   nodeStart,
+					Timestamp:   time.Now(),
 				})
 
 				if !ok {

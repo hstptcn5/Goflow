@@ -2,7 +2,6 @@ package nodes
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 )
 
@@ -39,7 +38,7 @@ func (e *JSCodeRunnerExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeJSCodeRunner,
 		Name:        "JS Code Runner",
-		Description: "Thực thi mã Javascript / Expression biến đổi dữ liệu tùy biến",
+		Description: "Thuc thi ma Javascript / Expression bien doi du lieu tuy bien",
 		Icon:        "Code",
 		Category:    "LOGIC & UTILITY",
 		Params: []ParamDefinition{
@@ -49,7 +48,7 @@ func (e *JSCodeRunnerExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "{\n  \"status\": \"processed\",\n  \"message\": \"Custom Code Execution\"\n}",
 				Required:    true,
-				Description: "Viết đoạn mã Javascript hoặc JSON Expression",
+				Description: "Viet doan ma Javascript hoac JSON Expression",
 			},
 		},
 	}

@@ -95,7 +95,7 @@
 
     /* Node Cards on Canvas */
     .canvas-node {
-      position: absolute; width: 220px; background: #ffffff;
+      position: absolute; width: 230px; background: #ffffff;
       border: 3px solid #2563eb; border-radius: 12px; padding: 14px;
       box-shadow: 0 8px 24px rgba(0,0,0,0.08); cursor: pointer; transition: all 0.15s;
       user-select: none;
@@ -113,7 +113,7 @@
 
     /* Sidebar Right: Properties Panel */
     .panel-right {
-      width: 360px; background: #ffffff; border-left: 2px solid var(--border-color);
+      width: 380px; background: #ffffff; border-left: 2px solid var(--border-color);
       display: flex; flex-direction: column; padding: 20px; z-index: 100; box-shadow: -4px 0 20px rgba(0,0,0,0.05);
       overflow-y: auto;
     }
@@ -146,7 +146,7 @@
     /* Executions Timeline */
     .exec-timeline { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
     .exec-step { background: #ffffff; border: 2px solid #cbd5e1; border-left: 6px solid #16a34a; border-radius: 10px; padding: 14px 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-    .exec-step.failed { border-left-color: #dc2626; border-color: #fca5a5; }
+    .exec-step.failed { border-left-color: #dc2626; border-color: #fca5a5; background: #fff5f5; }
     .json-box { background: #0f172a; color: #38bdf8; padding: 12px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.8rem; overflow-x: auto; margin-top: 8px; line-height: 1.4; max-height: 300px; }
   </style>
 </head>
@@ -206,8 +206,8 @@
         <div class="canvas-grid">
           <svg class="svg-layer">
             <line v-for="edge in edges" :key="edge.id"
-                  :x1="getNodeX(edge.source) + 110" :y1="getNodeY(edge.source) + 40"
-                  :x2="getNodeX(edge.target) + 110" :y2="getNodeY(edge.target) + 40"
+                  :x1="getNodeX(edge.source) + 115" :y1="getNodeY(edge.source) + 40"
+                  :x2="getNodeX(edge.target) + 115" :y2="getNodeY(edge.target) + 40"
                   class="wire"
                   @click.stop="deleteWire(edge.id)" />
           </svg>
@@ -223,6 +223,15 @@
               <span>{{ getNodeIcon(node.type) }} {{ node.name }}</span>
               <span class="canvas-node-type">{{ node.type }}</span>
             </div>
+
+            <!-- Node Execution Status Badge -->
+            <div v-if="getNodeStatus(node.id)" style="margin-top: 4px; display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;"
+                    :style="{ background: getNodeStatus(node.id).status === 'SUCCESS' ? '#dcfce7' : '#fee2e2', color: getNodeStatus(node.id).status === 'SUCCESS' ? '#16a34a' : '#dc2626' }">
+                {{ getNodeStatus(node.id).status }} ({{ getNodeStatus(node.id).duration_ms }}ms)
+              </span>
+            </div>
+
             <div class="canvas-node-body" v-if="node.params.url">{{ node.params.url }}</div>
             <div class="canvas-node-body" v-else-if="node.params.prompt">Prompt: {{ node.params.prompt }}</div>
             <div class="canvas-node-body" v-else-if="node.params.to">To: {{ node.params.to }}</div>
@@ -337,6 +346,16 @@
           <textarea v-model="selectedNode.params.code" class="form-textarea" placeholder="{ }"></textarea>
         </div>
 
+        <div class="form-group" v-else-if="selectedNode.type === 'jsonTransform'">
+          <label>JSON Template / Expression</label>
+          <textarea v-model="selectedNode.params.json_template" class="form-textarea" placeholder="{ }"></textarea>
+        </div>
+
+        <div class="form-group" v-else-if="selectedNode.type === 'webhookTrigger'">
+          <label>Webhook Path Info</label>
+          <input type="text" readonly :value="'/webhook/' + (currentWorkflow?.id || '')" class="form-input" style="background: #e2e8f0;" />
+        </div>
+
         <div class="form-group" v-else-if="selectedNode.type === 'httpRequest'">
           <label>HTTP Method</label>
           <select v-model="selectedNode.params.method" class="form-select">
@@ -397,10 +416,16 @@
           <input type="text" v-model="selectedNode.params.cron_expression" class="form-input" placeholder="*/5 * * * *" />
         </div>
 
-        <!-- Node Last Execution Output Inspector -->
-        <div v-if="getNodeLastOutput(selectedNode.id)" class="form-group" style="margin-top: 10px; background: #e0f2fe; padding: 12px; border-radius: 8px; border: 1px solid #bae6fd;">
-          <label style="color: #0369a1;">📥 Last Execution Output Data</label>
-          <div class="json-box" style="max-height: 180px;"><pre>{{ JSON.stringify(getNodeLastOutput(selectedNode.id), null, 2) }}</pre></div>
+        <!-- Node Last Execution Output Inspector Card -->
+        <div v-if="getNodeLastOutput(selectedNode.id)" class="form-group" style="margin-top: 14px; background: #f0fdf4; padding: 14px; border-radius: 10px; border: 2px solid #86efac; box-shadow: 0 4px 12px rgba(22,163,74,0.1);">
+          <label style="color: #16a34a; font-weight: 800; font-size: 0.85rem;">📥 LAST EXECUTION OUTPUT DATA</label>
+          <div class="json-box" style="max-height: 250px; background: #0f172a; border-radius: 8px; margin-top: 6px;"><pre>{{ JSON.stringify(getNodeLastOutput(selectedNode.id), null, 2) }}</pre></div>
+        </div>
+        <div v-else-if="getNodeLastError(selectedNode.id)" class="form-group" style="margin-top: 14px; background: #fef2f2; padding: 14px; border-radius: 10px; border: 2px solid #fca5a5;">
+          <label style="color: #dc2626; font-weight: 800; font-size: 0.85rem;">❌ LAST EXECUTION ERROR</label>
+          <div style="color: #dc2626; font-weight: 700; font-size: 0.825rem; font-family: var(--font-mono); margin-top: 6px; background: #ffffff; padding: 8px; border-radius: 6px; border: 1px solid #f87171;">
+            {{ getNodeLastError(selectedNode.id) }}
+          </div>
         </div>
 
         <div style="margin-top: auto; padding-top: 20px;">
@@ -424,7 +449,7 @@
           <div style="width: 260px; border-right: 2px solid #e2e8f0; padding-right: 12px; overflow-y: auto;">
             <div v-for="exec in executions" :key="exec.id"
                  class="wf-row" :class="{ active: selectedExec?.id === exec.id }"
-                 @click="selectedExec = exec">
+                 @click="selectExec(exec)">
               <div>
                 <div style="font-weight: 800; font-size: 0.875rem;" :style="{ color: exec.status === 'SUCCESS' ? '#16a34a' : '#dc2626' }">
                   {{ exec.status }} ({{ exec.duration_ms }}ms)
@@ -456,11 +481,11 @@
                   </span>
                 </div>
                 <div v-if="step.output" style="margin-top: 8px;">
-                  <div style="font-size: 0.725rem; font-weight: 800; color: #475569; text-transform: uppercase;">📥 Returned Payload / Output Data:</div>
+                  <div style="font-size: 0.725rem; font-weight: 800; color: #16a34a; text-transform: uppercase;">📥 Returned Output Payload:</div>
                   <div class="json-box"><pre>{{ JSON.stringify(step.output, null, 2) }}</pre></div>
                 </div>
-                <div v-if="step.error" style="color: #dc2626; font-weight: 800; margin-top: 8px; font-size: 0.85rem; background: #fef2f2; padding: 8px; border-radius: 6px; border: 1px solid #fca5a5;">
-                  ❌ Error: {{ step.error }}
+                <div v-if="step.error" style="color: #dc2626; font-weight: 800; margin-top: 8px; font-size: 0.85rem; background: #fef2f2; padding: 10px; border-radius: 6px; border: 1px solid #fca5a5;">
+                  ❌ Execution Error: {{ step.error }}
                 </div>
               </div>
             </div>
@@ -520,6 +545,7 @@
         const showCredModal = ref(false);
         const executions = ref([]);
         const selectedExec = ref(null);
+        const latestExecution = ref(null);
         const newWfName = ref('');
         const running = ref(false);
         const importFileInput = ref(null);
@@ -567,9 +593,29 @@
           return '⚙️';
         };
 
+        const parseLogs = (logs) => {
+          if (!logs) return [];
+          if (Array.isArray(logs)) return logs;
+          if (typeof logs === 'object') return [logs];
+          try {
+            const parsed = typeof logs === 'string' ? JSON.parse(logs) : logs;
+            if (typeof parsed === 'string') {
+              return JSON.parse(parsed);
+            }
+            return Array.isArray(parsed) ? parsed : [];
+          } catch (err) {
+            console.error("parseLogs error:", err);
+            return [];
+          }
+        };
+
+        const activeExec = computed(() => {
+          return selectedExec.value || latestExecution.value;
+        });
+
         const currentExecutionLogs = computed(() => {
-          if (!selectedExec.value) return [];
-          const logsStr = selectedExec.value.logs_json || selectedExec.value.LogsJSON;
+          if (!activeExec.value) return [];
+          const logsStr = activeExec.value.logs_json || activeExec.value.LogsJSON;
           return parseLogs(logsStr);
         });
 
@@ -577,6 +623,24 @@
           if (currentExecutionLogs.value && currentExecutionLogs.value.length > 0) {
             const step = currentExecutionLogs.value.find(s => s.node_id === nodeId);
             return step?.output || null;
+          }
+          return null;
+        };
+
+        const getNodeLastError = (nodeId) => {
+          if (currentExecutionLogs.value && currentExecutionLogs.value.length > 0) {
+            const step = currentExecutionLogs.value.find(s => s.node_id === nodeId);
+            return step?.error || null;
+          }
+          return null;
+        };
+
+        const getNodeStatus = (nodeId) => {
+          if (currentExecutionLogs.value && currentExecutionLogs.value.length > 0) {
+            const step = currentExecutionLogs.value.find(s => s.node_id === nodeId);
+            if (step) {
+              return { status: step.status, duration_ms: step.duration_ms };
+            }
           }
           return null;
         };
@@ -594,30 +658,25 @@
           nodeDefs.value = await res.json() || [];
         };
 
+        const selectExec = async (exec) => {
+          try {
+            const res = await fetch(`/api/v1/executions/${exec.id}`);
+            const fullExec = await res.json();
+            selectedExec.value = fullExec;
+            latestExecution.value = fullExec;
+          } catch (err) {
+            selectedExec.value = exec;
+          }
+        };
+
         const openExecutionsModal = async () => {
           if (!currentWorkflow.value) return;
           const res = await fetch(`/api/v1/workflows/${currentWorkflow.value.id}/executions`);
           executions.value = await res.json() || [];
           if (executions.value.length > 0) {
-            selectedExec.value = executions.value[0];
+            await selectExec(executions.value[0]);
           }
           showExecModal.value = true;
-        };
-
-        const parseLogs = (logs) => {
-          if (!logs) return [];
-          if (Array.isArray(logs)) return logs;
-          if (typeof logs === 'object') return [logs];
-          try {
-            const parsed = typeof logs === 'string' ? JSON.parse(logs) : logs;
-            if (typeof parsed === 'string') {
-              return JSON.parse(parsed);
-            }
-            return Array.isArray(parsed) ? parsed : [];
-          } catch (err) {
-            console.error("parseLogs error:", err);
-            return [];
-          }
         };
 
         const formatDate = (dateStr) => {
@@ -625,12 +684,25 @@
           return new Date(dateStr).toLocaleString();
         };
 
-        const selectWorkflow = (wf) => {
+        const selectWorkflow = async (wf) => {
           currentWorkflow.value = wf;
           nodes.value = JSON.parse(wf.nodes_json || '[]');
           edges.value = JSON.parse(wf.edges_json || '[]');
           selectedNodeId.value = null;
           showWfModal.value = false;
+
+          try {
+            const res = await fetch(`/api/v1/workflows/${wf.id}/executions`);
+            const execs = await res.json();
+            if (execs && execs.length > 0) {
+              await selectExec(execs[0]);
+            } else {
+              latestExecution.value = null;
+              selectedExec.value = null;
+            }
+          } catch (err) {
+            latestExecution.value = null;
+          }
         };
 
         const createNewWorkflow = async () => {
@@ -707,17 +779,27 @@
               edges_json: JSON.stringify(edges.value)
             })
           });
-          alert('✅ Workflow Saved Successfully!');
         };
 
         const runWorkflow = async () => {
           if (!currentWorkflow.value) return;
           running.value = true;
           try {
+            // ALWAYS SAVE WORKFLOW FIRST TO PERSIST CANVAS NODES & EDGES TO DB
+            await saveWorkflow();
+
             const res = await fetch(`/api/v1/workflows/${currentWorkflow.value.id}/trigger`, { method: 'POST' });
             const result = await res.json();
-            alert(`🚀 Execution Completed! Status: ${result.status} (${result.duration_ms}ms)`);
-            openExecutionsModal();
+
+            // Set current execution directly from the trigger return payload
+            selectedExec.value = result;
+            latestExecution.value = result;
+
+            // Fetch full details if needed
+            if (result.id) {
+              await selectExec(result);
+            }
+            showExecModal.value = true;
           } catch (err) {
             alert('Execution failed: ' + err.message);
           } finally {
@@ -817,8 +899,8 @@
 
         return {
           workflows, currentWorkflow, nodeDefs, groupedNodeDefs, getCategoryLabel, getNodeIcon, nodes, edges, selectedNodeId, selectedNode, otherNodes, outgoingWires, targetConnectId,
-          showWfModal, showExecModal, showCredModal, executions, selectedExec, currentExecutionLogs, getNodeLastOutput, newWfName, running, importFileInput,
-          onDragStart, onDrop, connectWire, deleteWire, selectNode, deleteSelectedNode, startDragNode, openExecutionsModal, parseLogs, formatDate,
+          showWfModal, showExecModal, showCredModal, executions, selectedExec, latestExecution, currentExecutionLogs, getNodeLastOutput, getNodeLastError, getNodeStatus, newWfName, running, importFileInput,
+          onDragStart, onDrop, connectWire, deleteWire, selectNode, deleteSelectedNode, startDragNode, openExecutionsModal, parseLogs, formatDate, selectExec,
           exportWorkflowJson, triggerImportClick, importWorkflowJson,
           getNodeX, getNodeY, getNodeName, saveWorkflow, runWorkflow, selectWorkflow, createNewWorkflow, deleteWf
         };
