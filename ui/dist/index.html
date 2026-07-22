@@ -1011,9 +1011,20 @@
               <option value="api_key">API Key (OpenAI, DeepSeek, etc.)</option>
               <option value="token">Token / Bot Token (Telegram, Discord)</option>
               <option value="smtp_pass">SMTP Password / Password</option>
+              <option value="oauth2">OAuth2 Link Account</option>
             </select>
-            <input type="password" v-model="newCredValue" placeholder="Secret Value (will be AES encrypted)" class="form-input" />
-            <button class="btn btn-primary" style="margin-top: 4px;" @click="createCredential">Add Encrypted Credential</button>
+            <div v-if="newCredType !== 'oauth2'">
+              <input type="password" v-model="newCredValue" placeholder="Secret Value (will be AES encrypted)" class="form-input" />
+              <button class="btn btn-primary" style="margin-top: 8px; width: 100%;" @click="createCredential">Add Encrypted Credential</button>
+            </div>
+            <div v-else style="display: flex; flex-direction: column; gap: 8px;">
+              <input type="text" v-model="oauthClientID" placeholder="Client ID" class="form-input" />
+              <input type="password" v-model="oauthClientSecret" placeholder="Client Secret" class="form-input" />
+              <input type="text" v-model="oauthAuthURL" placeholder="Auth URL (e.g. Google auth endpoint)" class="form-input" />
+              <input type="text" v-model="oauthTokenURL" placeholder="Token URL (e.g. Google token endpoint)" class="form-input" />
+              <input type="text" v-model="oauthScopes" placeholder="Scopes (separated by spaces or commas)" class="form-input" />
+              <button class="btn btn-primary" style="margin-top: 8px; background: #0284c7; border-color: #0284c7; width: 100%;" @click="linkOAuth2">🔗 Link Account (OAuth2)</button>
+            </div>
           </div>
         </div>
 
@@ -1053,6 +1064,11 @@
         const newCredName = ref('');
         const newCredType = ref('api_key');
         const newCredValue = ref('');
+        const oauthClientID = ref('');
+        const oauthClientSecret = ref('');
+        const oauthAuthURL = ref('https://accounts.google.com/o/oauth2/auth');
+        const oauthTokenURL = ref('https://oauth2.googleapis.com/token');
+        const oauthScopes = ref('https://www.googleapis.com/auth/spreadsheets');
         const executions = ref([]);
         const selectedExec = ref(null);
         const latestExecution = ref(null);
@@ -1615,6 +1631,32 @@
           }
         });
 
+        const linkOAuth2 = () => {
+          if (!newCredName.value.trim() || !oauthClientID.value.trim() || !oauthClientSecret.value.trim() || !oauthAuthURL.value.trim() || !oauthTokenURL.value.trim()) {
+            alert('Vui lòng điền đầy đủ thông tin cấu hình OAuth2!');
+            return;
+          }
+          const params = new URLSearchParams({
+            name: newCredName.value,
+            client_id: oauthClientID.value,
+            client_secret: oauthClientSecret.value,
+            auth_url: oauthAuthURL.value,
+            token_url: oauthTokenURL.value,
+            scopes: oauthScopes.value
+          });
+          const url = `/api/v1/oauth2/authorize?${params.toString()}`;
+          window.open(url, '_blank');
+          
+          showCredModal.value = false;
+          newCredName.value = '';
+          oauthClientID.value = '';
+          oauthClientSecret.value = '';
+          
+          setTimeout(async () => {
+            await fetchCredentials();
+          }, 5000);
+        };
+
         onMounted(() => {
           fetchWorkflows();
           fetchNodeDefs();
@@ -1628,7 +1670,8 @@
           onDragStart, onDrop, connectWire, deleteWire, selectNode, deleteSelectedNode, startDragNode, openExecutionsModal, parseLogs, formatDate, selectExec,
           exportWorkflowJson, triggerImportClick, importWorkflowJson,
           getNodeX, getNodeY, getNodeName, saveWorkflow, runWorkflow, selectWorkflow, createNewWorkflow, deleteWf, getNodeCategoryColor,
-          getNodeLastOutputKeys, insertVariable, getNodeStatusStyle, activeSidebarTab, copyToClipboard
+          getNodeLastOutputKeys, insertVariable, getNodeStatusStyle, activeSidebarTab, copyToClipboard,
+          oauthClientID, oauthClientSecret, oauthAuthURL, oauthTokenURL, oauthScopes, linkOAuth2
         };
       }
     }).mount('#app');

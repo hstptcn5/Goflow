@@ -41,30 +41,52 @@ func (e *GoogleSheetsExecutor) Execute(ctx *ExecutionContext, node *Node) (inter
 
 	// Resolve Service Account JSON key (prioritize Vault credential)
 	saJSON := directSA
-	if credID != "" {
+	var accessToken string
+	var useOAuth2 bool
+
+	if credID != "" && ctx.RefreshCredential != nil {
+		secret, err := ctx.RefreshCredential(credID)
+		if err == nil && secret != "" {
+			if !strings.HasPrefix(strings.TrimSpace(secret), "{") {
+				accessToken = secret
+				useOAuth2 = true
+			} else {
+				saJSON = secret
+			}
+		}
+	} else if credID != "" {
 		ctx.mu.RLock()
 		decrypted, ok := ctx.Credentials[credID]
 		ctx.mu.RUnlock()
 		if ok && decrypted != "" {
-			saJSON = decrypted
+			if !strings.HasPrefix(strings.TrimSpace(decrypted), "{") {
+				accessToken = decrypted
+				useOAuth2 = true
+			} else {
+				saJSON = decrypted
+			}
 		}
 	}
 
-	if strings.TrimSpace(saJSON) == "" {
-		return nil, fmt.Errorf("service_account_json is empty (please set it directly or select a valid credential)")
-	}
-
-	// 2. Generate Google OAuth2 Token using JWT config
-	jwtConfig, err := google.JWTConfigFromJSON([]byte(saJSON), "https://www.googleapis.com/auth/spreadsheets")
-	if err != nil {
-		return nil, fmt.Errorf("invalid service account JSON: %w", err)
-	}
-
 	httpClient := &http.Client{Timeout: 10 * time.Second}
-	ts := jwtConfig.TokenSource(context.Background())
-	token, err := ts.Token()
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate OAuth2 token: %w", err)
+
+	if !useOAuth2 {
+		if strings.TrimSpace(saJSON) == "" {
+			return nil, fmt.Errorf("service_account_json is empty (please set it directly or select a valid credential)")
+		}
+
+		// 2. Generate Google OAuth2 Token using JWT config
+		jwtConfig, err := google.JWTConfigFromJSON([]byte(saJSON), "https://www.googleapis.com/auth/spreadsheets")
+		if err != nil {
+			return nil, fmt.Errorf("invalid service account JSON: %w", err)
+		}
+
+		ts := jwtConfig.TokenSource(context.Background())
+		token, err := ts.Token()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate OAuth2 token: %w", err)
+		}
+		accessToken = token.AccessToken
 	}
 
 	// 3. Perform REST requests
@@ -95,7 +117,7 @@ func (e *GoogleSheetsExecutor) Execute(ctx *ExecutionContext, node *Node) (inter
 		if err != nil {
 			return nil, fmt.Errorf("failed to create http request: %w", err)
 		}
-		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+		req.Header.Set("Authorization", "Bearer "+accessToken)
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := httpClient.Do(req)
@@ -120,7 +142,7 @@ func (e *GoogleSheetsExecutor) Execute(ctx *ExecutionContext, node *Node) (inter
 		if err != nil {
 			return nil, fmt.Errorf("failed to create http request: %w", err)
 		}
-		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+		req.Header.Set("Authorization", "Bearer "+accessToken)
 
 		resp, err := httpClient.Do(req)
 		if err != nil {

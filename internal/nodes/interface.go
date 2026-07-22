@@ -65,6 +65,7 @@ type ExecutionContext struct {
 	
 	// Callback to execute another workflow, avoiding circular dependency
 	ExecuteWorkflow func(workflowID string, payload interface{}) (interface{}, error)
+	RefreshCredential func(id string) (string, error)
 }
 
 func NewExecutionContext(workflowID, executionID string) *ExecutionContext {

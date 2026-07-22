@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"goflow/internal/storage"
 
 	"github.com/google/uuid"
+	"golang.org/x/oauth2"
 )
 
 type NodeLog struct {
@@ -90,6 +92,65 @@ func (e *Engine) ExecuteWorkflow(wf *storage.Workflow, triggerPayload interface{
 	}
 
 	ctx := nodes.NewExecutionContext(wf.ID, executionID)
+	ctx.RefreshCredential = func(credID string) (string, error) {
+		cred, err := e.credStore.GetByID(credID)
+		if err != nil {
+			return "", err
+		}
+		if cred.Type != "oauth2" {
+			return e.credStore.GetDecryptedData(credID)
+		}
+
+		decryptedRaw, err := e.credStore.GetDecryptedData(credID)
+		if err != nil {
+			return "", err
+		}
+
+		var payload struct {
+			Config struct {
+				ClientID     string `json:"client_id"`
+				ClientSecret string `json:"client_secret"`
+				AuthURL      string `json:"auth_url"`
+				TokenURL     string `json:"token_url"`
+				Scopes       string `json:"scopes"`
+			} `json:"config"`
+			Token *oauth2.Token `json:"token"`
+		}
+
+		if err := json.Unmarshal([]byte(decryptedRaw), &payload); err != nil {
+			return "", err
+		}
+
+		if payload.Token == nil {
+			return "", fmt.Errorf("OAuth2 token not linked yet")
+		}
+
+		if payload.Token.Expiry.Before(time.Now().Add(60 * time.Second)) {
+			conf := &oauth2.Config{
+				ClientID:     payload.Config.ClientID,
+				ClientSecret: payload.Config.ClientSecret,
+				Endpoint: oauth2.Endpoint{
+					AuthURL:  payload.Config.AuthURL,
+					TokenURL: payload.Config.TokenURL,
+				},
+			}
+
+			ts := conf.TokenSource(context.Background(), payload.Token)
+			newToken, err := ts.Token()
+			if err != nil {
+				return "", fmt.Errorf("failed to refresh OAuth2 token: %w", err)
+			}
+
+			payload.Token = newToken
+			updatedBytes, err := json.Marshal(payload)
+			if err == nil {
+				_ = e.credStore.UpdateData(credID, string(updatedBytes))
+			}
+		}
+
+		return payload.Token.AccessToken, nil
+	}
+
 	ctx.ExecuteWorkflow = func(subWfID string, payload interface{}) (interface{}, error) {
 		subWf, err := e.wfStore.GetByID(subWfID)
 		if err != nil {

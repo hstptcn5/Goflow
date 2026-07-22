@@ -101,3 +101,24 @@ func (s *CredentialStore) Delete(id string) error {
 	_, err := s.db.WriteDB.Exec(query, id)
 	return err
 }
+
+func (s *CredentialStore) UpdateData(id, rawData string) error {
+	encryptedData, err := s.crypto.Encrypt([]byte(rawData))
+	if err != nil {
+		return err
+	}
+	query := `UPDATE credentials SET data_encrypted = ?, updated_at = ? WHERE id = ?`
+	_, err = s.db.WriteDB.Exec(query, encryptedData, time.Now(), id)
+	return err
+}
+
+func (s *CredentialStore) GetByID(id string) (*Credential, error) {
+	query := `SELECT id, name, type, data_encrypted, created_at, updated_at FROM credentials WHERE id = ?`
+	row := s.db.ReadDB.QueryRow(query, id)
+	var c Credential
+	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.DataEncrypted, &c.CreatedAt, &c.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}

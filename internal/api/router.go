@@ -43,10 +43,13 @@ func NewRouter(
 	execHandler := NewExecutionHandler(execStore)
 	credHandler := NewCredentialHandler(credStore)
 	nodeHandler := NewNodeHandler(registry)
+	oauth2Handler := NewOAuth2Handler(credStore)
 	wsHandler := NewWSHandler(eventBus)
 
 	// API v1 Routes
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Get("/oauth2/authorize", oauth2Handler.Authorize)
+		r.Get("/oauth2/callback", oauth2Handler.Callback)
 		// Workflows
 		r.Get("/workflows", wfHandler.ListWorkflows)
 		r.Post("/workflows", wfHandler.CreateWorkflow)
