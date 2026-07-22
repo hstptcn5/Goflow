@@ -5,60 +5,64 @@
 [![Binary Size](https://img.shields.io/badge/Single_Binary-%3C_25MB-success?style=flat-square)]()
 [![RAM Consumption](https://img.shields.io/badge/RAM_Usage-15--25MB-blueviolet?style=flat-square)]()
 
-**Goflow** is a super lightweight, local-first, zero-dependency alternative to heavy workflow automation platforms like n8n, Zapier, or Make. Compiled into a **single executable binary** (~24 MB) with minimal memory footprint (15 - 25 MB RAM), Goflow features a **Pure Go CGO-free SQLite storage engine** (`modernc.org/sqlite`) and an embedded **Vue 3 drag-and-drop Web UI**.
+Goflow is a super lightweight, local-first, zero-dependency alternative to heavy workflow automation platforms like n8n, Zapier, or Make. Compiled into a single executable binary (~24 MB) with minimal memory footprint (15 - 25 MB RAM), Goflow features a Pure Go CGO-free SQLite storage engine (`modernc.org/sqlite`) and an embedded Vue 3 drag-and-drop Web UI.
 
 ---
 
-## ⚡ Resource & Performance Comparison
+## Resource and Performance Comparison
 
-| Feature / Benchmark | ⚡ **Goflow (Go)** | 📦 **n8n (Node.js)** | ☁️ **Zapier / Make** |
+| Feature / Benchmark | Goflow (Go) | n8n (Node.js) | Zapier / Make |
 | :--- | :---: | :---: | :---: |
-| **RAM Footprint (Idle)** | 🟢 **15 - 25 MB** | 🔴 400 - 800 MB | ☁️ Cloud SaaS |
-| **Binary & Packaging** | 🟢 **Single File (~24 MB)** | 🔴 Heavy Docker Image | ☁️ Closed SaaS |
-| **External Dependencies** | 🟢 **NONE (Zero)** | 🔴 Node.js, PostgreSQL | ☁️ Closed SaaS |
-| **Node Delay Overhead** | 🟢 **~2 - 5 µs** (Goroutines) | 🟡 ~50 - 150 ms | 🔴 ~500 - 2000 ms |
-| **Database Storage** | 🟢 **Pure Go SQLite (WAL)** | 🔴 PostgreSQL / SQLite | ☁️ Cloud SaaS |
-| **Infrastructure Cost** | 🟢 **$0 (Any $1 VPS / Pi)** | 🟡 $10 - $40/mo VPS | 🔴 $20 - $100+/mo |
+| **RAM Footprint (Idle)** | **15 - 25 MB** | 400 - 800 MB | Cloud SaaS |
+| **Binary & Packaging** | **Single File (~24 MB)** | Heavy Docker Image | Closed SaaS |
+| **External Dependencies** | **NONE (Zero)** | Node.js, PostgreSQL | Closed SaaS |
+| **Node Delay Overhead** | **~2 - 5 us** (Goroutines) | ~50 - 150 ms | ~500 - 2000 ms |
+| **Database Storage** | **Pure Go SQLite (WAL)** | PostgreSQL / SQLite | Cloud SaaS |
+| **Infrastructure Cost** | **$0 (Any $1 VPS / Pi)** | $10 - $40/mo VPS | $20 - $100+/mo |
 
 ---
 
-## 📌 Repository About Summary (GitHub Sidebar)
+## Repository Overview
 
-> **Short Description / Tagline for GitHub:**  
-> 🚀 **Goflow**: The ultra-lightweight, zero-dependency alternative to n8n & Zapier. Single Go binary (<25MB, 15-25MB RAM), local-first, pure Go SQLite, and embedded visual drag-and-drop UI. Fast, private, and effortless automation.
+> **Tagline:**  
+> Goflow is an ultra-lightweight, zero-dependency alternative to n8n and Zapier. Single Go binary (<25MB, 15-25MB RAM), local-first, pure Go SQLite, and embedded visual drag-and-drop UI. Fast, private, and effortless automation.
 
-**Topics / Tags for GitHub Repo:**  
-`go` `golang` `workflow-automation` `dag-engine` `n8n-alternative` `zapier-alternative` `sqlite` `vue3` `vue-flow` `zero-dependency` `single-binary` `local-first`
-
----
-
-## ✨ Key Features
-
-- ⚡ **Single Binary & Zero External Dependencies**: Requires NO Docker, Node.js, or PostgreSQL in production. Everything is bundled into one executable file.
-- 🚀 **DAG Execution Engine**: Concurrent execution of independent nodes via **Goroutines & Channels** with Kahn's topological sort and cyclic dependency detection.
-- 💾 **Pure Go SQLite Storage**: High performance Write-Ahead Logging (`WAL` mode), isolated Single Writer pool (`MaxOpenConns(1)`), and Reader connection pool (`MaxOpenConns(8)`).
-- 🔒 **AES-256-GCM Encrypted Credentials**: Authenticated encryption with Argon2id key derivation protecting API keys, passwords, and Bot Tokens.
-- 📡 **Real-Time WebSocket Execution Timeline**: Push real-time step execution updates, status badges, and JSON payload logs via WebSockets.
-- 🎨 **Modern High-Contrast Light Theme Canvas**: Visual workflow builder powered by Vue 3, Vite, Vue Flow, and Pinia with manual wire connection tools.
-- 📥 **Export & Import Workflow JSON**: Portable JSON format allowing easy backup and sharing of workflows across instances.
-- 🔁 **Built-in Auto-Retry Engine**: Automatic retry loop (up to 3 attempts with exponential backoff) for resilient network calls.
+**Topics:** `go` `golang` `workflow-automation` `dag-engine` `n8n-alternative` `zapier-alternative` `sqlite` `vue3` `vue-flow` `zero-dependency` `single-binary` `local-first`
 
 ---
 
-## 🧩 Built-in Node Executors
+## Key Features
 
-1. 🔗 **Webhook Trigger**: Triggers a workflow execution upon receiving an incoming HTTP Webhook request payload.
-2. ⏰ **Cron Schedule Trigger**: Automatically runs workflows based on standard Cron expressions (e.g., `*/5 * * * *`).
-3. 🌐 **HTTP Request Action**: Sends REST API HTTP requests (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`) with custom headers, authentication, and body.
-4. 📬 **SMTP Email Action**: Sends automated emails via any SMTP server (Gmail, Mailgun, custom SMTP) with HTML formatting.
-5. 💬 **Telegram Bot Action**: Sends instant HTML-formatted notifications to Telegram chats or channels via Telegram Bot API.
-6. ⏳ **Delay / Sleep Logic**: Pauses workflow execution for a configured duration ($N$ seconds).
-7. ⚙️ **JSON Transform Action**: Constructs or extracts dynamic JSON data structures.
-8. 🔀 **IF / ELSE Condition**: Branches workflow execution paths based on comparison operators (`equals`, `contains`, `is_not_empty`).
+- **Single Binary & Zero External Dependencies**: Requires NO Docker, Node.js, or PostgreSQL in production. Everything is bundled into one executable file.
+- **DAG Execution Engine**: Concurrent execution of independent nodes via Goroutines & Channels with Kahn's topological sort and cyclic dependency detection.
+- **Pure Go SQLite Storage**: High performance Write-Ahead Logging (WAL mode), isolated Single Writer pool (`MaxOpenConns(1)`), and Reader connection pool (`MaxOpenConns(8)`).
+- **AES-256-GCM Encrypted Credentials**: Authenticated encryption with Argon2id key derivation protecting API keys, passwords, and Bot Tokens.
+- **Real-Time WebSocket Execution Timeline**: Push real-time step execution updates, status badges, and JSON payload logs via WebSockets.
+- **Modern High-Contrast Light Theme Canvas**: Visual workflow builder powered by Vue 3, Vite, Vue Flow, and Pinia with manual wire connection tools.
+- **Export & Import Workflow JSON**: Portable JSON format allowing easy backup and sharing of workflows across instances.
+- **Built-in Auto-Retry Engine**: Automatic retry loop (up to 3 attempts with exponential backoff) for resilient network calls.
 
 ---
 
-## 🏗️ Architecture & Project Structure
+## Built-in Node Executors
+
+1. **Webhook Trigger**: Triggers a workflow execution upon receiving an incoming HTTP Webhook request payload.
+2. **Cron Schedule Trigger**: Automatically runs workflows based on standard Cron expressions (e.g., `*/5 * * * *`).
+3. **HTTP Request Action**: Sends REST API HTTP requests (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`) with custom headers, authentication, and body.
+4. **OpenAI ChatGPT Action**: Generates text and completions via OpenAI API (GPT-4o, GPT-3.5).
+5. **DeepSeek AI Action**: Generates responses via DeepSeek-V3 (`deepseek-chat`) and DeepSeek-R1 (`deepseek-reasoner`).
+6. **SMTP Email Action**: Sends automated emails via any SMTP server (Gmail, Mailgun, custom SMTP) with HTML formatting.
+7. **Telegram Bot Action**: Sends instant HTML-formatted notifications to Telegram chats or channels via Telegram Bot API.
+8. **Discord Webhook Action**: Sends notifications and Embed cards to Discord channels.
+9. **Slack Webhook Action**: Sends notifications to Slack channels.
+10. **Delay / Sleep Logic**: Pauses workflow execution for a configured duration ($N$ seconds).
+11. **JSON Transform Action**: Constructs or extracts dynamic JSON data structures.
+12. **JS Code Runner Action**: Executes custom JavaScript expressions and transformations.
+13. **IF / ELSE Condition**: Branches workflow execution paths based on comparison operators (`equals`, `contains`, `is_not_empty`).
+
+---
+
+## Project Structure
 
 ```
 d:/Bot2026/Goflow/
@@ -79,7 +83,7 @@ d:/Bot2026/Goflow/
 
 ---
 
-## 🚀 Quick Start Guide
+## Quick Start Guide
 
 ### 1. Download Dependencies & Generate `go.sum`
 ```bash
@@ -94,14 +98,13 @@ Open your browser and navigate to: `http://localhost:8080`
 
 ### 3. Build Single Binary Executable for Production
 ```bash
-# Build single executable binary
 go build -o goflow.exe main.go static_embed.go
 ```
-Run `goflow.exe` directly on any server without installing runtime dependencies!
+Run `goflow.exe` directly on any server without installing runtime dependencies.
 
 ---
 
-## 📡 REST API & Endpoint Specifications
+## REST API & Endpoint Specifications
 
 - `GET /api/v1/workflows`: List all workflows.
 - `POST /api/v1/workflows`: Create a new workflow.
@@ -117,6 +120,6 @@ Run `goflow.exe` directly on any server without installing runtime dependencies!
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the [MIT License](LICENSE).

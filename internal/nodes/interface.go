@@ -17,6 +17,11 @@ const (
 	TypeConditionIF    NodeType = "conditionIf"
 	TypeEmailSMTP      NodeType = "emailSMTP"
 	TypeDelaySleep     NodeType = "delaySleep"
+	TypeOpenAIGPT      NodeType = "openAIGPT"
+	TypeDeepSeekAI     NodeType = "deepseekAI"
+	TypeDiscordBot     NodeType = "discordBot"
+	TypeSlackBot       NodeType = "slackBot"
+	TypeJSCodeRunner   NodeType = "jsCodeRunner"
 )
 
 // Node biểu diễn một nút trên Canvas workflow
@@ -85,7 +90,7 @@ type NodeDefinition struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
 	Icon        string            `json:"icon"`
-	Category    string            `json:"category"` // 'TRIGGER', 'ACTION', 'LOGIC'
+	Category    string            `json:"category"` // 'TRIGGER', 'COMMUNICATION', 'AI & LLM', 'LOGIC'
 	Params      []ParamDefinition `json:"params"`
 }
 

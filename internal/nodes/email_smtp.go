@@ -73,7 +73,7 @@ func (e *EmailSMTPExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeEmailSMTP,
 		Name:        "SMTP Email",
-		Description: "Tự động gửi Email thông qua SMTP (Gmail, Custom SMTP)",
+		Description: "Tu dong gui Email thong qua SMTP (Gmail, Custom SMTP)",
 		Icon:        "Mail",
 		Category:    "ACTION",
 		Params: []ParamDefinition{
@@ -83,7 +83,7 @@ func (e *EmailSMTPExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "smtp.gmail.com",
 				Required:    true,
-				Description: "Địa chỉ server SMTP (ví dụ: smtp.gmail.com)",
+				Description: "Dia chi server SMTP (smtp.gmail.com)",
 			},
 			{
 				Name:        "port",
@@ -91,7 +91,7 @@ func (e *EmailSMTPExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "587",
 				Required:    true,
-				Description: "Cổng SMTP (587 cho TLS/STARTTLS, 465 cho SSL)",
+				Description: "Cong SMTP (587 cho TLS, 465 cho SSL)",
 			},
 			{
 				Name:        "username",
@@ -99,7 +99,7 @@ func (e *EmailSMTPExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "",
 				Required:    true,
-				Description: "Tên đăng nhập / Email người gửi",
+				Description: "Ten dang nhap / Email nguoi gui",
 			},
 			{
 				Name:        "password",
@@ -107,7 +107,7 @@ func (e *EmailSMTPExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "",
 				Required:    false,
-				Description: "Mật khẩu ứng dụng (App Password)",
+				Description: "Mat khau ung dung (App Password)",
 			},
 			{
 				Name:        "credential_id",
@@ -115,7 +115,7 @@ func (e *EmailSMTPExecutor) GetDefinition() NodeDefinition {
 				Type:        "credential",
 				Default:     "",
 				Required:    false,
-				Description: "Hoặc chọn Mật khẩu đã mã hóa trong Credentials",
+				Description: "Mat khau da ma hoa trong Credentials",
 			},
 			{
 				Name:        "to",
@@ -123,15 +123,15 @@ func (e *EmailSMTPExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "",
 				Required:    true,
-				Description: "Email người nhận (phân cách bằng dấu phẩy nếu nhiều)",
+				Description: "Email nguoi nhan",
 			},
 			{
 				Name:        "subject",
 				Label:       "Email Subject",
 				Type:        "text",
-				Default:     "🚀 Goflow Notification",
+				Default:     "Goflow Notification",
 				Required:    true,
-				Description: "Tiêu đề thư",
+				Description: "Tieu de thu",
 			},
 			{
 				Name:        "body",
@@ -139,7 +139,7 @@ func (e *EmailSMTPExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "<h3>Goflow Notification</h3><p>Your workflow completed successfully!</p>",
 				Required:    true,
-				Description: "Nội dung email (Hỗ trợ HTML formatting)",
+				Description: "Noi dung email (HTML)",
 			},
 		},
 	}

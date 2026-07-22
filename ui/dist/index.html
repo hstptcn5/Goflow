@@ -69,19 +69,21 @@
 
     /* Sidebar Left: Node Palette */
     .sidebar-palette {
-      width: 260px; background: #ffffff; border-right: 2px solid var(--border-color);
+      width: 280px; background: #ffffff; border-right: 2px solid var(--border-color);
       display: flex; flex-direction: column; padding: 16px; gap: 16px; overflow-y: auto;
     }
-    .palette-title { font-size: 0.9rem; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .category-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+    .category-header { font-size: 0.75rem; font-weight: 800; color: #2563eb; text-transform: uppercase; letter-spacing: 0.05em; background: #eff6ff; padding: 4px 8px; border-radius: 4px; width: max-content; }
+
     .node-item {
-      display: flex; align-items: center; gap: 10px; padding: 12px;
+      display: flex; align-items: center; gap: 10px; padding: 10px 12px;
       background: #ffffff; border: 2px solid #cbd5e1; border-radius: 10px;
       cursor: grab; transition: all 0.15s; box-shadow: 0 2px 6px rgba(0,0,0,0.04);
     }
     .node-item:hover { border-color: #2563eb; transform: translateY(-2px); box-shadow: 0 6px 16px rgba(37,99,235,0.15); }
-    .node-item-icon { font-size: 1.3rem; }
-    .node-item-name { font-size: 0.875rem; font-weight: 700; color: #0f172a; }
-    .node-item-desc { font-size: 0.725rem; color: #64748b; }
+    .node-item-icon { font-size: 1.2rem; }
+    .node-item-name { font-size: 0.85rem; font-weight: 700; color: #0f172a; }
+    .node-item-desc { font-size: 0.7rem; color: #64748b; }
 
     /* Canvas Center */
     .canvas-wrapper { flex: 1; height: 100%; position: relative; background: #f8fafc; overflow: auto; padding: 40px; }
@@ -155,7 +157,7 @@
       <div class="brand">
         <span class="brand-icon">⚡</span>
         <span class="brand-title">Goflow</span>
-        <span class="brand-badge">PHASE 2</span>
+        <span class="brand-badge">DEEPSEEK AI</span>
       </div>
 
       <div v-if="currentWorkflow" style="display: flex; align-items: center; gap: 12px;">
@@ -181,14 +183,20 @@
 
     <!-- App Main Layout -->
     <div class="app-main">
-      <!-- Left Sidebar Palette -->
+      <!-- Left Sidebar Palette Grouped by Category -->
       <aside class="sidebar-palette">
-        <div class="palette-title">🧩 Node Library</div>
-        <div v-for="nodeDef in nodeDefs" :key="nodeDef.type" class="node-item" draggable="true" @dragstart="onDragStart($event, nodeDef)">
-          <span class="node-item-icon">⚡</span>
-          <div>
-            <div class="node-item-name">{{ nodeDef.name }}</div>
-            <div class="node-item-desc">{{ nodeDef.description }}</div>
+        <div style="font-size: 0.9rem; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+          🧩 Node Library
+        </div>
+
+        <div v-for="(defs, category) in groupedNodeDefs" :key="category" class="category-group">
+          <div class="category-header">{{ getCategoryLabel(category) }}</div>
+          <div v-for="nodeDef in defs" :key="nodeDef.type" class="node-item" draggable="true" @dragstart="onDragStart($event, nodeDef)">
+            <span class="node-item-icon">{{ getNodeIcon(nodeDef.type) }}</span>
+            <div>
+              <div class="node-item-name">{{ nodeDef.name }}</div>
+              <div class="node-item-desc">{{ nodeDef.description }}</div>
+            </div>
           </div>
         </div>
       </aside>
@@ -212,11 +220,13 @@
                @mousedown="startDragNode($event, node)"
                @click.stop="selectNode(node.id)">
             <div class="canvas-node-title">
-              <span>{{ node.name }}</span>
+              <span>{{ getNodeIcon(node.type) }} {{ node.name }}</span>
               <span class="canvas-node-type">{{ node.type }}</span>
             </div>
             <div class="canvas-node-body" v-if="node.params.url">{{ node.params.url }}</div>
+            <div class="canvas-node-body" v-else-if="node.params.prompt">Prompt: {{ node.params.prompt }}</div>
             <div class="canvas-node-body" v-else-if="node.params.to">To: {{ node.params.to }}</div>
+            <div class="canvas-node-body" v-else-if="node.params.webhook_url">Webhook Configured</div>
             <div class="canvas-node-body" v-else-if="node.params.seconds">Delay {{ node.params.seconds }}s</div>
             <div class="canvas-node-body" v-else-if="node.params.message">{{ node.params.message }}</div>
             <div class="canvas-node-body" v-else>Configured</div>
@@ -258,7 +268,76 @@
         </div>
 
         <!-- Node Parameters Form -->
-        <div class="form-group" v-if="selectedNode.type === 'httpRequest'">
+        <div class="form-group" v-if="selectedNode.type === 'deepseekAI'">
+          <label>DeepSeek Model</label>
+          <select v-model="selectedNode.params.model" class="form-select">
+            <option value="deepseek-chat">deepseek-chat (DeepSeek-V3)</option>
+            <option value="deepseek-reasoner">deepseek-reasoner (DeepSeek-R1)</option>
+            <option value="deepseek-coder">deepseek-coder</option>
+          </select>
+
+          <label style="margin-top: 10px;">User Prompt</label>
+          <textarea v-model="selectedNode.params.prompt" class="form-textarea" placeholder="Explain quantum computing..."></textarea>
+
+          <label style="margin-top: 10px;">System Message</label>
+          <input type="text" v-model="selectedNode.params.system_message" placeholder="You are a helpful AI assistant" class="form-input" />
+
+          <label style="margin-top: 10px;">DeepSeek API Key (sk-...)</label>
+          <input type="password" v-model="selectedNode.params.api_key" placeholder="sk-..." class="form-input" />
+        </div>
+
+        <div class="form-group" v-else-if="selectedNode.type === 'openAIGPT'">
+          <label>AI Model</label>
+          <select v-model="selectedNode.params.model" class="form-select">
+            <option value="gpt-4o-mini">gpt-4o-mini</option>
+            <option value="gpt-4o">gpt-4o</option>
+            <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+          </select>
+
+          <label style="margin-top: 10px;">User Prompt</label>
+          <textarea v-model="selectedNode.params.prompt" class="form-textarea" placeholder="Summarize data..."></textarea>
+
+          <label style="margin-top: 10px;">System Message</label>
+          <input type="text" v-model="selectedNode.params.system_message" placeholder="You are an AI assistant" class="form-input" />
+
+          <label style="margin-top: 10px;">OpenAI API Key (sk-...)</label>
+          <input type="password" v-model="selectedNode.params.api_key" placeholder="sk-..." class="form-input" />
+        </div>
+
+        <div class="form-group" v-else-if="selectedNode.type === 'discordBot'">
+          <label>Discord Webhook URL</label>
+          <input type="text" v-model="selectedNode.params.webhook_url" placeholder="https://discord.com/api/webhooks/..." class="form-input" />
+
+          <label style="margin-top: 10px;">Bot Username</label>
+          <input type="text" v-model="selectedNode.params.username" placeholder="Goflow Bot" class="form-input" />
+
+          <label style="margin-top: 10px;">Message Content</label>
+          <textarea v-model="selectedNode.params.content" class="form-textarea"></textarea>
+
+          <label style="margin-top: 10px;">Embed Title</label>
+          <input type="text" v-model="selectedNode.params.embed_title" class="form-input" />
+
+          <label style="margin-top: 10px;">Embed Description</label>
+          <textarea v-model="selectedNode.params.embed_desc" class="form-textarea"></textarea>
+        </div>
+
+        <div class="form-group" v-else-if="selectedNode.type === 'slackBot'">
+          <label>Slack Webhook URL</label>
+          <input type="text" v-model="selectedNode.params.webhook_url" placeholder="https://hooks.slack.com/services/..." class="form-input" />
+
+          <label style="margin-top: 10px;">Message Text</label>
+          <textarea v-model="selectedNode.params.text" class="form-textarea"></textarea>
+
+          <label style="margin-top: 10px;">Bot Name</label>
+          <input type="text" v-model="selectedNode.params.username" placeholder="Goflow Bot" class="form-input" />
+        </div>
+
+        <div class="form-group" v-else-if="selectedNode.type === 'jsCodeRunner'">
+          <label>JS Code / JSON Expression</label>
+          <textarea v-model="selectedNode.params.code" class="form-textarea" placeholder="{ }"></textarea>
+        </div>
+
+        <div class="form-group" v-else-if="selectedNode.type === 'httpRequest'">
           <label>HTTP Method</label>
           <select v-model="selectedNode.params.method" class="form-select">
             <option value="GET">GET</option>
@@ -458,6 +537,36 @@
           return edges.value.filter(e => e.source === selectedNodeId.value);
         });
 
+        const groupedNodeDefs = computed(() => {
+          const groups = {};
+          nodeDefs.value.forEach(def => {
+            const cat = def.category || 'LOGIC & UTILITY';
+            if (!groups[cat]) groups[cat] = [];
+            groups[cat].push(def);
+          });
+          return groups;
+        });
+
+        const getCategoryLabel = (cat) => {
+          if (cat === 'TRIGGER') return '⚡ TRIGGERS';
+          if (cat === 'COMMUNICATION') return '💬 COMMUNICATION';
+          if (cat === 'AI & LLM') return '🤖 AI & LLM';
+          return '🔀 LOGIC & UTILITY';
+        };
+
+        const getNodeIcon = (type) => {
+          if (type === 'deepseekAI') return '🧠';
+          if (type === 'openAIGPT') return '🤖';
+          if (type === 'discordBot') return '👾';
+          if (type === 'slackBot') return '💬';
+          if (type === 'telegramBot') return '✈️';
+          if (type === 'emailSMTP') return '📧';
+          if (type === 'webhookTrigger' || type === 'cronTrigger') return '⚡';
+          if (type === 'delaySleep') return '⏳';
+          if (type === 'jsCodeRunner') return '📜';
+          return '⚙️';
+        };
+
         const currentExecutionLogs = computed(() => {
           if (!selectedExec.value) return [];
           const logsStr = selectedExec.value.logs_json || selectedExec.value.LogsJSON;
@@ -632,7 +741,7 @@
             params: {
               url: 'https://httpbin.org/get', method: 'GET', message: 'Hello Goflow!',
               host: 'smtp.gmail.com', port: '587', username: 'sender@gmail.com', to: 'recipient@example.com', subject: 'Notification',
-              seconds: '3'
+              seconds: '3', prompt: 'Explain quantum computing...', code: '{\n  "status": "processed"\n}'
             }
           };
           nodes.value.push(newNode);
@@ -707,7 +816,7 @@
         });
 
         return {
-          workflows, currentWorkflow, nodeDefs, nodes, edges, selectedNodeId, selectedNode, otherNodes, outgoingWires, targetConnectId,
+          workflows, currentWorkflow, nodeDefs, groupedNodeDefs, getCategoryLabel, getNodeIcon, nodes, edges, selectedNodeId, selectedNode, otherNodes, outgoingWires, targetConnectId,
           showWfModal, showExecModal, showCredModal, executions, selectedExec, currentExecutionLogs, getNodeLastOutput, newWfName, running, importFileInput,
           onDragStart, onDrop, connectWire, deleteWire, selectNode, deleteSelectedNode, startDragNode, openExecutionsModal, parseLogs, formatDate,
           exportWorkflowJson, triggerImportClick, importWorkflowJson,
