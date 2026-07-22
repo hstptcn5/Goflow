@@ -551,6 +551,276 @@
             </div>
           </div>
 
+          <div class="form-group" v-else-if="selectedNode.type === 'postgresQuery'">
+            <label>Select Encrypted Credential (AES-256)</label>
+            <select v-model="selectedNode.params.credential_id" class="form-select">
+              <option value="">-- Use direct connection string below --</option>
+              <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+            </select>
+
+            <label style="margin-top: 10px;">Connection String</label>
+            <input type="text" v-model="selectedNode.params.connection_string" class="form-input" 
+                   placeholder="postgres://user:pass@host:5432/db?sslmode=disable" />
+
+            <label style="margin-top: 10px;">Query Type</label>
+            <select v-model="selectedNode.params.query_type" class="form-select">
+              <option value="SELECT">SELECT (Returns rows as JSON)</option>
+              <option value="EXECUTE">EXECUTE (Returns rows affected)</option>
+            </select>
+
+            <label style="margin-top: 10px;">SQL Query</label>
+            <textarea v-model="selectedNode.params.query" class="form-textarea" 
+                      placeholder="SELECT * FROM users WHERE id = {{trigger.id}};"></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'redisCommand'">
+            <label>Select Encrypted Credential</label>
+            <select v-model="selectedNode.params.credential_id" class="form-select">
+              <option value="">-- Use direct input below --</option>
+              <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+            </select>
+
+            <label style="margin-top: 10px;">Redis Host Address</label>
+            <input type="text" v-model="selectedNode.params.address" class="form-input" placeholder="localhost:6379" />
+
+            <label style="margin-top: 10px;">Redis Password</label>
+            <input type="password" v-model="selectedNode.params.password" class="form-input" placeholder="Optional" />
+
+            <label style="margin-top: 10px;">Redis Database Index</label>
+            <input type="text" v-model="selectedNode.params.db" class="form-input" placeholder="0" />
+
+            <label style="margin-top: 10px;">Redis Command</label>
+            <select v-model="selectedNode.params.command" class="form-select">
+              <option value="GET">GET</option>
+              <option value="SET">SET</option>
+              <option value="DEL">DEL</option>
+              <option value="EXISTS">EXISTS</option>
+              <option value="LPUSH">LPUSH</option>
+              <option value="RPUSH">RPUSH</option>
+              <option value="HSET">HSET</option>
+              <option value="HGET">HGET</option>
+            </select>
+
+            <label style="margin-top: 10px;">Redis Key</label>
+            <input type="text" v-model="selectedNode.params.key" class="form-input" placeholder="my-key" />
+
+            <label v-if="selectedNode.params.command === 'HGET' || selectedNode.params.command === 'HSET'" style="margin-top: 10px;">Hash Field</label>
+            <input v-if="selectedNode.params.command === 'HGET' || selectedNode.params.command === 'HSET'" type="text" v-model="selectedNode.params.field" class="form-input" placeholder="my-field" />
+
+            <label v-if="selectedNode.params.command !== 'GET' && selectedNode.params.command !== 'DEL' && selectedNode.params.command !== 'EXISTS' && selectedNode.params.command !== 'HGET'" style="margin-top: 10px;">Value to Write</label>
+            <textarea v-if="selectedNode.params.command !== 'GET' && selectedNode.params.command !== 'DEL' && selectedNode.params.command !== 'EXISTS' && selectedNode.params.command !== 'HGET'" v-model="selectedNode.params.value" class="form-textarea" placeholder="my-value"></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'googleSheets'">
+            <label>Select Encrypted Credential (AES-256)</label>
+            <select v-model="selectedNode.params.credential_id" class="form-select">
+              <option value="">-- Use direct input below --</option>
+              <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+            </select>
+
+            <label style="margin-top: 10px;">Service Account JSON Key</label>
+            <textarea v-model="selectedNode.params.service_account_json" class="form-textarea"
+                      placeholder='{ "type": "service_account", "project_id": ... }'></textarea>
+
+            <label style="margin-top: 10px;">Spreadsheet ID</label>
+            <input type="text" v-model="selectedNode.params.spreadsheet_id" class="form-input" 
+                   placeholder="e.g. 1aBCDeFGhIjKLmNoPQrsTuvw..." />
+
+            <label style="margin-top: 10px;">Sheet Name / Range</label>
+            <input type="text" v-model="selectedNode.params.sheet_name" class="form-input" placeholder="Sheet1" />
+
+            <label style="margin-top: 10px;">Action</label>
+            <select v-model="selectedNode.params.action" class="form-select">
+              <option value="APPEND">APPEND (Add Row)</option>
+              <option value="READ">READ (Get Values)</option>
+            </select>
+
+            <label v-if="selectedNode.params.action === 'APPEND'" style="margin-top: 10px;">Values Array (JSON)</label>
+            <textarea v-if="selectedNode.params.action === 'APPEND'" v-model="selectedNode.params.values_json" class="form-textarea" 
+                      placeholder='["{{node_id.name}}", "{{node_id.email}}"]'></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'mysqlQuery'">
+            <label>Select Encrypted Credential (AES-256)</label>
+            <select v-model="selectedNode.params.credential_id" class="form-select">
+              <option value="">-- Use direct connection string below --</option>
+              <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+            </select>
+
+            <label style="margin-top: 10px;">Connection String</label>
+            <input type="text" v-model="selectedNode.params.connection_string" class="form-input" 
+                   placeholder="user:pass@tcp(host:port)/db" />
+
+            <label style="margin-top: 10px;">Query Type</label>
+            <select v-model="selectedNode.params.query_type" class="form-select">
+              <option value="SELECT">SELECT (Returns rows as JSON)</option>
+              <option value="EXECUTE">EXECUTE (Returns rows affected)</option>
+            </select>
+
+            <label style="margin-top: 10px;">SQL Query</label>
+            <textarea v-model="selectedNode.params.query" class="form-textarea" 
+                      placeholder="SELECT * FROM users WHERE id = {{trigger.id}};"></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'mongodbCommand'">
+            <label>Select Encrypted Credential (AES-256)</label>
+            <select v-model="selectedNode.params.credential_id" class="form-select">
+              <option value="">-- Use direct connection URI below --</option>
+              <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+            </select>
+
+            <label style="margin-top: 10px;">MongoDB Connection URI</label>
+            <input type="text" v-model="selectedNode.params.connection_string" class="form-input" 
+                   placeholder="mongodb://localhost:27017" />
+
+            <label style="margin-top: 10px;">Database Name</label>
+            <input type="text" v-model="selectedNode.params.database" class="form-input" placeholder="testdb" />
+
+            <label style="margin-top: 10px;">Collection Name</label>
+            <input type="text" v-model="selectedNode.params.collection" class="form-input" placeholder="users" />
+
+            <label style="margin-top: 10px;">Command</label>
+            <select v-model="selectedNode.params.command" class="form-select">
+              <option value="FIND_ONE">FIND ONE (Select)</option>
+              <option value="INSERT_ONE">INSERT ONE (Insert)</option>
+              <option value="UPDATE_ONE">UPDATE ONE (Update)</option>
+              <option value="DELETE_ONE">DELETE ONE (Delete)</option>
+            </select>
+
+            <label v-if="selectedNode.params.command !== 'INSERT_ONE'" style="margin-top: 10px;">Filter JSON</label>
+            <textarea v-if="selectedNode.params.command !== 'INSERT_ONE'" v-model="selectedNode.params.filter_json" class="form-textarea" 
+                      placeholder='{"id": 42}'></textarea>
+
+            <label v-if="selectedNode.params.command === 'INSERT_ONE' || selectedNode.params.command === 'UPDATE_ONE'" style="margin-top: 10px;">Document / Update JSON</label>
+            <textarea v-if="selectedNode.params.command === 'INSERT_ONE' || selectedNode.params.command === 'UPDATE_ONE'" v-model="selectedNode.params.document_json" class="form-textarea" 
+                      placeholder='{"$set": {"status": "processed"}}'></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'googleDrive'">
+            <label>Select Encrypted Credential (AES-256)</label>
+            <select v-model="selectedNode.params.credential_id" class="form-select">
+              <option value="">-- Use direct input below --</option>
+              <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+            </select>
+
+            <label style="margin-top: 10px;">Service Account JSON Key</label>
+            <textarea v-model="selectedNode.params.service_account_json" class="form-textarea"
+                      placeholder='{ "type": "service_account", "project_id": ... }'></textarea>
+
+            <label style="margin-top: 10px;">Action</label>
+            <select v-model="selectedNode.params.action" class="form-select">
+              <option value="LIST">LIST FILES</option>
+              <option value="UPLOAD">UPLOAD FILE</option>
+            </select>
+
+            <label style="margin-top: 10px;">Folder ID (Optional)</label>
+            <input type="text" v-model="selectedNode.params.folder_id" class="form-input" placeholder="e.g. 1aBCDeFGhIj..." />
+
+            <label v-if="selectedNode.params.action === 'UPLOAD'" style="margin-top: 10px;">Filename</label>
+            <input v-if="selectedNode.params.action === 'UPLOAD'" type="text" v-model="selectedNode.params.filename" class="form-input" placeholder="file.txt" />
+
+            <label v-if="selectedNode.params.action === 'UPLOAD'" style="margin-top: 10px;">File Content (Text)</label>
+            <textarea v-if="selectedNode.params.action === 'UPLOAD'" v-model="selectedNode.params.content" class="form-textarea" placeholder="File content here..."></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'gmailREST'">
+            <label>Select Encrypted Credential (AES-256)</label>
+            <select v-model="selectedNode.params.credential_id" class="form-select">
+              <option value="">-- Use direct input below --</option>
+              <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+            </select>
+
+            <label style="margin-top: 10px;">Service Account JSON Key</label>
+            <textarea v-model="selectedNode.params.service_account_json" class="form-textarea"
+                      placeholder='{ "type": "service_account", "project_id": ... }'></textarea>
+
+            <label style="margin-top: 10px;">Impersonate User Email (G-Suite)</label>
+            <input type="text" v-model="selectedNode.params.impersonate_user" class="form-input" placeholder="sender@yourdomain.com" />
+
+            <label style="margin-top: 10px;">Recipient (To)</label>
+            <input type="text" v-model="selectedNode.params.to" class="form-input" placeholder="recipient@example.com" />
+
+            <label style="margin-top: 10px;">Subject</label>
+            <input type="text" v-model="selectedNode.params.subject" class="form-input" placeholder="Subject" />
+
+            <label style="margin-top: 10px;">HTML Body</label>
+            <textarea v-model="selectedNode.params.body" class="form-textarea" placeholder="HTML Email body..."></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'notionPage'">
+            <label>Select Encrypted Credential (AES-256)</label>
+            <select v-model="selectedNode.params.credential_id" class="form-select">
+              <option value="">-- Use direct input below --</option>
+              <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+            </select>
+
+            <label style="margin-top: 10px;">Notion API Token</label>
+            <input type="password" v-model="selectedNode.params.notion_token" class="form-input" placeholder="secret_..." />
+
+            <label style="margin-top: 10px;">Database ID</label>
+            <input type="text" v-model="selectedNode.params.database_id" class="form-input" placeholder="Database ID" />
+
+            <label style="margin-top: 10px;">Properties (JSON)</label>
+            <textarea v-model="selectedNode.params.properties_json" class="form-textarea" placeholder='{"Name": {"title": [{"text": {"content": "Task"}}]}}'></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'sshRunner'">
+            <label>Select Encrypted Credential (AES-256)</label>
+            <select v-model="selectedNode.params.credential_id" class="form-select">
+              <option value="">-- Use direct input below --</option>
+              <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+            </select>
+
+            <label style="margin-top: 10px;">Host Address</label>
+            <input type="text" v-model="selectedNode.params.address" class="form-input" placeholder="127.0.0.1:22" />
+
+            <label style="margin-top: 10px;">Username</label>
+            <input type="text" v-model="selectedNode.params.username" class="form-input" placeholder="root" />
+
+            <label style="margin-top: 10px;">Password (Password Auth)</label>
+            <input type="password" v-model="selectedNode.params.password" class="form-input" placeholder="SSH Password" />
+
+            <label style="margin-top: 10px;">Private Key (Key Auth)</label>
+            <textarea v-model="selectedNode.params.private_key" class="form-textarea" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+
+            <label style="margin-top: 10px;">Shell Command</label>
+            <textarea v-model="selectedNode.params.command" class="form-textarea" placeholder="uptime"></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'gitCommand'">
+            <label>Git Action</label>
+            <select v-model="selectedNode.params.action" class="form-select">
+              <option value="CLONE">CLONE</option>
+              <option value="PULL">PULL</option>
+              <option value="COMMIT_PUSH">COMMIT & PUSH</option>
+            </select>
+
+            <label v-if="selectedNode.params.action === 'CLONE'" style="margin-top: 10px;">Repository URL</label>
+            <input v-if="selectedNode.params.action === 'CLONE'" type="text" v-model="selectedNode.params.repository_url" class="form-input" placeholder="https://github.com/user/repo.git" />
+
+            <label style="margin-top: 10px;">Target Directory</label>
+            <input type="text" v-model="selectedNode.params.target_directory" class="form-input" placeholder="d:/my-projects/repo" />
+
+            <label style="margin-top: 10px;">Git Branch</label>
+            <input type="text" v-model="selectedNode.params.branch" class="form-input" placeholder="main" />
+
+            <label v-if="selectedNode.params.action === 'COMMIT_PUSH'" style="margin-top: 10px;">Commit Message</label>
+            <input v-if="selectedNode.params.action === 'COMMIT_PUSH'" type="text" v-model="selectedNode.params.commit_message" class="form-input" placeholder="Update from Goflow" />
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'githubWebhook'">
+            <label>Webhook Secret Token</label>
+            <input type="password" v-model="selectedNode.params.secret" class="form-input" placeholder="Optional GitHub Secret Token" />
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'goflowPlugin'">
+            <label>Plugin Executable Name</label>
+            <input type="text" v-model="selectedNode.params.plugin_name" class="form-input" placeholder="e.g. my_custom_node" />
+            <div style="font-size: 0.725rem; color: #64748b; margin-top: 4px;">
+              Place the plugin executable inside the <span style="font-family: monospace; background: #e2e8f0; padding: 1px 4px; border-radius: 4px;">./plugins/</span> directory.
+            </div>
+          </div>
+
           <!-- Dynamic Variables Data Picker -->
           <div v-if="otherNodes.length > 0" class="form-group" style="margin-top: 14px; background: #eff6ff; padding: 14px; border-radius: 10px; border: 2px solid #bfdbfe; box-shadow: 0 4px 12px rgba(59,130,246,0.05);">
             <label style="color: #1e40af; font-weight: 800; font-size: 0.85rem; display: flex; align-items: center; gap: 4px;">
@@ -818,6 +1088,7 @@
           if (cat === 'TRIGGER') return '⚡ TRIGGERS';
           if (cat === 'COMMUNICATION') return '💬 COMMUNICATION';
           if (cat === 'AI & LLM') return '🤖 AI & LLM';
+          if (cat === 'DATABASE') return '💾 DATABASES';
           return '🔀 LOGIC & UTILITY';
         };
 
@@ -832,6 +1103,18 @@
           if (type === 'delaySleep') return '⏳';
           if (type === 'jsCodeRunner') return '📜';
           if (type === 'subWorkflow') return '📂';
+          if (type === 'postgresQuery') return '🐘';
+          if (type === 'redisCommand') return '🔴';
+          if (type === 'googleSheets') return '📊';
+          if (type === 'mysqlQuery') return '🐬';
+          if (type === 'mongodbCommand') return '🍃';
+          if (type === 'googleDrive') return '📁';
+          if (type === 'gmailREST') return '✉️';
+          if (type === 'notionPage') return '📖';
+          if (type === 'sshRunner') return '💻';
+          if (type === 'gitCommand') return '🌿';
+          if (type === 'githubWebhook') return '⚓';
+          if (type === 'goflowPlugin') return '🔌';
           return '⚙️';
         };
 
@@ -1075,6 +1358,11 @@
           const raw = evt.dataTransfer.getData('goflow-node');
           if (!raw) return;
           const def = JSON.parse(raw);
+          let defaultConnStr = 'postgres://postgres:password@localhost:5432/postgres?sslmode=disable';
+          if (def.type === 'mysqlQuery') {
+            defaultConnStr = 'root:password@tcp(localhost:3306)/mysql';
+          }
+
           const newNode = {
             id: 'node_' + Date.now(),
             type: def.type,
@@ -1085,8 +1373,22 @@
               host: 'smtp.gmail.com', port: '587', username: 'sender@gmail.com', to: 'recipient@example.com', subject: 'Notification',
               seconds: '3', prompt: 'Explain quantum computing...', code: '{\n  "status": "processed"\n}',
               credential_id: '',
-              sub_workflow_id: '', payload_json: '{\n  "message": "Input payload"\n}', loop_mode: false, parallel: false
+              sub_workflow_id: '', payload_json: '{\n  "message": "Input payload"\n}', loop_mode: false, parallel: false,
+              connection_string: defaultConnStr, query: 'SELECT * FROM users LIMIT 5;', query_type: 'SELECT',
+              address: 'localhost:6379', password: '', db: '0', command: 'GET', key: '', field: '', value: '',
+              service_account_json: '', spreadsheet_id: '', sheet_name: 'Sheet1', action: 'APPEND', values_json: '[\n  "Value 1",\n  "Value 2"\n]',
+              database: '', collection: '', filter_json: '{\n  "status": "active"\n}', document_json: '{\n  "$set": { "status": "processed" }\n}',
+              folder_id: '', filename: '', content: '',
+              impersonate_user: '', body: '<h1>Hello!</h1><p>Sent by Goflow REST API.</p>',
+              database_id: '', properties_json: '{\n  "Name": {\n    "title": [\n      {\n        "text": {\n          "content": "New Task from Goflow"\n        }\n      }\n    ]\n  }\n}',
+              private_key: '',
+              repository_url: '', target_directory: '', commit_message: 'Update from Goflow',
+              secret: '',
+              plugin_name: ''
             }
+            // For MySQL, it will automatically fallback or reuse connection_string/query/query_type.
+            // But let's make sure it's fully initialized. Let's explicitly define its default connection_string if needed.
+            // Since they share connection_string parameter name, Vue v-model matches perfectly.
           };
           nodes.value.push(newNode);
           selectedNodeId.value = newNode.id;
@@ -1193,6 +1495,15 @@
           if (type === 'webhookTrigger' || type === 'cronTrigger') return '#f5a623'; // Amber
           if (type === 'deepseekAI' || type === 'openAIGPT') return '#8b5cf6';       // Purple
           if (type === 'discordBot' || type === 'slackBot' || type === 'telegramBot' || type === 'emailSMTP') return '#10b981'; // Green
+          if (type === 'postgresQuery') return '#336791';                            // Postgres Blue
+          if (type === 'redisCommand') return '#d82c20';                             // Redis Red
+          if (type === 'mysqlQuery') return '#00758f';                               // MySQL Teal
+          if (type === 'mongodbCommand') return '#4db33d';                           // MongoDB Green
+          if (type === 'googleDrive') return '#34a853';                              // Google Drive Green
+          if (type === 'gmailREST') return '#ea4335';                                // Gmail Red
+          if (type === 'notionPage') return '#111827';                               // Notion Black/Charcoal
+          if (type === 'sshRunner' || type === 'gitCommand' || type === 'githubWebhook') return '#0ea5e9'; // Developer Blue
+          if (type === 'goflowPlugin') return '#64748b';                             // Slate Gray
           return '#3b82f6'; // Blue
         };
 

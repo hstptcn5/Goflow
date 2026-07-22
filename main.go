@@ -58,6 +58,18 @@ func main() {
 	_ = registry.Register(nodes.NewSlackBotExecutor())
 	_ = registry.Register(nodes.NewJSCodeRunnerExecutor())
 	_ = registry.Register(nodes.NewSubWorkflowExecutor())
+	_ = registry.Register(nodes.NewPostgresQueryExecutor())
+	_ = registry.Register(nodes.NewRedisCommandExecutor())
+	_ = registry.Register(nodes.NewGoogleSheetsExecutor())
+	_ = registry.Register(nodes.NewMySQLQueryExecutor())
+	_ = registry.Register(nodes.NewMongoDBCommandExecutor())
+	_ = registry.Register(nodes.NewGoogleDriveExecutor())
+	_ = registry.Register(nodes.NewGmailRESTExecutor())
+	_ = registry.Register(nodes.NewNotionPageExecutor())
+	_ = registry.Register(nodes.NewSSHRunnerExecutor())
+	_ = registry.Register(nodes.NewGitCommandExecutor())
+	_ = registry.Register(nodes.NewGithubWebhookExecutor())
+	_ = registry.Register(nodes.NewGoflowPluginExecutor())
 	log.Printf("[INFO] Plugin Registry initialized with %d built-in nodes", len(registry.ListDefinitions()))
 
 	// 4. Initialize EventBus and DAG Execution Engine

@@ -117,6 +117,9 @@ func (h *WorkflowHandler) DeleteWorkflow(w http.ResponseWriter, r *http.Request)
 
 func (h *WorkflowHandler) TriggerWorkflow(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if id == "" {
+		id = chi.URLParam(r, "workflowId")
+	}
 	wf, err := h.wfStore.GetByID(id)
 	if err != nil {
 		http.Error(w, "Workflow not found", http.StatusNotFound)

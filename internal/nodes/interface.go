@@ -23,6 +23,18 @@ const (
 	TypeSlackBot       NodeType = "slackBot"
 	TypeJSCodeRunner   NodeType = "jsCodeRunner"
 	TypeSubWorkflow    NodeType = "subWorkflow"
+	TypePostgresQuery  NodeType = "postgresQuery"
+	TypeRedisCommand   NodeType = "redisCommand"
+	TypeGoogleSheets   NodeType = "googleSheets"
+	TypeMySQLQuery     NodeType = "mysqlQuery"
+	TypeMongoDBCommand NodeType = "mongodbCommand"
+	TypeGoogleDrive    NodeType = "googleDrive"
+	TypeGmailREST      NodeType = "gmailREST"
+	TypeNotionPage     NodeType = "notionPage"
+	TypeSSHRunner      NodeType = "sshRunner"
+	TypeGitCommand     NodeType = "gitCommand"
+	TypeGithubWebhook  NodeType = "githubWebhook"
+	TypeGoflowPlugin   NodeType = "goflowPlugin"
 )
 
 // Node biểu diễn một nút trên Canvas workflow
@@ -75,6 +87,16 @@ func (ctx *ExecutionContext) GetOutput(nodeID string) (interface{}, bool) {
 	defer ctx.mu.RUnlock()
 	val, ok := ctx.Outputs[nodeID]
 	return val, ok
+}
+
+func (ctx *ExecutionContext) GetOutputs() map[string]interface{} {
+	ctx.mu.RLock()
+	defer ctx.mu.RUnlock()
+	res := make(map[string]interface{})
+	for k, v := range ctx.Outputs {
+		res[k] = v
+	}
+	return res
 }
 
 // ParamDefinition định nghĩa tham số cấu hình trên UI
