@@ -140,6 +140,20 @@
       display: flex; flex-direction: column; padding: 20px; z-index: 100; box-shadow: -6px 0 24px rgba(0,0,0,0.3);
       overflow-y: auto;
     }
+    .sidebar-tabs {
+      display: flex; gap: 8px; border-bottom: 2px solid var(--border-color); margin-bottom: 16px; padding-bottom: 8px;
+    }
+    .sidebar-tab-btn {
+      flex: 1; padding: 8px 12px; border-radius: 6px; border: none; background: transparent;
+      color: var(--text-secondary); font-size: 0.85rem; font-weight: 800; cursor: pointer;
+      transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .sidebar-tab-btn:hover {
+      background: var(--bg-tertiary); color: var(--text-primary);
+    }
+    .sidebar-tab-btn.active {
+      background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe;
+    }
     .panel-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 14px; border-bottom: 2px solid var(--border-color); margin-bottom: 16px; }
     .panel-title { font-size: 1rem; font-weight: 800; color: var(--text-primary); }
 
@@ -311,255 +325,304 @@
           <button class="btn btn-secondary" style="padding: 4px 8px;" @click="selectedNodeId = null">✕</button>
         </div>
 
-        <div class="form-group">
-          <label>Node Name</label>
-          <input type="text" v-model="selectedNode.name" class="form-input" />
+        <div class="sidebar-tabs">
+          <button class="sidebar-tab-btn" :class="{ active: activeSidebarTab === 'settings' }" @click="activeSidebarTab = 'settings'">
+            ⚙️ Settings
+          </button>
+          <button class="sidebar-tab-btn" :class="{ active: activeSidebarTab === 'output' }" @click="activeSidebarTab = 'output'">
+            📊 Live Output
+            <span v-if="getNodeStatus(selectedNode.id)" 
+                  style="width: 8px; height: 8px; border-radius: 50%; display: inline-block;"
+                  :style="{ background: getNodeStatus(selectedNode.id).status === 'SUCCESS' ? '#10b981' : '#ef4444' }">
+            </span>
+          </button>
         </div>
 
-        <!-- Connection Manager -->
-        <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1;">
-          <label>🔗 Connect Wire To Node</label>
-          <div style="display: flex; gap: 6px; margin-top: 6px;">
-            <select v-model="targetConnectId" class="form-select">
-              <option value="">-- Choose Target Node --</option>
-              <option v-for="n in otherNodes" :key="n.id" :value="n.id">{{ n.name }} ({{ n.type }})</option>
+        <!-- Tab 1: Settings Config Form -->
+        <div v-if="activeSidebarTab === 'settings'" style="display: flex; flex-direction: column; gap: 16px;">
+          <div class="form-group">
+            <label>Node Name</label>
+            <input type="text" v-model="selectedNode.name" class="form-input" />
+          </div>
+
+          <!-- Connection Manager -->
+          <div class="form-group" style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1;">
+            <label>🔗 Connect Wire To Node</label>
+            <div style="display: flex; gap: 6px; margin-top: 6px;">
+              <select v-model="targetConnectId" class="form-select">
+                <option value="">-- Choose Target Node --</option>
+                <option v-for="n in otherNodes" :key="n.id" :value="n.id">{{ n.name }} ({{ n.type }})</option>
+              </select>
+              <button class="btn btn-primary" style="padding: 6px 12px;" :disabled="!targetConnectId" @click="connectWire">+ Wire</button>
+            </div>
+
+            <!-- Existing Outgoing Wires -->
+            <div v-if="outgoingWires.length > 0" style="margin-top: 10px;">
+              <label style="font-size: 0.7rem; color: #64748b;">Connected Output Wires:</label>
+              <div v-for="w in outgoingWires" :key="w.id" class="wire-chip">
+                <span>➔ {{ getNodeName(w.target) }}</span>
+                <button style="background: none; border: none; cursor: pointer; color: #dc2626;" @click="deleteWire(w.id)">✕</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Node Parameters Form -->
+          <div class="form-group" v-if="selectedNode.type === 'deepseekAI'">
+            <label>Select Encrypted Credential</label>
+            <select v-model="selectedNode.params.credential_id" class="form-select">
+              <option value="">-- Use direct input below --</option>
+              <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
             </select>
-            <button class="btn btn-primary" style="padding: 6px 12px;" :disabled="!targetConnectId" @click="connectWire">+ Wire</button>
+
+            <label style="margin-top: 10px;">API Key</label>
+            <input type="password" v-model="selectedNode.params.api_key" class="form-input" />
+
+            <label style="margin-top: 10px;">AI System Prompt</label>
+            <textarea v-model="selectedNode.params.system_prompt" class="form-textarea"></textarea>
+
+            <label style="margin-top: 10px;">User Prompt</label>
+            <textarea v-model="selectedNode.params.prompt" class="form-textarea"></textarea>
           </div>
 
-          <!-- Existing Outgoing Wires -->
-          <div v-if="outgoingWires.length > 0" style="margin-top: 10px;">
-            <label style="font-size: 0.7rem; color: #64748b;">Connected Output Wires:</label>
-            <div v-for="w in outgoingWires" :key="w.id" class="wire-chip">
-              <span>➔ {{ getNodeName(w.target) }}</span>
-              <button style="background: none; border: none; cursor: pointer; color: #dc2626;" @click="deleteWire(w.id)">✕</button>
+          <div class="form-group" v-else-if="selectedNode.type === 'openAIGPT'">
+            <label>Select Encrypted Credential</label>
+            <select v-model="selectedNode.params.credential_id" class="form-select">
+              <option value="">-- Use direct input below --</option>
+              <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+            </select>
+
+            <label style="margin-top: 10px;">API Key</label>
+            <input type="password" v-model="selectedNode.params.api_key" class="form-input" />
+
+            <label style="margin-top: 10px;">Model Name</label>
+            <select v-model="selectedNode.params.model" class="form-select">
+              <option value="gpt-4o">gpt-4o</option>
+              <option value="gpt-4o-mini">gpt-4o-mini</option>
+              <option value="o1-mini">o1-mini</option>
+            </select>
+
+            <label style="margin-top: 10px;">System Prompt</label>
+            <textarea v-model="selectedNode.params.system_prompt" class="form-textarea"></textarea>
+
+            <label style="margin-top: 10px;">User Prompt</label>
+            <textarea v-model="selectedNode.params.prompt" class="form-textarea"></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'discordBot'">
+            <label>Discord Webhook URL</label>
+            <input type="text" v-model="selectedNode.params.webhook_url" placeholder="https://discord.com/api/webhooks/..." class="form-input" />
+
+            <label style="margin-top: 10px;">Bot Username</label>
+            <input type="text" v-model="selectedNode.params.username" placeholder="Goflow Bot" class="form-input" />
+
+            <label style="margin-top: 10px;">Message Content</label>
+            <textarea v-model="selectedNode.params.content" class="form-textarea"></textarea>
+
+            <label style="margin-top: 10px;">Embed Title</label>
+            <input type="text" v-model="selectedNode.params.embed_title" class="form-input" />
+
+            <label style="margin-top: 10px;">Embed Description</label>
+            <textarea v-model="selectedNode.params.embed_desc" class="form-textarea"></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'slackBot'">
+            <label>Slack Webhook URL</label>
+            <input type="text" v-model="selectedNode.params.webhook_url" placeholder="https://hooks.slack.com/services/..." class="form-input" />
+
+            <label style="margin-top: 10px;">Message Text</label>
+            <textarea v-model="selectedNode.params.text" class="form-textarea"></textarea>
+
+            <label style="margin-top: 10px;">Bot Name</label>
+            <input type="text" v-model="selectedNode.params.username" placeholder="Goflow Bot" class="form-input" />
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'jsCodeRunner'">
+            <label>JS Code (Dracula Editor)</label>
+            <textarea id="js-code-editor" class="form-textarea" placeholder="// write JS code here"></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'jsonTransform'">
+            <label>JSON Template / Expression</label>
+            <textarea v-model="selectedNode.params.json_template" class="form-textarea" placeholder="{ }"></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'webhookTrigger'">
+            <label>Webhook Path Info</label>
+            <input type="text" readonly :value="'/webhook/' + (currentWorkflow?.id || '')" class="form-input" style="background: #e2e8f0;" />
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'httpRequest'">
+            <label>HTTP Method</label>
+            <select v-model="selectedNode.params.method" class="form-select">
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="DELETE">DELETE</option>
+            </select>
+
+            <label style="margin-top: 10px;">Target URL</label>
+            <input type="text" v-model="selectedNode.params.url" placeholder="https://api.example.com" class="form-input" />
+
+            <label style="margin-top: 10px;">Request Body</label>
+            <textarea v-model="selectedNode.params.body" class="form-textarea" placeholder="{ }"></textarea>
+          </div>
+
+          <div class="form-group" style="margin-top: 10px;" v-else-if="selectedNode.type === 'emailSMTP'">
+            <label>Select Encrypted Credential</label>
+            <select v-model="selectedNode.params.credential_id" class="form-select">
+              <option value="">-- Use direct input below --</option>
+              <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+            </select>
+
+            <label style="margin-top: 10px;">SMTP Host</label>
+            <input type="text" v-model="selectedNode.params.host" placeholder="smtp.gmail.com" class="form-input" />
+
+            <label style="margin-top: 10px;">SMTP Port</label>
+            <input type="text" v-model="selectedNode.params.port" placeholder="587" class="form-input" />
+
+            <label style="margin-top: 10px;">SMTP Username / Sender</label>
+            <input type="text" v-model="selectedNode.params.username" placeholder="user@gmail.com" class="form-input" />
+
+            <label style="margin-top: 10px;">SMTP Password</label>
+            <input type="password" v-model="selectedNode.params.password" class="form-input" />
+
+            <label style="margin-top: 10px;">Recipient (To)</label>
+            <input type="text" v-model="selectedNode.params.to" placeholder="target@example.com" class="form-input" />
+
+            <label style="margin-top: 10px;">Subject</label>
+            <input type="text" v-model="selectedNode.params.subject" class="form-input" />
+
+            <label style="margin-top: 10px;">Email Body (HTML)</label>
+            <textarea v-model="selectedNode.params.body" class="form-textarea"></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'delaySleep'">
+            <label>Delay Duration (Seconds)</label>
+            <input type="text" v-model="selectedNode.params.seconds" placeholder="3" class="form-input" />
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'telegramBot'">
+            <label>Select Encrypted Credential</label>
+            <select v-model="selectedNode.params.credential_id" class="form-select">
+              <option value="">-- Use direct input below --</option>
+              <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+            </select>
+
+            <label style="margin-top: 10px;">Bot Token</label>
+            <input type="text" v-model="selectedNode.params.bot_token" class="form-input" placeholder="Token from @BotFather" />
+
+            <label style="margin-top: 10px;">Chat ID</label>
+            <input type="text" v-model="selectedNode.params.chat_id" class="form-input" placeholder="@channel or 123456" />
+
+            <label style="margin-top: 10px;">Message Content</label>
+            <textarea v-model="selectedNode.params.message" class="form-textarea"></textarea>
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'cronTrigger'">
+            <label>Cron Schedule</label>
+            <input type="text" v-model="selectedNode.params.cron_expression" class="form-input" placeholder="*/5 * * * *" />
+          </div>
+
+          <div class="form-group" v-else-if="selectedNode.type === 'subWorkflow'">
+            <label>Select Sub-workflow</label>
+            <select v-model="selectedNode.params.sub_workflow_id" class="form-select">
+              <option value="">-- Choose target workflow --</option>
+              <option v-for="w in workflows" :key="w.id" :value="w.id" v-show="currentWorkflow && w.id !== currentWorkflow.id">
+                {{ w.name }}
+              </option>
+            </select>
+
+            <label style="margin-top: 10px;">Input Payload (JSON / Text)</label>
+            <textarea v-model="selectedNode.params.payload_json" class="form-textarea"
+                      placeholder='{"key": "value"}'></textarea>
+
+            <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" v-model="selectedNode.params.loop_mode" id="sub-loop-mode" style="width: auto; height: auto;" />
+              <label for="sub-loop-mode" style="margin-bottom: 0; cursor: pointer; text-transform: none; color: var(--text-primary);">
+                Loop mode (Run for each item in array)
+              </label>
+            </div>
+
+            <div v-if="selectedNode.params.loop_mode" style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" v-model="selectedNode.params.parallel" id="sub-parallel" style="width: auto; height: auto;" />
+              <label for="sub-parallel" style="margin-bottom: 0; cursor: pointer; text-transform: none; color: var(--text-primary);">
+                Run loop items in parallel (Goroutines)
+              </label>
             </div>
           </div>
-        </div>
 
-        <!-- Node Parameters Form -->
-        <div class="form-group" v-if="selectedNode.type === 'deepseekAI'">
-          <label>Select Encrypted Credential</label>
-          <select v-model="selectedNode.params.credential_id" class="form-select">
-            <option value="">-- Use direct input below --</option>
-            <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
-          </select>
-
-          <label style="margin-top: 10px;">DeepSeek Model</label>
-          <select v-model="selectedNode.params.model" class="form-select">
-            <option value="deepseek-chat">deepseek-chat (DeepSeek-V3)</option>
-            <option value="deepseek-reasoner">deepseek-reasoner (DeepSeek-R1)</option>
-            <option value="deepseek-coder">deepseek-coder</option>
-          </select>
-
-          <label style="margin-top: 10px;">User Prompt</label>
-          <textarea v-model="selectedNode.params.prompt" class="form-textarea" placeholder="Explain quantum computing..."></textarea>
-
-          <label style="margin-top: 10px;">System Message</label>
-          <input type="text" v-model="selectedNode.params.system_message" placeholder="You are a helpful AI assistant" class="form-input" />
-
-          <label style="margin-top: 10px;">DeepSeek API Key (sk-...)</label>
-          <input type="password" v-model="selectedNode.params.api_key" placeholder="sk-..." class="form-input" />
-        </div>
-
-        <div class="form-group" v-else-if="selectedNode.type === 'openAIGPT'">
-          <label>Select Encrypted Credential</label>
-          <select v-model="selectedNode.params.credential_id" class="form-select">
-            <option value="">-- Use direct input below --</option>
-            <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
-          </select>
-
-          <label style="margin-top: 10px;">AI Model</label>
-          <select v-model="selectedNode.params.model" class="form-select">
-            <option value="gpt-4o-mini">gpt-4o-mini</option>
-            <option value="gpt-4o">gpt-4o</option>
-            <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-          </select>
-
-          <label style="margin-top: 10px;">User Prompt</label>
-          <textarea v-model="selectedNode.params.prompt" class="form-textarea" placeholder="Summarize data..."></textarea>
-
-          <label style="margin-top: 10px;">System Message</label>
-          <input type="text" v-model="selectedNode.params.system_message" placeholder="You are an AI assistant" class="form-input" />
-
-          <label style="margin-top: 10px;">OpenAI API Key (sk-...)</label>
-          <input type="password" v-model="selectedNode.params.api_key" placeholder="sk-..." class="form-input" />
-        </div>
-
-        <div class="form-group" v-else-if="selectedNode.type === 'discordBot'">
-          <label>Discord Webhook URL</label>
-          <input type="text" v-model="selectedNode.params.webhook_url" placeholder="https://discord.com/api/webhooks/..." class="form-input" />
-
-          <label style="margin-top: 10px;">Bot Username</label>
-          <input type="text" v-model="selectedNode.params.username" placeholder="Goflow Bot" class="form-input" />
-
-          <label style="margin-top: 10px;">Message Content</label>
-          <textarea v-model="selectedNode.params.content" class="form-textarea"></textarea>
-
-          <label style="margin-top: 10px;">Embed Title</label>
-          <input type="text" v-model="selectedNode.params.embed_title" class="form-input" />
-
-          <label style="margin-top: 10px;">Embed Description</label>
-          <textarea v-model="selectedNode.params.embed_desc" class="form-textarea"></textarea>
-        </div>
-
-        <div class="form-group" v-else-if="selectedNode.type === 'slackBot'">
-          <label>Slack Webhook URL</label>
-          <input type="text" v-model="selectedNode.params.webhook_url" placeholder="https://hooks.slack.com/services/..." class="form-input" />
-
-          <label style="margin-top: 10px;">Message Text</label>
-          <textarea v-model="selectedNode.params.text" class="form-textarea"></textarea>
-
-          <label style="margin-top: 10px;">Bot Name</label>
-          <input type="text" v-model="selectedNode.params.username" placeholder="Goflow Bot" class="form-input" />
-        </div>
-
-        <div class="form-group" v-else-if="selectedNode.type === 'jsCodeRunner'">
-          <label>JS Code (Dracula Editor)</label>
-          <textarea id="js-code-editor" class="form-textarea" placeholder="// write JS code here"></textarea>
-        </div>
-
-        <div class="form-group" v-else-if="selectedNode.type === 'jsonTransform'">
-          <label>JSON Template / Expression</label>
-          <textarea v-model="selectedNode.params.json_template" class="form-textarea" placeholder="{ }"></textarea>
-        </div>
-
-        <div class="form-group" v-else-if="selectedNode.type === 'webhookTrigger'">
-          <label>Webhook Path Info</label>
-          <input type="text" readonly :value="'/webhook/' + (currentWorkflow?.id || '')" class="form-input" style="background: #e2e8f0;" />
-        </div>
-
-        <div class="form-group" v-else-if="selectedNode.type === 'httpRequest'">
-          <label>HTTP Method</label>
-          <select v-model="selectedNode.params.method" class="form-select">
-            <option value="GET">GET</option>
-            <option value="POST">POST</option>
-            <option value="PUT">PUT</option>
-            <option value="DELETE">DELETE</option>
-          </select>
-
-          <label style="margin-top: 10px;">Target URL</label>
-          <input type="text" v-model="selectedNode.params.url" placeholder="https://api.example.com" class="form-input" />
-
-          <label style="margin-top: 10px;">Request Body</label>
-          <textarea v-model="selectedNode.params.body" class="form-textarea" placeholder="{ }"></textarea>
-        </div>
-
-        <div class="form-group" style="margin-top: 10px;" v-else-if="selectedNode.type === 'emailSMTP'">
-          <label>Select Encrypted Credential</label>
-          <select v-model="selectedNode.params.credential_id" class="form-select">
-            <option value="">-- Use direct input below --</option>
-            <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
-          </select>
-
-          <label style="margin-top: 10px;">SMTP Host</label>
-          <input type="text" v-model="selectedNode.params.host" placeholder="smtp.gmail.com" class="form-input" />
-
-          <label style="margin-top: 10px;">SMTP Port</label>
-          <input type="text" v-model="selectedNode.params.port" placeholder="587" class="form-input" />
-
-          <label style="margin-top: 10px;">SMTP Username / Sender</label>
-          <input type="text" v-model="selectedNode.params.username" placeholder="user@gmail.com" class="form-input" />
-
-          <label style="margin-top: 10px;">SMTP Password</label>
-          <input type="password" v-model="selectedNode.params.password" class="form-input" />
-
-          <label style="margin-top: 10px;">Recipient (To)</label>
-          <input type="text" v-model="selectedNode.params.to" placeholder="target@example.com" class="form-input" />
-
-          <label style="margin-top: 10px;">Subject</label>
-          <input type="text" v-model="selectedNode.params.subject" class="form-input" />
-
-          <label style="margin-top: 10px;">Email Body (HTML)</label>
-          <textarea v-model="selectedNode.params.body" class="form-textarea"></textarea>
-        </div>
-
-        <div class="form-group" v-else-if="selectedNode.type === 'delaySleep'">
-          <label>Delay Duration (Seconds)</label>
-          <input type="text" v-model="selectedNode.params.seconds" placeholder="3" class="form-input" />
-        </div>
-
-        <div class="form-group" v-else-if="selectedNode.type === 'telegramBot'">
-          <label>Select Encrypted Credential</label>
-          <select v-model="selectedNode.params.credential_id" class="form-select">
-            <option value="">-- Use direct input below --</option>
-            <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
-          </select>
-
-          <label style="margin-top: 10px;">Bot Token</label>
-          <input type="text" v-model="selectedNode.params.bot_token" class="form-input" placeholder="Token from @BotFather" />
-
-          <label style="margin-top: 10px;">Chat ID</label>
-          <input type="text" v-model="selectedNode.params.chat_id" class="form-input" placeholder="@channel or 123456" />
-
-          <label style="margin-top: 10px;">Message Content</label>
-          <textarea v-model="selectedNode.params.message" class="form-textarea"></textarea>
-        </div>
-
-        <div class="form-group" v-else-if="selectedNode.type === 'cronTrigger'">
-          <label>Cron Schedule</label>
-          <input type="text" v-model="selectedNode.params.cron_expression" class="form-input" placeholder="*/5 * * * *" />
-        </div>
-
-        <div class="form-group" v-else-if="selectedNode.type === 'subWorkflow'">
-          <label>Select Sub-workflow</label>
-          <select v-model="selectedNode.params.sub_workflow_id" class="form-select">
-            <option value="">-- Choose target workflow --</option>
-            <option v-for="w in workflows" :key="w.id" :value="w.id" v-show="currentWorkflow && w.id !== currentWorkflow.id">
-              {{ w.name }}
-            </option>
-          </select>
-
-          <label style="margin-top: 10px;">Input Payload (JSON / Text)</label>
-          <textarea v-model="selectedNode.params.payload_json" class="form-textarea"
-                    placeholder='{"key": "value"}'></textarea>
-
-          <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" v-model="selectedNode.params.loop_mode" id="sub-loop-mode" style="width: auto; height: auto;" />
-            <label for="sub-loop-mode" style="margin-bottom: 0; cursor: pointer; text-transform: none; color: var(--text-primary);">
-              Loop mode (Run for each item in array)
+          <!-- Dynamic Variables Data Picker -->
+          <div v-if="otherNodes.length > 0" class="form-group" style="margin-top: 14px; background: #eff6ff; padding: 14px; border-radius: 10px; border: 2px solid #bfdbfe; box-shadow: 0 4px 12px rgba(59,130,246,0.05);">
+            <label style="color: #1e40af; font-weight: 800; font-size: 0.85rem; display: flex; align-items: center; gap: 4px;">
+              🔍 Dynamic Variables (Data Picker)
             </label>
-          </div>
-
-          <div v-if="selectedNode.params.loop_mode" style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" v-model="selectedNode.params.parallel" id="sub-parallel" style="width: auto; height: auto;" />
-            <label for="sub-parallel" style="margin-bottom: 0; cursor: pointer; text-transform: none; color: var(--text-primary);">
-              Run loop items in parallel (Goroutines)
-            </label>
-          </div>
-        </div>
-
-        <!-- Dynamic Variables Data Picker -->
-        <div v-if="otherNodes.length > 0" class="form-group" style="margin-top: 14px; background: #eff6ff; padding: 14px; border-radius: 10px; border: 2px solid #bfdbfe; box-shadow: 0 4px 12px rgba(59,130,246,0.05);">
-          <label style="color: #1e40af; font-weight: 800; font-size: 0.85rem; display: flex; align-items: center; gap: 4px;">
-            🔍 Dynamic Variables (Data Picker)
-          </label>
-          <div style="font-size: 0.725rem; color: #64748b; margin-bottom: 6px;">
-            Focus on any text field, then click a variable below to insert:
-          </div>
-          <div style="max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px;">
-            <div v-for="n in otherNodes" :key="n.id" style="border-bottom: 1px dashed #cbd5e1; padding-bottom: 6px; margin-bottom: 2px;">
-              <div style="font-weight: 700; font-size: 0.75rem; color: #334155; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-                <span>{{ getNodeIcon(n.type) }} {{ n.name }}</span>
-              </div>
-              <div style="display: flex; flex-wrap: wrap; gap: 6px; padding-left: 6px;">
-                <span class="var-badge" @click="insertVariable(n.id)" title="Full output object" v-text="'{{' + n.id + '}}'"></span>
-                <span v-for="key in getNodeLastOutputKeys(n.id)" :key="key"
-                      class="var-badge" @click="insertVariable(n.id + '.' + key)" v-text="'{{' + n.id + '.' + key + '}}'"></span>
+            <div style="font-size: 0.725rem; color: #64748b; margin-bottom: 6px;">
+              Focus on any text field, then click a variable below to insert:
+            </div>
+            <div style="max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px;">
+              <div v-for="n in otherNodes" :key="n.id" style="border-bottom: 1px dashed #cbd5e1; padding-bottom: 6px; margin-bottom: 2px;">
+                <div style="font-weight: 700; font-size: 0.75rem; color: #334155; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+                  <span>{{ getNodeIcon(n.type) }} {{ n.name }}</span>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px; padding-left: 6px;">
+                  <span class="var-badge" @click="insertVariable(n.id)" title="Full output object" v-text="'{{' + n.id + '}}'"></span>
+                  <span v-for="key in getNodeLastOutputKeys(n.id)" :key="key"
+                        class="var-badge" @click="insertVariable(n.id + '.' + key)" v-text="'{{' + n.id + '.' + key + '}}'"></span>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Node Last Execution Output Inspector Card -->
-        <div v-if="getNodeLastOutput(selectedNode.id)" class="form-group" style="margin-top: 14px; background: #f0fdf4; padding: 14px; border-radius: 10px; border: 2px solid #86efac; box-shadow: 0 4px 12px rgba(22,163,74,0.1);">
-          <label style="color: #16a34a; font-weight: 800; font-size: 0.85rem;">📥 LAST EXECUTION OUTPUT DATA</label>
-          <div class="json-box" style="max-height: 250px; background: #0f172a; border-radius: 8px; margin-top: 6px;"><pre>{{ JSON.stringify(getNodeLastOutput(selectedNode.id), null, 2) }}</pre></div>
-        </div>
-        <div v-else-if="getNodeLastError(selectedNode.id)" class="form-group" style="margin-top: 14px; background: #fef2f2; padding: 14px; border-radius: 10px; border: 2px solid #fca5a5;">
-          <label style="color: #dc2626; font-weight: 800; font-size: 0.85rem;">❌ LAST EXECUTION ERROR</label>
-          <div style="color: #dc2626; font-weight: 700; font-size: 0.825rem; font-family: var(--font-mono); margin-top: 6px; background: #ffffff; padding: 8px; border-radius: 6px; border: 1px solid #f87171;">
-            {{ getNodeLastError(selectedNode.id) }}
+        <!-- Tab 2: Output Inspector -->
+        <div v-else-if="activeSidebarTab === 'output'" style="display: flex; flex-direction: column; gap: 14px;">
+          <!-- Node Last Execution Info -->
+          <div v-if="getNodeStatus(selectedNode.id)" style="background: #f8fafc; border: 1px solid var(--border-color); border-radius: 12px; padding: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.02);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+              <span style="font-weight: 800; font-size: 0.85rem; color: #475569;">EXECUTION STATS</span>
+              <span style="font-size: 0.725rem; font-weight: 800; padding: 3px 8px; border-radius: 12px;"
+                    :style="getNodeStatusStyle(selectedNode.id)">
+                ● {{ getNodeStatus(selectedNode.id).status }}
+              </span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.775rem; color: #64748b;">
+              <div style="display: flex; justify-content: space-between;">
+                <span>Execution Duration:</span>
+                <span style="font-weight: 700; color: var(--text-primary);">{{ getNodeStatus(selectedNode.id).duration_ms }} ms</span>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span>Attempts Used:</span>
+                <span style="font-weight: 700; color: var(--text-primary);">{{ getNodeStatus(selectedNode.id).attempts || 1 }} / 3</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Output Inspector Card (JSON / Error) -->
+          <div v-if="getNodeLastOutput(selectedNode.id)" style="background: #f0fdf4; padding: 14px; border-radius: 12px; border: 2px solid #86efac; box-shadow: 0 4px 12px rgba(22,163,74,0.05);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+              <label style="color: #16a34a; font-weight: 800; font-size: 0.8rem; text-transform: uppercase;">📥 Execution Output</label>
+              <button class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.675rem; font-weight: 800;" 
+                      @click="copyToClipboard(JSON.stringify(getNodeLastOutput(selectedNode.id), null, 2))">
+                📋 Copy JSON
+              </button>
+            </div>
+            <div class="json-box" style="max-height: 380px; background: #0f172a; border-radius: 8px; overflow-y: auto; padding: 10px; margin-top: 6px;">
+              <pre style="margin: 0; color: #34d399; font-size: 0.775rem; font-family: var(--font-mono); white-space: pre-wrap; word-break: break-all;">{{ JSON.stringify(getNodeLastOutput(selectedNode.id), null, 2) }}</pre>
+            </div>
+          </div>
+
+          <div v-else-if="getNodeLastError(selectedNode.id)" style="background: #fef2f2; padding: 14px; border-radius: 12px; border: 2px solid #fca5a5; box-shadow: 0 4px 12px rgba(220,38,38,0.05);">
+            <label style="color: #dc2626; font-weight: 800; font-size: 0.8rem; text-transform: uppercase;">⚠️ Execution Error</label>
+            <div style="margin-top: 8px; padding: 10px; background: #7f1d1d; border-radius: 8px; color: #fecaca; font-size: 0.775rem; font-family: var(--font-mono); white-space: pre-wrap; word-break: break-all;">
+              {{ getNodeLastError(selectedNode.id) }}
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div v-else style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 250px; text-align: center; color: #64748b; padding: 20px; border: 2px dashed var(--border-color); border-radius: 12px; background: var(--bg-tertiary);">
+            <div style="font-size: 1.5rem; margin-bottom: 8px;">📊</div>
+            <div style="font-weight: 700; font-size: 0.85rem; margin-bottom: 4px; color: var(--text-primary);">No Execution Data</div>
+            <div style="font-size: 0.725rem;">Chạy thử nghiệm hoặc lập lịch hoạt động để kiểm tra kết quả đầu ra của node này.</div>
           </div>
         </div>
 
@@ -725,6 +788,7 @@
         const latestExecution = ref(null);
         const newWfName = ref('');
         const running = ref(false);
+        const activeSidebarTab = ref('settings');
         const importFileInput = ref(null);
 
         const selectedNode = computed(() => {
@@ -1195,6 +1259,14 @@
           }
         };
 
+        const copyToClipboard = (text) => {
+          navigator.clipboard.writeText(text).then(() => {
+            alert('📋 Đã sao chép kết quả JSON vào Clipboard!');
+          }).catch(err => {
+            console.error('Không thể sao chép: ', err);
+          });
+        };
+
         watch(() => selectedNodeId.value, async (newVal) => {
           await nextTick();
           const node = selectedNode.value;
@@ -1245,7 +1317,7 @@
           onDragStart, onDrop, connectWire, deleteWire, selectNode, deleteSelectedNode, startDragNode, openExecutionsModal, parseLogs, formatDate, selectExec,
           exportWorkflowJson, triggerImportClick, importWorkflowJson,
           getNodeX, getNodeY, getNodeName, saveWorkflow, runWorkflow, selectWorkflow, createNewWorkflow, deleteWf, getNodeCategoryColor,
-          getNodeLastOutputKeys, insertVariable, getNodeStatusStyle
+          getNodeLastOutputKeys, insertVariable, getNodeStatusStyle, activeSidebarTab, copyToClipboard
         };
       }
     }).mount('#app');
