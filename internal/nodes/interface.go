@@ -22,6 +22,7 @@ const (
 	TypeDiscordBot     NodeType = "discordBot"
 	TypeSlackBot       NodeType = "slackBot"
 	TypeJSCodeRunner   NodeType = "jsCodeRunner"
+	TypeSubWorkflow    NodeType = "subWorkflow"
 )
 
 // Node biểu diễn một nút trên Canvas workflow
@@ -49,6 +50,9 @@ type ExecutionContext struct {
 	Outputs      map[string]interface{} // Outputs theo NodeID
 	Credentials  map[string]string      // Credential ID -> decrypted secret
 	mu           sync.RWMutex
+	
+	// Callback to execute another workflow, avoiding circular dependency
+	ExecuteWorkflow func(workflowID string, payload interface{}) (interface{}, error)
 }
 
 func NewExecutionContext(workflowID, executionID string) *ExecutionContext {

@@ -57,11 +57,12 @@ func main() {
 	_ = registry.Register(nodes.NewDiscordBotExecutor())
 	_ = registry.Register(nodes.NewSlackBotExecutor())
 	_ = registry.Register(nodes.NewJSCodeRunnerExecutor())
+	_ = registry.Register(nodes.NewSubWorkflowExecutor())
 	log.Printf("[INFO] Plugin Registry initialized with %d built-in nodes", len(registry.ListDefinitions()))
 
 	// 4. Initialize EventBus and DAG Execution Engine
 	eventBus := engine.NewEventBus()
-	eng := engine.NewEngine(registry, execStore, credStore, eventBus)
+	eng := engine.NewEngine(registry, execStore, credStore, eventBus, wfStore)
 
 	// 5. Initialize Cron Scheduler for Timed Triggers
 	cScheduler := cron.New()

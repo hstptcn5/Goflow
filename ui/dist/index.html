@@ -14,18 +14,25 @@
   <!-- Vue 3 CDN -->
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
 
+  <!-- CodeMirror CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+  <!-- CodeMirror JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+
   <style>
     :root {
-      --bg-primary: #f8fafc;
-      --bg-secondary: #ffffff;
-      --bg-tertiary: #f1f5f9;
-      --border-color: #cbd5e1;
-      --text-primary: #0f172a;
-      --text-secondary: #475569;
-      --accent-blue: #2563eb;
-      --accent-purple: #7c3aed;
-      --accent-green: #16a34a;
-      --accent-red: #dc2626;
+      --bg-primary: #f1f5f9;       /* Soft light slate-blue for general background */
+      --bg-secondary: #ffffff;     /* Crisp white for panels/nodes */
+      --bg-tertiary: #f8fafc;      /* Slightly darker soft slate-blue for fields/lists */
+      --border-color: #cbd5e1;     /* Clean, crisp border slate */
+      --text-primary: #0f172a;     /* Deep charcoal text */
+      --text-secondary: #64748b;   /* Slate-grey text */
+      --accent-blue: #3b82f6;
+      --accent-purple: #8b5cf6;
+      --accent-green: #10b981;
+      --accent-red: #ef4444;
       --font-sans: 'Inter', system-ui, sans-serif;
       --font-mono: 'JetBrains Mono', monospace;
     }
@@ -36,18 +43,18 @@
     /* Header Navbar */
     .navbar {
       height: 60px;
-      background: #ffffff;
+      background: var(--bg-secondary);
       border-bottom: 2px solid var(--border-color);
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: 0 20px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
     }
     .brand { display: flex; align-items: center; gap: 10px; }
     .brand-icon { font-size: 1.6rem; }
-    .brand-title { font-size: 1.3rem; font-weight: 800; color: #0f172a; }
-    .brand-badge { font-size: 0.65rem; font-weight: 800; padding: 2px 6px; background: #dbeafe; color: #2563eb; border-radius: 4px; }
+    .brand-title { font-size: 1.3rem; font-weight: 800; color: var(--text-primary); }
+    .brand-badge { font-size: 0.65rem; font-weight: 800; padding: 2px 6px; background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; border-radius: 4px; }
 
     .nav-actions { display: flex; align-items: center; gap: 8px; }
     .btn {
@@ -55,12 +62,12 @@
       font-size: 0.85rem; font-weight: 700; border-radius: 8px; border: 1px solid transparent;
       cursor: pointer; transition: all 0.15s ease;
     }
-    .btn-primary { background: #2563eb; color: #fff; box-shadow: 0 2px 8px rgba(37,99,235,0.3); }
-    .btn-primary:hover { background: #1d4ed8; }
-    .btn-success { background: #16a34a; color: #fff; box-shadow: 0 2px 8px rgba(22,163,74,0.3); }
-    .btn-success:hover { background: #15803d; }
-    .btn-secondary { background: #f1f5f9; color: #0f172a; border-color: #cbd5e1; }
-    .btn-secondary:hover { background: #e2e8f0; }
+    .btn-primary { background: #2563eb; color: #fff; box-shadow: 0 4px 12px rgba(37,99,235,0.25); }
+    .btn-primary:hover { background: #1d4ed8; transform: translateY(-1px); }
+    .btn-success { background: #16a34a; color: #fff; box-shadow: 0 4px 12px rgba(22,163,74,0.25); }
+    .btn-success:hover { background: #15803d; transform: translateY(-1px); }
+    .btn-secondary { background: #f1f5f9; color: var(--text-primary); border-color: #cbd5e1; }
+    .btn-secondary:hover { background: #e2e8f0; border-color: #cbd5e1; }
     .btn-danger { background: #fef2f2; color: #dc2626; border-color: #fca5a5; }
     .btn-danger:hover { background: #dc2626; color: #fff; }
 
@@ -69,85 +76,135 @@
 
     /* Sidebar Left: Node Palette */
     .sidebar-palette {
-      width: 280px; background: #ffffff; border-right: 2px solid var(--border-color);
+      width: 280px; background: var(--bg-secondary); border-right: 2px solid var(--border-color);
       display: flex; flex-direction: column; padding: 16px; gap: 16px; overflow-y: auto;
     }
     .category-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-    .category-header { font-size: 0.75rem; font-weight: 800; color: #2563eb; text-transform: uppercase; letter-spacing: 0.05em; background: #eff6ff; padding: 4px 8px; border-radius: 4px; width: max-content; }
+    .category-header { font-size: 0.75rem; font-weight: 800; color: #2563eb; text-transform: uppercase; letter-spacing: 0.05em; background: #eff6ff; padding: 4px 8px; border-radius: 4px; width: max-content; border: 1px solid #bfdbfe; }
 
     .node-item {
       display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-      background: #ffffff; border: 2px solid #cbd5e1; border-radius: 10px;
-      cursor: grab; transition: all 0.15s; box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+      background: var(--bg-secondary); border: 2px solid var(--border-color); border-radius: 10px;
+      cursor: grab; transition: all 0.15s ease; box-shadow: 0 2px 6px rgba(0,0,0,0.04);
     }
-    .node-item:hover { border-color: #2563eb; transform: translateY(-2px); box-shadow: 0 6px 16px rgba(37,99,235,0.15); }
+    .node-item:hover { border-color: #2563eb; transform: translateY(-2px); box-shadow: 0 8px 20px rgba(37,99,235,0.12); }
     .node-item-icon { font-size: 1.2rem; }
-    .node-item-name { font-size: 0.85rem; font-weight: 700; color: #0f172a; }
-    .node-item-desc { font-size: 0.7rem; color: #64748b; }
+    .node-item-name { font-size: 0.85rem; font-weight: 700; color: var(--text-primary); }
+    .node-item-desc { font-size: 0.7rem; color: var(--text-secondary); }
 
     /* Canvas Center */
-    .canvas-wrapper { flex: 1; height: 100%; position: relative; background: #f8fafc; overflow: auto; padding: 40px; }
+    .canvas-wrapper { flex: 1; height: 100%; position: relative; background: #ebf3fc; overflow: auto; padding: 40px; }
     .canvas-grid {
       min-width: 1600px; min-height: 1200px; position: relative;
-      background-image: radial-gradient(#cbd5e1 1.5px, transparent 1.5px);
+      background-image: radial-gradient(#bfdbfe 1.8px, transparent 1.8px);
       background-size: 24px 24px;
     }
 
     /* Node Cards on Canvas */
     .canvas-node {
-      position: absolute; width: 230px; background: #ffffff;
-      border: 3px solid #2563eb; border-radius: 12px; padding: 14px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.08); cursor: pointer; transition: all 0.15s;
+      position: absolute; width: 250px; background: #ffffff;
+      border: 1px solid #e2e8f0; border-radius: 16px; padding: 16px 16px 16px 20px;
+      box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.08), 0 8px 10px -6px rgba(59, 130, 246, 0.08);
+      cursor: pointer; transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       user-select: none;
+      overflow: hidden;
     }
-    .canvas-node:hover { transform: scale(1.02); box-shadow: 0 12px 32px rgba(37,99,235,0.2); }
-    .canvas-node.selected { border-color: #7c3aed; box-shadow: 0 0 0 4px rgba(124,58,237,0.25), 0 8px 24px rgba(0,0,0,0.1); }
-    .canvas-node-title { font-weight: 800; font-size: 0.95rem; color: #0f172a; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; }
-    .canvas-node-type { font-size: 0.65rem; font-weight: 800; padding: 2px 6px; background: #eff6ff; color: #2563eb; border-radius: 4px; text-transform: uppercase; }
-    .canvas-node-body { font-size: 0.75rem; color: #475569; font-family: var(--font-mono); background: #f1f5f9; padding: 6px 8px; border-radius: 6px; margin-top: 6px; word-break: break-all; }
+    .canvas-node:hover { transform: translateY(-4px) scale(1.02); box-shadow: 0 20px 25px -5px rgba(59, 130, 246, 0.12), 0 10px 10px -5px rgba(59, 130, 246, 0.12); border-color: #3b82f6; }
+    .canvas-node.selected { border-color: #8b5cf6; box-shadow: 0 0 0 3px rgba(139,92,246,0.2), 0 20px 25px -5px rgba(59, 130, 246, 0.12); }
+    .canvas-node-title { font-weight: 800; font-size: 0.95rem; color: var(--text-primary); margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; }
+    .canvas-node-type { font-size: 0.625rem; font-weight: 800; padding: 2px 6px; background: #eff6ff; color: #2563eb; border-radius: 4px; text-transform: uppercase; border: 1px solid #bfdbfe; }
+    .canvas-node-body { font-size: 0.725rem; color: var(--text-secondary); font-family: var(--font-mono); background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px 10px; border-radius: 8px; margin-top: 8px; word-break: break-all; max-height: 80px; overflow: hidden; text-overflow: ellipsis; }
+
+    .node-accent-bar {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 6px;
+      border-radius: 16px 0 0 16px;
+    }
 
     /* SVG Connecting Wires */
     .svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-    .wire { stroke: #2563eb; stroke-width: 4; fill: none; stroke-dasharray: 6 3; animation: dash 1s linear infinite; pointer-events: stroke; cursor: pointer; }
-    .wire:hover { stroke: #dc2626; stroke-width: 6; }
+    .wire { stroke: #2563eb; stroke-width: 3.5; fill: none; stroke-dasharray: 8 4; animation: dash 1s linear infinite; pointer-events: stroke; cursor: pointer; transition: all 0.15s ease; }
+    .wire:hover { stroke: #ef4444; stroke-width: 5.5; }
+    @keyframes dash {
+      to {
+        stroke-dashoffset: -12;
+      }
+    }
 
     /* Sidebar Right: Properties Panel */
     .panel-right {
-      width: 380px; background: #ffffff; border-left: 2px solid var(--border-color);
-      display: flex; flex-direction: column; padding: 20px; z-index: 100; box-shadow: -4px 0 20px rgba(0,0,0,0.05);
+      width: 380px; background: var(--bg-secondary); border-left: 2px solid var(--border-color);
+      display: flex; flex-direction: column; padding: 20px; z-index: 100; box-shadow: -6px 0 24px rgba(0,0,0,0.3);
       overflow-y: auto;
     }
     .panel-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 14px; border-bottom: 2px solid var(--border-color); margin-bottom: 16px; }
-    .panel-title { font-size: 1rem; font-weight: 800; color: #0f172a; }
+    .panel-title { font-size: 1rem; font-weight: 800; color: var(--text-primary); }
 
     .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-    .form-group label { font-size: 0.775rem; font-weight: 800; color: #334155; text-transform: uppercase; }
+    .form-group label { font-size: 0.775rem; font-weight: 800; color: #475569; text-transform: uppercase; }
     .form-input, .form-select, .form-textarea {
-      width: 100%; padding: 10px 12px; background: #f8fafc; border: 2px solid #cbd5e1;
-      border-radius: 8px; color: #0f172a; font-family: var(--font-sans); font-size: 0.9rem; font-weight: 600; outline: none;
+      width: 100%; padding: 10px 12px; background: var(--bg-tertiary); border: 2px solid var(--border-color);
+      border-radius: 8px; color: var(--text-primary); font-family: var(--font-sans); font-size: 0.9rem; font-weight: 600; outline: none;
+      transition: all 0.15s;
     }
-    .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: #2563eb; background: #ffffff; }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: #3b82f6; background: #ffffff; }
     .form-textarea { font-family: var(--font-mono); font-size: 0.825rem; min-height: 90px; }
 
     .wire-chip {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 6px 10px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;
-      font-size: 0.775rem; font-weight: 700; color: #1e40af; margin-bottom: 6px;
+      padding: 6px 10px; background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2); border-radius: 6px;
+      font-size: 0.775rem; font-weight: 700; color: #2563eb; margin-bottom: 6px;
     }
 
     /* Modals & Backdrop */
-    .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); z-index: 200; display: flex; align-items: center; justify-content: center; }
-    .modal-card { width: 880px; max-height: 85vh; background: #ffffff; border-radius: 16px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); border: 2px solid var(--border-color); overflow-y: auto; }
-    .modal-title { font-size: 1.2rem; font-weight: 800; margin-bottom: 16px; border-bottom: 2px solid var(--border-color); padding-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
-    .wf-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 10px; margin-bottom: 8px; cursor: pointer; }
-    .wf-row:hover { border-color: #2563eb; }
-    .wf-row.active { border-color: #7c3aed; background: #f3e8ff; }
+    .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(7, 10, 19, 0.75); backdrop-filter: blur(8px); z-index: 200; display: flex; align-items: center; justify-content: center; }
+    .modal-card { width: 880px; max-height: 85vh; background: var(--bg-secondary); border-radius: 16px; padding: 24px; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 1px solid var(--border-color); overflow-y: auto; color: #ffffff; }
+    .modal-title { font-size: 1.2rem; font-weight: 800; margin-bottom: 16px; border-bottom: 2px solid var(--border-color); padding-bottom: 10px; display: flex; align-items: center; justify-content: space-between; color: #ffffff; }
+    .wf-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: var(--bg-tertiary); border: 2px solid var(--border-color); border-radius: 10px; margin-bottom: 8px; cursor: pointer; transition: all 0.15s; }
+    .wf-row:hover { border-color: #3b82f6; background: rgba(59,130,246,0.05); }
+    .wf-row.active { border-color: #8b5cf6; background: rgba(139,92,246,0.1); }
 
     /* Executions Timeline */
     .exec-timeline { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
-    .exec-step { background: #ffffff; border: 2px solid #cbd5e1; border-left: 6px solid #16a34a; border-radius: 10px; padding: 14px 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-    .exec-step.failed { border-left-color: #dc2626; border-color: #fca5a5; background: #fff5f5; }
-    .json-box { background: #0f172a; color: #38bdf8; padding: 12px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.8rem; overflow-x: auto; margin-top: 8px; line-height: 1.4; max-height: 300px; }
+    .exec-step { background: var(--bg-tertiary); border: 2px solid var(--border-color); border-left: 6px solid #10b981; border-radius: 10px; padding: 14px 18px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); color: #ffffff; }
+    .exec-step.failed { border-left-color: #ef4444; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.05); }
+    .json-box { background: #070a13; color: #38bdf8; padding: 12px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.8rem; overflow-x: auto; margin-top: 8px; line-height: 1.4; max-height: 300px; border: 1px solid var(--border-color); }
+
+    /* CodeMirror Custom styling */
+    .CodeMirror {
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.825rem;
+      height: 250px !important;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+      border: 1px solid var(--border-color);
+      text-align: left;
+    }
+
+    /* Variable Badges for Data Picker */
+    .var-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #2563eb;
+      border-radius: 6px;
+      font-size: 0.675rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .var-badge:hover {
+      background: #3b82f6;
+      color: #ffffff;
+      border-color: #2563eb;
+      transform: translateY(-1px);
+    }
   </style>
 </head>
 <body>
@@ -161,13 +218,14 @@
       </div>
 
       <div v-if="currentWorkflow" style="display: flex; align-items: center; gap: 12px;">
-        <span style="font-weight: 800; font-size: 1.05rem; color: #0f172a;">{{ currentWorkflow.name }}</span>
-        <span class="brand-badge" :style="{ background: currentWorkflow.is_active ? '#dcfce7' : '#f1f5f9', color: currentWorkflow.is_active ? '#16a34a' : '#64748b' }">
+        <span style="font-weight: 800; font-size: 1.05rem; color: #ffffff;">{{ currentWorkflow.name }}</span>
+        <span class="brand-badge" :style="{ background: currentWorkflow.is_active ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.15)', color: currentWorkflow.is_active ? '#34d399' : '#94a3b8', border: currentWorkflow.is_active ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(148, 163, 184, 0.3)' }">
           {{ currentWorkflow.is_active ? 'Active' : 'Inactive' }}
         </span>
       </div>
 
       <div class="nav-actions">
+        <button class="btn btn-secondary" @click="showCredModal = true">🔑 Credentials</button>
         <button class="btn btn-secondary" @click="showWfModal = true">📁 Workflows</button>
         <button class="btn btn-secondary" @click="openExecutionsModal">📜 Executions</button>
         <button class="btn btn-secondary" @click="exportWorkflowJson">📤 Export JSON</button>
@@ -185,7 +243,7 @@
     <div class="app-main">
       <!-- Left Sidebar Palette Grouped by Category -->
       <aside class="sidebar-palette">
-        <div style="font-size: 0.9rem; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+        <div style="font-size: 0.9rem; font-weight: 800; color: #ffffff; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
           🧩 Node Library
         </div>
 
@@ -219,6 +277,9 @@
                :style="{ left: node.position.x + 'px', top: node.position.y + 'px' }"
                @mousedown="startDragNode($event, node)"
                @click.stop="selectNode(node.id)">
+            <!-- Left Accent Bar -->
+            <div class="node-accent-bar" :style="{ background: getNodeCategoryColor(node.type) }"></div>
+
             <div class="canvas-node-title">
               <span>{{ getNodeIcon(node.type) }} {{ node.name }}</span>
               <span class="canvas-node-type">{{ node.type }}</span>
@@ -227,8 +288,8 @@
             <!-- Node Execution Status Badge -->
             <div v-if="getNodeStatus(node.id)" style="margin-top: 4px; display: flex; align-items: center; justify-content: space-between;">
               <span style="font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;"
-                    :style="{ background: getNodeStatus(node.id).status === 'SUCCESS' ? '#dcfce7' : '#fee2e2', color: getNodeStatus(node.id).status === 'SUCCESS' ? '#16a34a' : '#dc2626' }">
-                {{ getNodeStatus(node.id).status }} ({{ getNodeStatus(node.id).duration_ms }}ms)
+                    :style="getNodeStatusStyle(node.id)">
+                ● {{ getNodeStatus(node.id).status }} ({{ getNodeStatus(node.id).duration_ms }}ms)
               </span>
             </div>
 
@@ -278,7 +339,13 @@
 
         <!-- Node Parameters Form -->
         <div class="form-group" v-if="selectedNode.type === 'deepseekAI'">
-          <label>DeepSeek Model</label>
+          <label>Select Encrypted Credential</label>
+          <select v-model="selectedNode.params.credential_id" class="form-select">
+            <option value="">-- Use direct input below --</option>
+            <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+          </select>
+
+          <label style="margin-top: 10px;">DeepSeek Model</label>
           <select v-model="selectedNode.params.model" class="form-select">
             <option value="deepseek-chat">deepseek-chat (DeepSeek-V3)</option>
             <option value="deepseek-reasoner">deepseek-reasoner (DeepSeek-R1)</option>
@@ -296,7 +363,13 @@
         </div>
 
         <div class="form-group" v-else-if="selectedNode.type === 'openAIGPT'">
-          <label>AI Model</label>
+          <label>Select Encrypted Credential</label>
+          <select v-model="selectedNode.params.credential_id" class="form-select">
+            <option value="">-- Use direct input below --</option>
+            <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+          </select>
+
+          <label style="margin-top: 10px;">AI Model</label>
           <select v-model="selectedNode.params.model" class="form-select">
             <option value="gpt-4o-mini">gpt-4o-mini</option>
             <option value="gpt-4o">gpt-4o</option>
@@ -342,8 +415,8 @@
         </div>
 
         <div class="form-group" v-else-if="selectedNode.type === 'jsCodeRunner'">
-          <label>JS Code / JSON Expression</label>
-          <textarea v-model="selectedNode.params.code" class="form-textarea" placeholder="{ }"></textarea>
+          <label>JS Code (Dracula Editor)</label>
+          <textarea id="js-code-editor" class="form-textarea" placeholder="// write JS code here"></textarea>
         </div>
 
         <div class="form-group" v-else-if="selectedNode.type === 'jsonTransform'">
@@ -372,8 +445,14 @@
           <textarea v-model="selectedNode.params.body" class="form-textarea" placeholder="{ }"></textarea>
         </div>
 
-        <div class="form-group" v-else-if="selectedNode.type === 'emailSMTP'">
-          <label>SMTP Host</label>
+        <div class="form-group" style="margin-top: 10px;" v-else-if="selectedNode.type === 'emailSMTP'">
+          <label>Select Encrypted Credential</label>
+          <select v-model="selectedNode.params.credential_id" class="form-select">
+            <option value="">-- Use direct input below --</option>
+            <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+          </select>
+
+          <label style="margin-top: 10px;">SMTP Host</label>
           <input type="text" v-model="selectedNode.params.host" placeholder="smtp.gmail.com" class="form-input" />
 
           <label style="margin-top: 10px;">SMTP Port</label>
@@ -401,7 +480,13 @@
         </div>
 
         <div class="form-group" v-else-if="selectedNode.type === 'telegramBot'">
-          <label>Bot Token</label>
+          <label>Select Encrypted Credential</label>
+          <select v-model="selectedNode.params.credential_id" class="form-select">
+            <option value="">-- Use direct input below --</option>
+            <option v-for="c in credentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.type }})</option>
+          </select>
+
+          <label style="margin-top: 10px;">Bot Token</label>
           <input type="text" v-model="selectedNode.params.bot_token" class="form-input" placeholder="Token from @BotFather" />
 
           <label style="margin-top: 10px;">Chat ID</label>
@@ -414,6 +499,56 @@
         <div class="form-group" v-else-if="selectedNode.type === 'cronTrigger'">
           <label>Cron Schedule</label>
           <input type="text" v-model="selectedNode.params.cron_expression" class="form-input" placeholder="*/5 * * * *" />
+        </div>
+
+        <div class="form-group" v-else-if="selectedNode.type === 'subWorkflow'">
+          <label>Select Sub-workflow</label>
+          <select v-model="selectedNode.params.sub_workflow_id" class="form-select">
+            <option value="">-- Choose target workflow --</option>
+            <option v-for="w in workflows" :key="w.id" :value="w.id" v-show="currentWorkflow && w.id !== currentWorkflow.id">
+              {{ w.name }}
+            </option>
+          </select>
+
+          <label style="margin-top: 10px;">Input Payload (JSON / Text)</label>
+          <textarea v-model="selectedNode.params.payload_json" class="form-textarea"
+                    placeholder='{"key": "value"}'></textarea>
+
+          <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" v-model="selectedNode.params.loop_mode" id="sub-loop-mode" style="width: auto; height: auto;" />
+            <label for="sub-loop-mode" style="margin-bottom: 0; cursor: pointer; text-transform: none; color: var(--text-primary);">
+              Loop mode (Run for each item in array)
+            </label>
+          </div>
+
+          <div v-if="selectedNode.params.loop_mode" style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" v-model="selectedNode.params.parallel" id="sub-parallel" style="width: auto; height: auto;" />
+            <label for="sub-parallel" style="margin-bottom: 0; cursor: pointer; text-transform: none; color: var(--text-primary);">
+              Run loop items in parallel (Goroutines)
+            </label>
+          </div>
+        </div>
+
+        <!-- Dynamic Variables Data Picker -->
+        <div v-if="otherNodes.length > 0" class="form-group" style="margin-top: 14px; background: #eff6ff; padding: 14px; border-radius: 10px; border: 2px solid #bfdbfe; box-shadow: 0 4px 12px rgba(59,130,246,0.05);">
+          <label style="color: #1e40af; font-weight: 800; font-size: 0.85rem; display: flex; align-items: center; gap: 4px;">
+            🔍 Dynamic Variables (Data Picker)
+          </label>
+          <div style="font-size: 0.725rem; color: #64748b; margin-bottom: 6px;">
+            Focus on any text field, then click a variable below to insert:
+          </div>
+          <div style="max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px;">
+            <div v-for="n in otherNodes" :key="n.id" style="border-bottom: 1px dashed #cbd5e1; padding-bottom: 6px; margin-bottom: 2px;">
+              <div style="font-weight: 700; font-size: 0.75rem; color: #334155; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+                <span>{{ getNodeIcon(n.type) }} {{ n.name }}</span>
+              </div>
+              <div style="display: flex; flex-wrap: wrap; gap: 6px; padding-left: 6px;">
+                <span class="var-badge" @click="insertVariable(n.id)" title="Full output object" v-text="'{{' + n.id + '}}'"></span>
+                <span v-for="key in getNodeLastOutputKeys(n.id)" :key="key"
+                      class="var-badge" @click="insertVariable(n.id + '.' + key)" v-text="'{{' + n.id + '.' + key + '}}'"></span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Node Last Execution Output Inspector Card -->
@@ -526,10 +661,48 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal Credentials Manager -->
+    <div class="modal-backdrop" v-if="showCredModal" @click.self="showCredModal = false">
+      <div class="modal-card" style="width: 580px;">
+        <div class="modal-title">
+          <span>🔑 Credentials Vault</span>
+          <button class="btn btn-secondary" style="padding: 4px 8px;" @click="showCredModal = false">✕</button>
+        </div>
+
+        <div class="form-group" style="background: #f8fafc; padding: 14px; border-radius: 10px; border: 1px solid #cbd5e1; margin-bottom: 20px;">
+          <div style="font-weight: 800; font-size: 0.9rem; margin-bottom: 8px; color: #0f172a;">+ Create Encrypted Credential</div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <input type="text" v-model="newCredName" placeholder="e.g. My DeepSeek R1 Key" class="form-input" />
+            <select v-model="newCredType" class="form-select">
+              <option value="api_key">API Key (OpenAI, DeepSeek, etc.)</option>
+              <option value="token">Token / Bot Token (Telegram, Discord)</option>
+              <option value="smtp_pass">SMTP Password / Password</option>
+            </select>
+            <input type="password" v-model="newCredValue" placeholder="Secret Value (will be AES encrypted)" class="form-input" />
+            <button class="btn btn-primary" style="margin-top: 4px;" @click="createCredential">Add Encrypted Credential</button>
+          </div>
+        </div>
+
+        <div style="max-height: 250px; overflow-y: auto;">
+          <div style="font-weight: 800; font-size: 0.85rem; color: #64748b; margin-bottom: 8px;">EXISTING CREDENTIALS</div>
+          <div v-for="c in credentials" :key="c.id" class="wf-row" style="cursor: default;">
+            <div>
+              <div style="font-weight: 800; font-size: 0.95rem;">{{ c.name }}</div>
+              <div style="font-size: 0.75rem; color: #64748b;">Type: <span style="font-family: monospace; background: #e2e8f0; padding: 1px 4px; border-radius: 4px;">{{ c.type }}</span> | ID: {{ c.id }}</div>
+            </div>
+            <button class="btn btn-danger" style="padding: 4px 8px;" @click="deleteCredential(c.id)">🗑️</button>
+          </div>
+          <div v-if="credentials.length === 0" style="text-align: center; color: #64748b; font-size: 0.85rem; padding: 20px;">
+            No credentials saved in the Vault yet.
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
-    const { createApp, ref, computed, onMounted } = Vue;
+    const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
 
     createApp({
       setup() {
@@ -543,6 +716,10 @@
         const showWfModal = ref(false);
         const showExecModal = ref(false);
         const showCredModal = ref(false);
+        const credentials = ref([]);
+        const newCredName = ref('');
+        const newCredType = ref('api_key');
+        const newCredValue = ref('');
         const executions = ref([]);
         const selectedExec = ref(null);
         const latestExecution = ref(null);
@@ -590,6 +767,7 @@
           if (type === 'webhookTrigger' || type === 'cronTrigger') return '⚡';
           if (type === 'delaySleep') return '⏳';
           if (type === 'jsCodeRunner') return '📜';
+          if (type === 'subWorkflow') return '📂';
           return '⚙️';
         };
 
@@ -643,6 +821,24 @@
             }
           }
           return null;
+        };
+
+        const getNodeStatusStyle = (nodeId) => {
+          const status = getNodeStatus(nodeId);
+          if (!status) return {};
+          if (status.status === 'SUCCESS') {
+            return {
+              background: 'rgba(16, 185, 129, 0.15)',
+              color: '#34d399',
+              border: '1px solid rgba(16, 185, 129, 0.3)'
+            };
+          } else {
+            return {
+              background: 'rgba(239, 68, 68, 0.15)',
+              color: '#f87171',
+              border: '1px solid rgba(239, 68, 68, 0.3)'
+            };
+          }
         };
 
         const fetchWorkflows = async () => {
@@ -823,7 +1019,9 @@
             params: {
               url: 'https://httpbin.org/get', method: 'GET', message: 'Hello Goflow!',
               host: 'smtp.gmail.com', port: '587', username: 'sender@gmail.com', to: 'recipient@example.com', subject: 'Notification',
-              seconds: '3', prompt: 'Explain quantum computing...', code: '{\n  "status": "processed"\n}'
+              seconds: '3', prompt: 'Explain quantum computing...', code: '{\n  "status": "processed"\n}',
+              credential_id: '',
+              sub_workflow_id: '', payload_json: '{\n  "message": "Input payload"\n}', loop_mode: false, parallel: false
             }
           };
           nodes.value.push(newNode);
@@ -892,17 +1090,162 @@
           }
         };
 
+        const fetchCredentials = async () => {
+          const res = await fetch('/api/v1/credentials');
+          credentials.value = await res.json() || [];
+        };
+
+        const createCredential = async () => {
+          if (!newCredName.value.trim() || !newCredValue.value.trim()) return;
+          const res = await fetch('/api/v1/credentials', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: newCredName.value,
+              type: newCredType.value,
+              data: newCredValue.value
+            })
+          });
+          if (res.ok) {
+            newCredName.value = '';
+            newCredValue.value = '';
+            await fetchCredentials();
+          } else {
+            const errText = await res.text();
+            alert('Failed to create credential: ' + errText);
+          }
+        };
+
+        const deleteCredential = async (id) => {
+          if (confirm('Delete this credential?')) {
+            const res = await fetch(`/api/v1/credentials/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+              await fetchCredentials();
+            }
+          }
+        };
+
+        const getNodeCategoryColor = (type) => {
+          if (type === 'webhookTrigger' || type === 'cronTrigger') return '#f5a623'; // Amber
+          if (type === 'deepseekAI' || type === 'openAIGPT') return '#8b5cf6';       // Purple
+          if (type === 'discordBot' || type === 'slackBot' || type === 'telegramBot' || type === 'emailSMTP') return '#10b981'; // Green
+          return '#3b82f6'; // Blue
+        };
+
+        let lastFocusedInput = null;
+
+        // Focus tracker
+        window.addEventListener('focusin', (e) => {
+          if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+            lastFocusedInput = e.target;
+          }
+        });
+
+        const getNodeLastOutputKeys = (nodeId) => {
+          const out = getNodeLastOutput(nodeId);
+          if (!out) return [];
+          if (typeof out === 'object' && out !== null) {
+            const keys = [];
+            for (const k in out) {
+              if (typeof out[k] === 'object' && out[k] !== null && !Array.isArray(out[k])) {
+                for (const subK in out[k]) {
+                  keys.push(k + '.' + subK);
+                }
+              } else {
+                keys.push(k);
+              }
+            }
+            return keys;
+          }
+          return [];
+        };
+
+        const insertVariable = (varPath) => {
+          const insertion = `{{${varPath}}}`;
+          
+          // Check if CodeMirror is active and focused
+          if (window.cmEditor && window.cmEditor.hasFocus()) {
+            const doc = window.cmEditor.getDoc();
+            const cursor = doc.getCursor();
+            doc.replaceRange(insertion, cursor);
+            window.cmEditor.focus();
+            return;
+          }
+          
+          if (lastFocusedInput) {
+            const el = lastFocusedInput;
+            const start = el.selectionStart || 0;
+            const end = el.selectionEnd || 0;
+            const val = el.value || '';
+            
+            // Set value
+            el.value = val.substring(0, start) + insertion + val.substring(end);
+            
+            // Trigger Vue model updates
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            
+            // Refocus and selection range
+            el.focus();
+            const newCursor = start + insertion.length;
+            setTimeout(() => {
+              el.setSelectionRange(newCursor, newCursor);
+            }, 0);
+          } else {
+            alert('Vui lòng nhấp chuột vào một ô nhập liệu trước khi chèn biến!');
+          }
+        };
+
+        watch(() => selectedNodeId.value, async (newVal) => {
+          await nextTick();
+          const node = selectedNode.value;
+          if (node && node.type === 'jsCodeRunner') {
+            setTimeout(() => {
+              const textarea = document.getElementById('js-code-editor');
+              if (!textarea) return;
+
+              if (window.cmEditor) {
+                window.cmEditor.toTextArea();
+                window.cmEditor = null;
+              }
+
+              window.cmEditor = CodeMirror.fromTextArea(textarea, {
+                mode: 'javascript',
+                theme: 'dracula',
+                lineNumbers: true,
+                tabSize: 2,
+                lineWrapping: true,
+              });
+
+              window.cmEditor.setValue(node.params.code || '');
+
+              window.cmEditor.on('change', (instance) => {
+                if (selectedNode.value) {
+                  selectedNode.value.params.code = instance.getValue();
+                }
+              });
+            }, 50);
+          } else {
+            if (window.cmEditor) {
+              window.cmEditor.toTextArea();
+              window.cmEditor = null;
+            }
+          }
+        });
+
         onMounted(() => {
           fetchWorkflows();
           fetchNodeDefs();
+          fetchCredentials();
         });
 
         return {
           workflows, currentWorkflow, nodeDefs, groupedNodeDefs, getCategoryLabel, getNodeIcon, nodes, edges, selectedNodeId, selectedNode, otherNodes, outgoingWires, targetConnectId,
           showWfModal, showExecModal, showCredModal, executions, selectedExec, latestExecution, currentExecutionLogs, getNodeLastOutput, getNodeLastError, getNodeStatus, newWfName, running, importFileInput,
+          credentials, newCredName, newCredType, newCredValue, fetchCredentials, createCredential, deleteCredential,
           onDragStart, onDrop, connectWire, deleteWire, selectNode, deleteSelectedNode, startDragNode, openExecutionsModal, parseLogs, formatDate, selectExec,
           exportWorkflowJson, triggerImportClick, importWorkflowJson,
-          getNodeX, getNodeY, getNodeName, saveWorkflow, runWorkflow, selectWorkflow, createNewWorkflow, deleteWf
+          getNodeX, getNodeY, getNodeName, saveWorkflow, runWorkflow, selectWorkflow, createNewWorkflow, deleteWf, getNodeCategoryColor,
+          getNodeLastOutputKeys, insertVariable, getNodeStatusStyle
         };
       }
     }).mount('#app');

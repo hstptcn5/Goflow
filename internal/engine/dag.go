@@ -6,11 +6,12 @@ import (
 )
 
 type DAGPlan struct {
-	Nodes        map[string]*nodes.Node
-	Dependencies map[string][]string // NodeID -> danh sách NodeIDs phụ thuộc (các node phải chạy trước)
-	Dependents   map[string][]string // NodeID -> danh sách NodeIDs phụ thuộc vào node này (các node chạy sau)
-	InDegree     map[string]int      // Số lượng phụ thuộc đầu vào chưa hoàn thành
-	ExecutionLayers [][]string        // Các lớp node có thể thực thi song song
+	Nodes           map[string]*nodes.Node
+	Dependencies    map[string][]string // NodeID -> danh sách NodeIDs phụ thuộc (các node phải chạy trước)
+	Dependents      map[string][]string // NodeID -> danh sách NodeIDs phụ thuộc vào node này (các node chạy sau)
+	InDegree        map[string]int      // Số lượng phụ thuộc đầu vào chưa hoàn thành
+	ExecutionLayers [][]string          // Các lớp node có thể thực thi song song
+	EdgesFrom       map[string][]nodes.Edge // NodeID -> danh sách các cạnh xuất phát từ node này
 }
 
 // BuildDAGPlan phân tích danh sách Nodes và Edges, kiểm tra chu trình và tạo execution plan
@@ -19,6 +20,7 @@ func BuildDAGPlan(nodeList []nodes.Node, edgeList []nodes.Edge) (*DAGPlan, error
 	inDegree := make(map[string]int)
 	dependencies := make(map[string][]string)
 	dependents := make(map[string][]string)
+	edgesFrom := make(map[string][]nodes.Edge)
 
 	for i := range nodeList {
 		n := &nodeList[i]
@@ -26,6 +28,7 @@ func BuildDAGPlan(nodeList []nodes.Node, edgeList []nodes.Edge) (*DAGPlan, error
 		inDegree[n.ID] = 0
 		dependencies[n.ID] = []string{}
 		dependents[n.ID] = []string{}
+		edgesFrom[n.ID] = []nodes.Edge{}
 	}
 
 	for _, edge := range edgeList {
@@ -39,6 +42,7 @@ func BuildDAGPlan(nodeList []nodes.Node, edgeList []nodes.Edge) (*DAGPlan, error
 		inDegree[edge.Target]++
 		dependencies[edge.Target] = append(dependencies[edge.Target], edge.Source)
 		dependents[edge.Source] = append(dependents[edge.Source], edge.Target)
+		edgesFrom[edge.Source] = append(edgesFrom[edge.Source], edge)
 	}
 
 	// Kahn's Algorithm cho Topological Sorting và Cycle Detection
@@ -89,5 +93,6 @@ func BuildDAGPlan(nodeList []nodes.Node, edgeList []nodes.Edge) (*DAGPlan, error
 		Dependents:      dependents,
 		InDegree:        inDegree,
 		ExecutionLayers: executionLayers,
+		EdgesFrom:       edgesFrom,
 	}, nil
 }
