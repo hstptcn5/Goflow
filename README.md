@@ -75,7 +75,7 @@ graph TD
     classDef sync fill:#f87171,stroke:#ef4444,stroke-width:2px,color:#fff;
     classDef async fill:#60a5fa,stroke:#3b82f6,stroke-width:2px,color:#fff;
 
-    subgraph Throughput Comparison [Throughput: Requests per Second (Higher is Better)]
+    subgraph Throughput Comparison ["Throughput: Requests per Second (Higher is Better)"]
         direction LR
         Sync["Sync Mode: 7.10 r/s"]:::sync
         AsyncA["API Async: 755.40 r/s"]:::async
@@ -95,7 +95,7 @@ graph TD
     classDef fast fill:#34d399,stroke:#10b981,stroke-width:2px,color:#fff;
     classDef slow fill:#fb923c,stroke:#f97316,stroke-width:2px,color:#fff;
 
-    subgraph Latency Comparison [P50 Latency: Milliseconds (Lower is Better)]
+    subgraph Latency Comparison ["P50 Latency: Milliseconds (Lower is Better)"]
         direction LR
         SyncL["Sync Mode: 2920.10 ms"]:::slow
         AsyncAL["API Async: 18.45 ms"]:::fast
