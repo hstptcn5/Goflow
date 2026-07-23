@@ -41,12 +41,12 @@ This scenario performs external network calls and writes results into Google She
 
 | Metric | Synchronous Triggering | Asynchronous Triggering (async=true) | Improvement Factor |
 | :--- | :---: | :---: | :---: |
-| Total Time | 140.821 seconds | 1.324 seconds | 106.3x faster |
-| Throughput | 7.10 reqs/sec | 755.40 reqs/sec | 106.3x higher |
-| Success Rate | 71.0% (710 / 1000) | 100% (1000 / 1000) | No timeouts |
-| Average Latency | 6606.10 ms | 65.83 ms | 100x lower |
-| Median Latency (P50) | 2920.10 ms | 18.45 ms | 158x lower |
-| Latency P99 | 15001.50 ms | 608.81 ms | Response capped |
+| Total Time | 43.256 seconds | 2.356 seconds | 18.3x faster |
+| Throughput | 23.12 reqs/sec | 424.50 reqs/sec | 18.3x higher |
+| Success Rate | 100% (1000 / 1000) | 100% (1000 / 1000) | No timeouts |
+| Average Latency | 2098.60 ms | 115.86 ms | 18.1x lower |
+| Median Latency (P50) | 2136.33 ms | 25.12 ms | 85.0x lower |
+| Latency P99 | 3489.21 ms | 1019.07 ms | 3.4x lower |
 
 #### 2. Scenario B: CPU-Bound JS Scripting & JSON Transformation
 This scenario computes recursive Fibonacci(15) inside Goflow's sandboxed Goja JavaScript VM and maps the data via JSON Transform.
@@ -77,14 +77,14 @@ graph TD
 
     subgraph Throughput Comparison ["Throughput: Requests per Second (Higher is Better)"]
         direction LR
-        Sync["Sync Mode: 7.10 r/s"]:::sync
-        AsyncA["API Async: 755.40 r/s"]:::async
-        AsyncB["JS Async: 815.98 r/s"]:::async
-        AsyncC["Routing Async: 950.29 r/s"]:::async
+        Sync["Sync Mode (Scenario A): 23.12 r/s"]:::sync
+        AsyncA["API Async (Scenario A): 424.50 r/s"]:::async
+        AsyncB["JS Async (Scenario B): 815.98 r/s"]:::async
+        AsyncC["Routing Async (Scenario C): 950.29 r/s"]:::async
     end
 ```
 
-- Scenario A (API Bound Async):   [#######################################] 755.40 reqs/sec
+- Scenario A (API Bound Async):   [######################] 424.50 reqs/sec
 - Scenario B (CPU JS Logic Async): [###########################################] 815.98 reqs/sec
 - Scenario C (Pure Routing Async):  [##################################################] 950.29 reqs/sec
 
@@ -97,14 +97,14 @@ graph TD
 
     subgraph Latency Comparison ["P50 Latency: Milliseconds (Lower is Better)"]
         direction LR
-        SyncL["Sync Mode: 2920.10 ms"]:::slow
-        AsyncAL["API Async: 18.45 ms"]:::fast
-        AsyncBL["JS Async: 33.95 ms"]:::fast
-        AsyncCL["Routing Async: 12.66 ms"]:::fast
+        SyncL["Sync Mode (Scenario A): 2136.33 ms"]:::slow
+        AsyncAL["API Async (Scenario A): 25.12 ms"]:::fast
+        AsyncBL["JS Async (Scenario B): 33.95 ms"]:::fast
+        AsyncCL["Routing Async (Scenario C): 12.66 ms"]:::fast
     end
 ```
 
-- Scenario A (API Bound Async):   [############] 18.45 ms
+- Scenario A (API Bound Async):   [################] 25.12 ms
 - Scenario B (CPU JS Logic Async): [########################] 33.95 ms
 - Scenario C (Pure Routing Async):  [########] 12.66 ms
 
