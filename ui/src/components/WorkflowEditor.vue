@@ -108,7 +108,7 @@ function loadCurrentWorkflow() {
 
     nodes.value = rawNodes.map((n) => ({
       id: n.id,
-      type: 'customNode',
+      type: 'custom',
       position: n.position || { x: 250, y: 150 },
       label: n.name || n.type,
       data: { 
@@ -121,7 +121,9 @@ function loadCurrentWorkflow() {
     edges.value = rawEdges.map((e) => ({
       id: e.id,
       source: e.source,
+      sourceHandle: e.sourceHandle || null,
       target: e.target,
+      targetHandle: e.targetHandle || null,
       animated: true,
       style: { stroke: '#38bdf8', strokeWidth: 3 },
     }));
@@ -135,7 +137,9 @@ onConnect((connection) => {
   const newEdge = {
     id: edgeId,
     source: connection.source,
+    sourceHandle: connection.sourceHandle || null,
     target: connection.target,
+    targetHandle: connection.targetHandle || null,
     animated: true,
     style: { stroke: '#38bdf8', strokeWidth: 3 },
   };
@@ -165,7 +169,7 @@ function onDrop(event) {
 
   const newNode = {
     id: nodeId,
-    type: 'customNode',
+    type: 'custom',
     position: {
       x: Math.max(20, event.offsetX - 120),
       y: Math.max(20, event.offsetY - 40),
@@ -254,15 +258,15 @@ defineExpose({ saveCanvas });
         class="goflow-canvas"
       >
         <!-- Custom Node Design Template -->
-        <template #node-customNode="{ id, data }">
-          <div class="custom-node-card" :class="[data.categoryClass, getNodeStatusClass(id)]">
+        <template #node-custom="{ id, data }">
+          <div v-if="data" class="custom-node-card" :class="[data.categoryClass, getNodeStatusClass(id)]">
             <div class="node-accent-bar"></div>
             <div class="node-header">
-              <span class="node-icon">{{ data.icon }}</span>
-              <span class="node-type-label">{{ data.type }}</span>
+              <span class="node-icon">{{ data.icon || '⚙️' }}</span>
+              <span class="node-type-label">{{ data.type || 'unknown' }}</span>
             </div>
             <div class="node-body-title">
-              {{ data.name || data.type }}
+              {{ data.name || data.type || 'Unnamed Node' }}
             </div>
             
             <!-- Conditional Node Handles -->

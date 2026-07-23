@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted } from 'vue';
+import { onMounted, computed } from 'vue';
 import { useWorkflowStore } from '@/stores/workflowStore';
 
 const workflowStore = useWorkflowStore();
@@ -12,6 +12,90 @@ function onDragStart(event, nodeDef) {
   event.dataTransfer.setData('application/goflow-node', JSON.stringify(nodeDef));
   event.dataTransfer.effectAllowed = 'move';
 }
+
+const groupedNodes = computed(() => {
+  const groups = {};
+  workflowStore.nodeDefinitions.forEach((def) => {
+    const cat = def.category || 'OTHER';
+    if (!groups[cat]) {
+      groups[cat] = [];
+    }
+    groups[cat].push(def);
+  });
+  return groups;
+});
+
+function getGroupTitle(category) {
+  const titles = {
+    'TRIGGER': 'Triggers',
+    'ACTION': 'Actions',
+    'LOGIC': 'Logic & Flow',
+    'LOGIC & UTILITY': 'Logic & Utilities',
+    'DATABASE': 'Databases',
+    'AI & LLM': 'AI & Language Models',
+    'COMMUNICATION': 'SaaS & Communication',
+    'DEVELOPER': 'Developer Tools',
+  };
+  return titles[category] || category;
+}
+
+function getGroupIcon(category) {
+  const icons = {
+    'TRIGGER': '⚡',
+    'ACTION': '⚙️',
+    'LOGIC': '🔀',
+    'LOGIC & UTILITY': '🧩',
+    'DATABASE': '🗄️',
+    'AI & LLM': '🧠',
+    'COMMUNICATION': '💬',
+    'DEVELOPER': '💻',
+  };
+  return icons[category] || '⚙️';
+}
+
+function getPaletteItemClass(category) {
+  const classes = {
+    'TRIGGER': 'item-trigger',
+    'DATABASE': 'item-db',
+    'COMMUNICATION': 'item-saas',
+    'AI & LLM': 'item-ai',
+    'DEVELOPER': 'item-dev',
+  };
+  return classes[category] || 'item-logic';
+}
+
+function getNodeIcon(type) {
+  const icons = {
+    webhookTrigger: '🔗',
+    cronTrigger: '⏰',
+    manualTrigger: '⚡',
+    httpRequest: '🌐',
+    telegramBot: '📢',
+    jsonTransform: '🔄',
+    conditionIf: '🌿',
+    emailSMTP: '📧',
+    delaySleep: '⏳',
+    openAIGPT: '🤖',
+    deepseekAI: '🧠',
+    discordBot: '💬',
+    slackBot: '🗣️',
+    jsCodeRunner: '⚙️',
+    subWorkflow: '📁',
+    postgresQuery: '🐘',
+    redisCommand: '🔑',
+    googleSheets: '📊',
+    mysqlQuery: '🐬',
+    mongodbCommand: '🍃',
+    googleDrive: '💾',
+    gmailREST: '✉️',
+    notionPage: '📓',
+    sshRunner: '💻',
+    gitCommand: '🚀',
+    githubWebhook: '🐙',
+    goflowPlugin: '🔌',
+  };
+  return icons[type] || '⚙️';
+}
 </script>
 
 <template>
@@ -22,56 +106,25 @@ function onDragStart(event, nodeDef) {
     </div>
 
     <div class="palette-scroll">
-      <!-- Group Triggers -->
-      <div class="group-title">Triggers</div>
-      <div class="nodes-grid">
-        <div
-          v-for="def in workflowStore.nodeDefinitions.filter(d => d.category === 'TRIGGER')"
-          :key="def.type"
-          class="palette-item item-trigger"
-          draggable="true"
-          @dragstart="onDragStart($event, def)"
-        >
-          <div class="item-icon">🔗</div>
-          <div class="item-info">
-            <span class="item-name">{{ def.name }}</span>
-            <span class="item-desc">{{ def.description }}</span>
-          </div>
+      <div v-for="(defs, category) in groupedNodes" :key="category" class="category-group">
+        <div class="group-title">
+          <span class="group-icon">{{ getGroupIcon(category) }}</span>
+          {{ getGroupTitle(category) }}
         </div>
-      </div>
-
-      <!-- Group Actions -->
-      <div class="group-title">Actions</div>
-      <div class="nodes-grid">
-        <div
-          v-for="def in workflowStore.nodeDefinitions.filter(d => d.category === 'ACTION')"
-          :key="def.type"
-          class="palette-item item-action"
-          draggable="true"
-          @dragstart="onDragStart($event, def)"
-        >
-          <div class="item-icon">⚡</div>
-          <div class="item-info">
-            <span class="item-name">{{ def.name }}</span>
-            <span class="item-desc">{{ def.description }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Group Logic -->
-      <div class="group-title">Logic & Flow</div>
-      <div class="nodes-grid">
-        <div
-          v-for="def in workflowStore.nodeDefinitions.filter(d => d.category === 'LOGIC')"
-          :key="def.type"
-          class="palette-item item-logic"
-          draggable="true"
-          @dragstart="onDragStart($event, def)"
-        >
-          <div class="item-icon">🔀</div>
-          <div class="item-info">
-            <span class="item-name">{{ def.name }}</span>
-            <span class="item-desc">{{ def.description }}</span>
+        <div class="nodes-grid">
+          <div
+            v-for="def in defs"
+            :key="def.type"
+            class="palette-item"
+            :class="getPaletteItemClass(category)"
+            draggable="true"
+            @dragstart="onDragStart($event, def)"
+          >
+            <div class="item-icon">{{ getNodeIcon(def.type) }}</div>
+            <div class="item-info">
+              <span class="item-name">{{ def.name }}</span>
+              <span class="item-desc">{{ def.description }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -143,6 +196,13 @@ function onDragStart(event, nodeDef) {
   border-color: #2563eb;
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
 }
+
+.palette-item.item-trigger:hover { border-color: #f97316; box-shadow: 0 4px 12px rgba(249, 115, 22, 0.15); }
+.palette-item.item-logic:hover { border-color: #3b82f6; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15); }
+.palette-item.item-saas:hover { border-color: #10b981; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15); }
+.palette-item.item-db:hover { border-color: #6366f1; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15); }
+.palette-item.item-ai:hover { border-color: #a855f7; box-shadow: 0 4px 12px rgba(168, 85, 247, 0.15); }
+.palette-item.item-dev:hover { border-color: #64748b; box-shadow: 0 4px 12px rgba(100, 116, 139, 0.15); }
 
 .palette-item:active {
   cursor: grabbing;

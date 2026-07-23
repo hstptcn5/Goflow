@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { useExecutionStore } from '@/stores/executionStore';
 import { nodeHelpMap } from './NodeHelpData';
@@ -11,6 +11,7 @@ const props = defineProps({
 const emit = defineEmits(['updateNodeParams', 'deleteNode', 'close']);
 const workflowStore = useWorkflowStore();
 const showHelp = ref(false);
+const activeSidebarTab = ref('config'); // 'config' | 'output'
 
 const nodeDef = computed(() => {
   if (!props.selectedNode) return null;
@@ -23,6 +24,24 @@ const helpData = computed(() => {
 });
 
 const executionStore = useExecutionStore();
+
+watch(
+  () => props.selectedNode?.id,
+  () => {
+    activeSidebarTab.value = 'config';
+    showHelp.value = false;
+  }
+);
+
+watch(
+  () => workflowStore.currentWorkflow?.id,
+  (newId) => {
+    if (newId) {
+      executionStore.fetchExecutionHistory(newId);
+    }
+  },
+  { immediate: true }
+);
 
 const nodeExecutionResult = computed(() => {
   if (!props.selectedNode) return null;
@@ -67,118 +86,145 @@ function handleDeleteNode() {
       <button class="btn-close" @click="emit('close')">✕</button>
     </div>
 
+    <!-- Fixed Tabs Header -->
+    <div class="panel-tabs">
+      <button 
+        class="tab-btn" 
+        :class="{ active: activeSidebarTab === 'config' }"
+        @click="activeSidebarTab = 'config'"
+      >
+        ⚙️ Config
+      </button>
+      <button 
+        class="tab-btn" 
+        :class="{ active: activeSidebarTab === 'output' }"
+        @click="activeSidebarTab = 'output'"
+      >
+        📊 Live Output
+      </button>
+    </div>
+
     <div class="panel-body">
-      <div class="form-group">
-        <label>Node Name</label>
-        <input
-          type="text"
-          :value="selectedNode.name || nodeDef?.name"
-          @input="handleNameChange($event.target.value)"
-          class="form-input"
-        />
-      </div>
-
-      <div class="divider"></div>
-      <h4 class="section-title">Node Configuration</h4>
-
-      <div v-if="nodeDef && nodeDef.params && nodeDef.params.length > 0">
-        <div v-for="param in nodeDef.params" :key="param.name" class="form-group">
-          <label>{{ param.label }} <span v-if="param.required" class="req">*</span></label>
-          <span class="param-desc" v-if="param.description">{{ param.description }}</span>
-
-          <!-- Text Input -->
+      <!-- CONFIG TAB -->
+      <div v-if="activeSidebarTab === 'config'">
+        <div class="form-group">
+          <label>Node Name</label>
           <input
-            v-if="param.type === 'text'"
             type="text"
-            :value="selectedNode.params?.[param.name] ?? param.default ?? ''"
-            @input="handleParamChange(param.name, $event.target.value)"
+            :value="selectedNode.name || nodeDef?.name"
+            @input="handleNameChange($event.target.value)"
             class="form-input"
           />
-
-          <!-- Select Input -->
-          <select
-            v-else-if="param.type === 'select'"
-            :value="selectedNode.params?.[param.name] ?? param.default ?? ''"
-            @change="handleParamChange(param.name, $event.target.value)"
-            class="form-select"
-          >
-            <option v-for="opt in param.options" :key="opt" :value="opt">{{ opt }}</option>
-          </select>
-
-          <!-- Textarea / JSON Input -->
-          <textarea
-            v-else-if="param.type === 'textarea' || param.type === 'json'"
-            :value="selectedNode.params?.[param.name] ?? param.default ?? ''"
-            @input="handleParamChange(param.name, $event.target.value)"
-            class="form-textarea"
-            rows="4"
-          ></textarea>
-
-          <!-- Credential Select -->
-          <select
-            v-else-if="param.type === 'credential'"
-            :value="selectedNode.params?.[param.name] ?? ''"
-            @change="handleParamChange(param.name, $event.target.value)"
-            class="form-select"
-          >
-            <option value="">-- Select Credential Secret --</option>
-            <option
-              v-for="cred in workflowStore.credentials"
-              :key="cred.id"
-              :value="cred.id"
-            >
-              {{ cred.name }} ({{ cred.type }})
-            </option>
-          </select>
         </div>
-      </div>
-      <div v-else class="empty-params">
-        No configurable parameters for this node.
-      </div>
 
-      <!-- Help Documentation Box -->
-      <div v-if="helpData" class="help-section">
-        <button class="btn btn-secondary btn-full btn-help-toggle" @click="showHelp = !showHelp">
-          📖 {{ showHelp ? 'Hide Node Guide' : 'Show Node Guide' }}
-        </button>
-        <div class="help-content-box" v-if="showHelp">
-          <h5 class="help-node-title">{{ helpData.title }}</h5>
-          <p class="help-desc">{{ helpData.desc }}</p>
-          <div class="help-sub-sec">
-            <span class="help-sub-title">Inputs:</span>
-            <pre class="help-pre-text">{{ helpData.inputs }}</pre>
-          </div>
-          <div class="help-sub-sec">
-            <span class="help-sub-title">Output Reference:</span>
-            <pre class="help-code-block"><code>{{ helpData.output }}</code></pre>
-          </div>
-        </div>
-      </div>
-
-      <!-- Live Execution Result Output -->
-      <div v-if="nodeExecutionResult" class="execution-result-section">
         <div class="divider"></div>
-        <h4 class="section-title">Latest Run Result</h4>
-        <div class="exec-status-badge" :class="nodeExecutionResult.status.toLowerCase()">
-          {{ nodeExecutionResult.status }} ({{ nodeExecutionResult.duration_ms }}ms)
+        <h4 class="section-title">Node Configuration</h4>
+
+        <div v-if="nodeDef && nodeDef.params && nodeDef.params.length > 0">
+          <div v-for="param in nodeDef.params" :key="param.name" class="form-group">
+            <label>{{ param.label }} <span v-if="param.required" class="req">*</span></label>
+            <span class="param-desc" v-if="param.description">{{ param.description }}</span>
+
+            <!-- Text Input -->
+            <input
+              v-if="param.type === 'text'"
+              type="text"
+              :value="selectedNode.params?.[param.name] ?? param.default ?? ''"
+              @input="handleParamChange(param.name, $event.target.value)"
+              class="form-input"
+            />
+
+            <!-- Select Input -->
+            <select
+              v-else-if="param.type === 'select'"
+              :value="selectedNode.params?.[param.name] ?? param.default ?? ''"
+              @change="handleParamChange(param.name, $event.target.value)"
+              class="form-select"
+            >
+              <option v-for="opt in param.options" :key="opt" :value="opt">{{ opt }}</option>
+            </select>
+
+            <!-- Textarea / JSON Input -->
+            <textarea
+              v-else-if="param.type === 'textarea' || param.type === 'json'"
+              :value="selectedNode.params?.[param.name] ?? param.default ?? ''"
+              @input="handleParamChange(param.name, $event.target.value)"
+              class="form-textarea"
+              rows="4"
+            ></textarea>
+
+            <!-- Credential Select -->
+            <select
+              v-else-if="param.type === 'credential'"
+              :value="selectedNode.params?.[param.name] ?? ''"
+              @change="handleParamChange(param.name, $event.target.value)"
+              class="form-select"
+            >
+              <option value="">-- Select Credential Secret --</option>
+              <option
+                v-for="cred in workflowStore.credentials"
+                :key="cred.id"
+                :value="cred.id"
+              >
+                {{ cred.name }} ({{ cred.type }})
+              </option>
+            </select>
+          </div>
         </div>
-        
-        <div v-if="nodeExecutionResult.output" class="exec-output-box">
-          <label>Output Payload:</label>
-          <pre class="json-code"><code>{{ JSON.stringify(nodeExecutionResult.output, null, 2) }}</code></pre>
+        <div v-else class="empty-params">
+          No configurable parameters for this node.
         </div>
-        
-        <div v-if="nodeExecutionResult.error" class="exec-error-box">
-          <label>Error Details:</label>
-          <pre class="error-code"><code>{{ nodeExecutionResult.error }}</code></pre>
+
+        <!-- Help Documentation Box -->
+        <div v-if="helpData" class="help-section">
+          <button class="btn btn-secondary btn-full btn-help-toggle" @click="showHelp = !showHelp">
+            📖 {{ showHelp ? 'Hide Node Guide' : 'Show Node Guide' }}
+          </button>
+          <div class="help-content-box" v-if="showHelp">
+            <h5 class="help-node-title">{{ helpData.title }}</h5>
+            <p class="help-desc">{{ helpData.desc }}</p>
+            <div class="help-sub-sec">
+              <span class="help-sub-title">Inputs:</span>
+              <pre class="help-pre-text">{{ helpData.inputs }}</pre>
+            </div>
+            <div class="help-sub-sec">
+              <span class="help-sub-title">Output Reference:</span>
+              <pre class="help-code-block"><code>{{ helpData.output }}</code></pre>
+            </div>
+          </div>
         </div>
+
+        <div class="divider"></div>
+
+        <button class="btn btn-danger btn-full" @click="handleDeleteNode">
+          🗑️ Delete Node
+        </button>
       </div>
 
-      <div class="divider"></div>
-
-      <button class="btn btn-danger btn-full" @click="handleDeleteNode">
-        🗑️ Delete Node
-      </button>
+      <!-- LIVE OUTPUT TAB -->
+      <div v-if="activeSidebarTab === 'output'">
+        <div v-if="nodeExecutionResult">
+          <h4 class="section-title">Latest Run Result</h4>
+          <div class="exec-status-badge" :class="nodeExecutionResult.status.toLowerCase()">
+            {{ nodeExecutionResult.status }} ({{ nodeExecutionResult.duration_ms }}ms)
+          </div>
+          
+          <div v-if="nodeExecutionResult.output" class="exec-output-box">
+            <label>Output Payload:</label>
+            <pre class="json-code"><code>{{ JSON.stringify(nodeExecutionResult.output, null, 2) }}</code></pre>
+          </div>
+          
+          <div v-if="nodeExecutionResult.error" class="exec-error-box">
+            <label>Error Details:</label>
+            <pre class="error-code"><code>{{ nodeExecutionResult.error }}</code></pre>
+          </div>
+        </div>
+        <div v-else class="empty-output">
+          <span class="empty-icon">📊</span>
+          <p>No execution data available.</p>
+          <p class="empty-sub">Run the workflow or trigger nodes to inspect live outputs.</p>
+        </div>
+      </div>
     </div>
   </aside>
 </template>
@@ -432,5 +478,69 @@ function handleDeleteNode() {
   font-size: 0.7rem;
   margin: 0;
   line-height: 1.3;
+}
+
+/* Sidebar Tab Headers */
+.panel-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  background: #f8fafc;
+  padding: 0 8px;
+}
+
+.tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  color: var(--accent-blue);
+  border-bottom-color: var(--accent-blue);
+}
+
+/* Empty Output styling */
+.empty-output {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--text-muted);
+}
+
+.empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 12px;
+  opacity: 0.7;
+}
+
+.empty-output p {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text-primary);
+}
+
+.empty-output .empty-sub {
+  font-size: 0.725rem;
+  color: var(--text-secondary);
+  opacity: 0.8;
 }
 </style>
