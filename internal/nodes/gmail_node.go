@@ -120,7 +120,7 @@ func (e *GmailRESTExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeGmailREST,
 		Name:        "Gmail REST API",
-		Description: "Gửi Email HTML bảo mật thông qua dịch vụ Google Gmail REST API sử dụng Service Account",
+		Description: "Sends HTML email through the Gmail REST API using a service account",
 		Icon:        "Mail",
 		Category:    "COMMUNICATION",
 		Params: []ParamDefinition{
@@ -129,28 +129,28 @@ func (e *GmailRESTExecutor) GetDefinition() NodeDefinition {
 				Label:       "Select Encrypted Credential",
 				Type:        "credential",
 				Required:    false,
-				Description: "Chọn tệp khóa Service Account JSON đã mã hóa từ Vault",
+				Description: "Select an encrypted service account JSON credential from the vault",
 			},
 			{
 				Name:        "service_account_json",
 				Label:       "Service Account JSON Key",
 				Type:        "textarea",
 				Required:    false,
-				Description: "Dán nội dung khóa Service Account JSON trực tiếp (nếu không dùng Vault)",
+				Description: "Paste the service account JSON key directly if not using the vault",
 			},
 			{
 				Name:        "impersonate_user",
 				Label:       "Impersonate User Email (G-Suite)",
 				Type:        "text",
 				Required:    false,
-				Description: "Địa chỉ email người gửi cần giả lập (bắt buộc khi dùng G-Suite Service Account)",
+				Description: "Sender email to impersonate when using a Google Workspace service account",
 			},
 			{
 				Name:        "to",
 				Label:       "Recipient Email (To)",
 				Type:        "text",
 				Required:    true,
-				Description: "Địa chỉ nhận email (ví dụ: recipient@example.com)",
+				Description: "Recipient email address, for example recipient@example.com",
 			},
 			{
 				Name:        "subject",
@@ -158,7 +158,7 @@ func (e *GmailRESTExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "Notification from Goflow",
 				Required:    true,
-				Description: "Tiêu đề của Email",
+				Description: "Email subject",
 			},
 			{
 				Name:        "body",
@@ -166,7 +166,7 @@ func (e *GmailRESTExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "<h1>Hello!</h1><p>This is a custom notification email sent by Goflow automation flow.</p>",
 				Required:    true,
-				Description: "Nội dung văn bản định dạng HTML của email",
+				Description: "HTML email body",
 			},
 		},
 	}

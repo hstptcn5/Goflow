@@ -78,7 +78,7 @@ func (e *SlackBotExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeSlackBot,
 		Name:        "Slack Webhook",
-		Description: "Tu dong gui thong bao toi kenh Slack",
+		Description: "Sends notification messages to a Slack channel",
 		Icon:        "Slack",
 		Category:    "COMMUNICATION",
 		Params: []ParamDefinition{
@@ -88,7 +88,7 @@ func (e *SlackBotExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "",
 				Required:    true,
-				Description: "Incoming Webhook URL tu Slack Apps",
+				Description: "Incoming webhook URL from Slack Apps",
 			},
 			{
 				Name:        "text",
@@ -96,7 +96,7 @@ func (e *SlackBotExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "Goflow Alert: Slack message sent successfully!",
 				Required:    true,
-				Description: "Noi dung tin nhan",
+				Description: "Message text",
 			},
 			{
 				Name:        "username",
@@ -104,7 +104,7 @@ func (e *SlackBotExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "Goflow Bot",
 				Required:    false,
-				Description: "Ten hien thi nguoi gui",
+				Description: "Sender display name",
 			},
 		},
 	}

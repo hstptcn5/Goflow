@@ -22,7 +22,7 @@ func (e *JSONTransformExecutor) Execute(ctx *ExecutionContext, node *Node) (inte
 		return nil, fmt.Errorf("invalid json_template: %w", err)
 	}
 
-	// Đưa thêm context outputs của các node trước vào kết quả transform
+	// ????a th??m context outputs c???a c??c node tr?????c v??o k???t qu??? transform
 	result := map[string]interface{}{
 		"transformed": parsed,
 		"context":     ctx.Outputs,
@@ -39,7 +39,7 @@ func (e *JSONTransformExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeJSONTransform,
 		Name:        "JSON Transform",
-		Description: "Tạo hoặc trích xuất biến đổi cấu trúc dữ liệu JSON",
+		Description: "Creates or transforms JSON data structures",
 		Icon:        "Code",
 		Category:    "ACTION",
 		Retryable:   true,
@@ -50,7 +50,7 @@ func (e *JSONTransformExecutor) GetDefinition() NodeDefinition {
 				Type:        "json",
 				Default:     "{\n  \"status\": \"success\",\n  \"processed\": true\n}",
 				Required:    true,
-				Description: "Cấu trúc JSON mong muốn",
+				Description: "Desired JSON output structure",
 			},
 		},
 	}

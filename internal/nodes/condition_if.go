@@ -54,7 +54,7 @@ func (e *ConditionIFExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeConditionIF,
 		Name:        "IF / ELSE Condition",
-		Description: "Rẽ nhánh thực thi workflow dựa theo điều kiện so sánh",
+		Description: "Branches workflow execution based on a comparison condition",
 		Icon:        "GitBranch",
 		Category:    "LOGIC",
 		Retryable:   true,
@@ -65,7 +65,7 @@ func (e *ConditionIFExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "",
 				Required:    true,
-				Description: "Giá trị truyền vào cần so sánh",
+				Description: "Input value to compare",
 			},
 			{
 				Name:        "operator",
@@ -74,7 +74,7 @@ func (e *ConditionIFExecutor) GetDefinition() NodeDefinition {
 				Default:     "equals",
 				Options:     []string{"equals", "not_equals", "contains", "is_not_empty"},
 				Required:    true,
-				Description: "Toán tử so sánh",
+				Description: "Comparison operator",
 			},
 			{
 				Name:        "value",
@@ -82,7 +82,7 @@ func (e *ConditionIFExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "",
 				Required:    false,
-				Description: "Giá trị đích để đối chiếu",
+				Description: "Expected value to compare against",
 			},
 		},
 	}

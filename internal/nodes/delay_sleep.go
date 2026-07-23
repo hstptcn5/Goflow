@@ -34,7 +34,7 @@ func (e *DelaySleepExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeDelaySleep,
 		Name:        "Delay / Sleep",
-		Description: "Tạm dừng luồng thực thi workflow trong khoảng thời gian cấu hình",
+		Description: "Pauses workflow execution for the configured duration",
 		Icon:        "Hourglass",
 		Category:    "LOGIC",
 		Retryable:   true,
@@ -45,7 +45,7 @@ func (e *DelaySleepExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "3",
 				Required:    true,
-				Description: "Số giây tạm dừng (Ví dụ: 3 giây)",
+				Description: "Number of seconds to pause, for example 3",
 			},
 		},
 	}

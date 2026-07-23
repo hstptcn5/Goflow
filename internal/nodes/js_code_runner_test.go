@@ -87,4 +87,3 @@ func TestJSCodeRunnerExecutor(t *testing.T) {
 		t.Errorf("Expected error to contain 'timeout' or 'interrupted', got: %v", errStr)
 	}
 }
-

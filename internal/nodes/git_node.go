@@ -103,7 +103,7 @@ func (e *GitCommandExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeGitCommand,
 		Name:        "Git Command",
-		Description: "Thực hiện lệnh git clone, git pull, hoặc git commit/push tự động bằng Git CLI cục bộ",
+		Description: "Runs git clone, pull, or commit and push through the local Git CLI",
 		Icon:        "GitBranch",
 		Category:    "DEVELOPER",
 		Params: []ParamDefinition{
@@ -114,21 +114,21 @@ func (e *GitCommandExecutor) GetDefinition() NodeDefinition {
 				Default:     "CLONE",
 				Options:     []string{"CLONE", "PULL", "COMMIT_PUSH"},
 				Required:    true,
-				Description: "Chọn hành động clone repo, pull cập nhật, hoặc commit & push",
+				Description: "Choose clone, pull, or commit and push",
 			},
 			{
 				Name:        "repository_url",
 				Label:       "Git Repository URL (For CLONE)",
 				Type:        "text",
 				Required:    false,
-				Description: "Đường dẫn Git Repository cần clone (ví dụ: https://github.com/user/repo.git)",
+				Description: "Repository URL to clone, for example https://github.com/user/repo.git",
 			},
 			{
 				Name:        "target_directory",
 				Label:       "Target Directory",
 				Type:        "text",
 				Required:    true,
-				Description: "Thư mục đích lưu mã nguồn cục bộ (ví dụ: d:/my-projects/repo)",
+				Description: "Local target directory, for example d:/my-projects/repo",
 			},
 			{
 				Name:        "branch",
@@ -136,14 +136,14 @@ func (e *GitCommandExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "main",
 				Required:    true,
-				Description: "Tên nhánh Git (ví dụ: main, master, develop)",
+				Description: "Git branch name, for example main, master, or develop",
 			},
 			{
 				Name:        "commit_message",
 				Label:       "Commit Message (For COMMIT_PUSH)",
 				Type:        "text",
 				Required:    false,
-				Description: "Nội dung thông điệp commit khi thực hiện commit/push",
+				Description: "Commit message used for commit and push",
 			},
 		},
 	}

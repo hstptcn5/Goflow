@@ -89,7 +89,7 @@ func (e *DiscordBotExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeDiscordBot,
 		Name:        "Discord Webhook",
-		Description: "Tu dong gui thong bao va Embed card toi kenh Discord",
+		Description: "Sends messages and embed cards to a Discord channel",
 		Icon:        "MessageSquare",
 		Category:    "COMMUNICATION",
 		Params: []ParamDefinition{
@@ -99,7 +99,7 @@ func (e *DiscordBotExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "",
 				Required:    true,
-				Description: "URL Webhook tao tu Channel Settings trong Discord",
+				Description: "Webhook URL created from Discord channel settings",
 			},
 			{
 				Name:        "username",
@@ -107,7 +107,7 @@ func (e *DiscordBotExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "Goflow Bot",
 				Required:    false,
-				Description: "Ten hien thi cua Bot tren Discord",
+				Description: "Display name used by the Discord bot",
 			},
 			{
 				Name:        "content",
@@ -115,7 +115,7 @@ func (e *DiscordBotExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "Goflow Alert: Workflow executed successfully!",
 				Required:    false,
-				Description: "Noi dung tin nhan van ban",
+				Description: "Plain text message content",
 			},
 			{
 				Name:        "embed_title",
@@ -123,7 +123,7 @@ func (e *DiscordBotExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "Workflow Completed",
 				Required:    false,
-				Description: "Tieu de the Embed Card",
+				Description: "Embed card title",
 			},
 			{
 				Name:        "embed_desc",
@@ -131,7 +131,7 @@ func (e *DiscordBotExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "Status: SUCCESS",
 				Required:    false,
-				Description: "Mo ta the Embed Card",
+				Description: "Embed card description",
 			},
 		},
 	}

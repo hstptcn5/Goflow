@@ -12,9 +12,9 @@ func TestRedisCommandExecutorOffline(t *testing.T) {
 	// Test 1: Empty Key error
 	nodeEmptyKey := &Node{
 		Params: map[string]interface{}{
-			"address":  "localhost:6379",
-			"command":  "GET",
-			"key":      "",
+			"address": "localhost:6379",
+			"command": "GET",
+			"key":     "",
 		},
 	}
 	_, err := executor.Execute(ctx, nodeEmptyKey)
@@ -31,9 +31,9 @@ func TestRedisCommandExecutorOffline(t *testing.T) {
 	// Test 3: Connection failure error (Offline port)
 	nodeOffline := &Node{
 		Params: map[string]interface{}{
-			"address":  "localhost:56379",
-			"command":  "GET",
-			"key":      "test-key",
+			"address": "localhost:56379",
+			"command": "GET",
+			"key":     "test-key",
 		},
 	}
 	_, err = executor.Execute(ctx, nodeOffline)

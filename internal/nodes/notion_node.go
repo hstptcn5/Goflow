@@ -101,7 +101,7 @@ func (e *NotionPageExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeNotionPage,
 		Name:        "Notion Page",
-		Description: "Tạo trang mới bên trong một Database trên Notion bằng API Token",
+		Description: "Creates a new page inside a Notion database using an API token",
 		Icon:        "BookOpen",
 		Category:    "COMMUNICATION",
 		Params: []ParamDefinition{
@@ -110,21 +110,21 @@ func (e *NotionPageExecutor) GetDefinition() NodeDefinition {
 				Label:       "Select Encrypted Credential",
 				Type:        "credential",
 				Required:    false,
-				Description: "Chọn Notion Integration API Token đã được mã hóa từ Vault",
+				Description: "Select an encrypted Notion integration token from the vault",
 			},
 			{
 				Name:        "notion_token",
 				Label:       "Notion API Token",
 				Type:        "password",
 				Required:    false,
-				Description: "Nhập trực tiếp API Token Notion (nếu không dùng Vault)",
+				Description: "Paste the Notion API token directly if not using the vault",
 			},
 			{
 				Name:        "database_id",
 				Label:       "Database ID",
 				Type:        "text",
 				Required:    true,
-				Description: "ID của Database cần tạo trang (lấy từ Notion URL của Database)",
+				Description: "Database ID from the Notion database URL",
 			},
 			{
 				Name:        "properties_json",
@@ -132,7 +132,7 @@ func (e *NotionPageExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "{\n  \"Name\": {\n    \"title\": [\n      {\n        \"text\": {\n          \"content\": \"New Task from Goflow\"\n        }\n      }\n    ]\n  }\n}",
 				Required:    true,
-				Description: "Các cột dữ liệu và kiểu tương ứng dạng JSON theo chuẩn Notion API",
+				Description: "Page properties as a JSON object using the Notion API format",
 			},
 		},
 	}

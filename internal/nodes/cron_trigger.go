@@ -23,7 +23,7 @@ func (e *CronTriggerExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeCronTrigger,
 		Name:        "Cron Schedule",
-		Description: "Tự động kích hoạt workflow theo biểu thức Lịch Cron",
+		Description: "Runs the workflow automatically on a cron schedule",
 		Icon:        "Clock",
 		Category:    "TRIGGER",
 		Retryable:   true,
@@ -34,7 +34,7 @@ func (e *CronTriggerExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "*/5 * * * *",
 				Required:    true,
-				Description: "Cú pháp Cron (ví dụ: '*/5 * * * *' chạy mỗi 5 phút)",
+				Description: "Cron expression, for example */5 * * * * for every 5 minutes",
 			},
 		},
 	}

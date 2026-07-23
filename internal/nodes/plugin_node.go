@@ -158,7 +158,7 @@ func (e *GoflowPluginExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeGoflowPlugin,
 		Name:        "Goflow Plugin",
-		Description: "Thực thi các node tự định nghĩa viết bằng Go hoặc bất kỳ ngôn ngữ nào dưới dạng file binary tiến trình độc lập trong thư mục ./plugins/",
+		Description: "Runs custom plugin executables from the ./plugins directory using JSON IPC",
 		Icon:        "Cpu",
 		Category:    "LOGIC & UTILITY",
 		Params: []ParamDefinition{
@@ -167,7 +167,7 @@ func (e *GoflowPluginExecutor) GetDefinition() NodeDefinition {
 				Label:       "Plugin Executable Name",
 				Type:        "text",
 				Required:    true,
-				Description: "Tên của file chạy plugin đặt trong thư mục ./plugins/ (ví dụ: my_custom_node hoặc my_custom_node.exe)",
+				Description: "Executable filename inside ./plugins, for example my_custom_node or my_custom_node.exe",
 			},
 		},
 	}

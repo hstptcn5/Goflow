@@ -108,7 +108,7 @@ func (e *DeepSeekAIExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeDeepSeekAI,
 		Name:        "DeepSeek AI",
-		Description: "Tự động gọi DeepSeek-V3 / DeepSeek-R1 (Reasoner) sinh câu trả lời AI",
+		Description: "Calls DeepSeek chat or reasoner models to generate AI responses",
 		Icon:        "Brain",
 		Category:    "AI & LLM",
 		Retryable:   true,
@@ -120,7 +120,7 @@ func (e *DeepSeekAIExecutor) GetDefinition() NodeDefinition {
 				Default:     "deepseek-chat",
 				Options:     []string{"deepseek-chat", "deepseek-reasoner", "deepseek-coder"},
 				Required:    true,
-				Description: "Chọn mô hình DeepSeek (deepseek-chat cho V3, deepseek-reasoner cho R1)",
+				Description: "Choose the DeepSeek model: deepseek-chat or deepseek-reasoner",
 			},
 			{
 				Name:        "prompt",
@@ -128,7 +128,7 @@ func (e *DeepSeekAIExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "Explain quantum computing in simple terms",
 				Required:    true,
-				Description: "Câu lệnh prompt gửi cho DeepSeek AI",
+				Description: "Prompt sent to DeepSeek AI",
 			},
 			{
 				Name:        "system_message",
@@ -136,7 +136,7 @@ func (e *DeepSeekAIExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "You are a helpful AI assistant.",
 				Required:    false,
-				Description: "Chỉ định vai trò cho AI",
+				Description: "Defines the assistant role and behavior",
 			},
 			{
 				Name:        "api_key",
@@ -144,7 +144,7 @@ func (e *DeepSeekAIExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "",
 				Required:    false,
-				Description: "Khóa API DeepSeek (sk-...)",
+				Description: "DeepSeek API key (sk-...)",
 			},
 			{
 				Name:        "credential_id",
@@ -152,7 +152,7 @@ func (e *DeepSeekAIExecutor) GetDefinition() NodeDefinition {
 				Type:        "credential",
 				Default:     "",
 				Required:    false,
-				Description: "Hoặc chọn Credential đã lưu",
+				Description: "Or select a saved credential",
 			},
 		},
 	}

@@ -117,7 +117,7 @@ func (e *SSHRunnerExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeSSHRunner,
 		Name:        "SSH Runner",
-		Description: "Kết nối SSH từ xa và thực thi các câu lệnh shell bash/sh bảo mật",
+		Description: "Connects to a remote host over SSH and runs shell commands",
 		Icon:        "Terminal",
 		Category:    "DEVELOPER",
 		Params: []ParamDefinition{
@@ -126,7 +126,7 @@ func (e *SSHRunnerExecutor) GetDefinition() NodeDefinition {
 				Label:       "Select Encrypted Credential",
 				Type:        "credential",
 				Required:    false,
-				Description: "Chọn tệp SSH Password hoặc Private Key đã được mã hóa từ Vault",
+				Description: "Select an encrypted SSH password or private key credential from the vault",
 			},
 			{
 				Name:        "address",
@@ -134,28 +134,28 @@ func (e *SSHRunnerExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "127.0.0.1:22",
 				Required:    true,
-				Description: "Địa chỉ IP/Host kèm Port SSH của server từ xa (mặc định 22)",
+				Description: "Remote SSH host and port, for example 127.0.0.1:22",
 			},
 			{
 				Name:        "username",
 				Label:       "SSH Username",
 				Type:        "text",
 				Required:    true,
-				Description: "Tên tài khoản đăng nhập máy chủ SSH (ví dụ: root, ubuntu)",
+				Description: "SSH username, for example root or ubuntu",
 			},
 			{
 				Name:        "password",
 				Label:       "SSH Password (Password Auth)",
 				Type:        "password",
 				Required:    false,
-				Description: "Mật khẩu SSH (chỉ cần điền nếu không sử dụng Private Key/Vault)",
+				Description: "SSH password, only required when not using a private key or vault credential",
 			},
 			{
 				Name:        "private_key",
 				Label:       "SSH Private Key (Key Auth)",
 				Type:        "textarea",
 				Required:    false,
-				Description: "Nội dung Khóa riêng tư PEM bắt đầu bằng -----BEGIN OPENSSH PRIVATE KEY----- (nếu dùng Key Auth)",
+				Description: "PEM private key content, used for key-based authentication",
 			},
 			{
 				Name:        "command",
@@ -163,7 +163,7 @@ func (e *SSHRunnerExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "uptime && df -h",
 				Required:    true,
-				Description: "Nhập các lệnh shell cần thực hiện trên server, hỗ trợ nội suy {{node.path}}",
+				Description: "Shell command to run on the remote server. Supports placeholders such as {{node.path}}",
 			},
 		},
 	}

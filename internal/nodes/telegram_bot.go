@@ -25,7 +25,7 @@ func (e *TelegramBotExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 	chatID, _ := node.Params["chat_id"].(string)
 	message, _ := node.Params["message"].(string)
 
-	// Nếu dùng Credential ID
+	// N???u d??ng Credential ID
 	credID, _ := node.Params["credential_id"].(string)
 	if credID != "" {
 		if token, ok := ctx.Credentials[credID]; ok {
@@ -74,7 +74,7 @@ func (e *TelegramBotExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeTelegramBot,
 		Name:        "Telegram Bot",
-		Description: "Gửi thông báo tới Telegram Chat/Channel",
+		Description: "Sends notification messages to a Telegram chat or channel",
 		Icon:        "Send",
 		Category:    "ACTION",
 		Params: []ParamDefinition{
@@ -84,7 +84,7 @@ func (e *TelegramBotExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "",
 				Required:    false,
-				Description: "API Token do @BotFather cấp",
+				Description: "Bot token from @BotFather",
 			},
 			{
 				Name:        "credential_id",
@@ -92,7 +92,7 @@ func (e *TelegramBotExecutor) GetDefinition() NodeDefinition {
 				Type:        "credential",
 				Default:     "",
 				Required:    false,
-				Description: "Hoặc chọn Token đã lưu mã hóa trong Credentials",
+				Description: "Or select an encrypted token saved in Credentials",
 			},
 			{
 				Name:        "chat_id",
@@ -100,15 +100,15 @@ func (e *TelegramBotExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "",
 				Required:    true,
-				Description: "ID phòng chat hoặc @channel_name",
+				Description: "Chat ID, group ID, or @channel_name",
 			},
 			{
 				Name:        "message",
 				Label:       "Message Content",
 				Type:        "textarea",
-				Default:     "🚀 Goflow Execution Completed!",
+				Default:     "Goflow Execution Completed!",
 				Required:    true,
-				Description: "Nội dung tin nhắn (Hỗ trợ HTML tag)",
+				Description: "Message content. HTML tags are supported",
 			},
 		},
 	}

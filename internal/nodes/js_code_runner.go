@@ -95,7 +95,7 @@ func (e *JSCodeRunnerExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeJSCodeRunner,
 		Name:        "JS Code Runner",
-		Description: "Thuc thi ma Javascript / Expression bien doi du lieu tuy bien",
+		Description: "Runs custom JavaScript or JSON expressions to transform data",
 		Icon:        "Code",
 		Category:    "LOGIC & UTILITY",
 		Retryable:   true,
@@ -106,7 +106,7 @@ func (e *JSCodeRunnerExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "{\n  \"status\": \"processed\",\n  \"message\": \"Custom Code Execution\"\n}",
 				Required:    true,
-				Description: "Viet doan ma Javascript hoac JSON Expression",
+				Description: "JavaScript code or JSON expression to execute",
 			},
 			{
 				Name:        "timeout",
@@ -114,7 +114,7 @@ func (e *JSCodeRunnerExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "5",
 				Required:    false,
-				Description: "Thoi gian chay toi da cua script tinh bang giay",
+				Description: "Maximum script runtime in seconds",
 			},
 		},
 	}

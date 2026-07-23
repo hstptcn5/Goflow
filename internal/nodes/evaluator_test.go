@@ -32,9 +32,9 @@ func TestResolveParams(t *testing.T) {
 			"Name: {{node1.data.name}}",
 			123,
 		},
-		"non_existent":  "{{node2.some_field}}",
-		"regular_str":   "just a string",
-		"number":        456,
+		"non_existent": "{{node2.some_field}}",
+		"regular_str":  "just a string",
+		"number":       456,
 	}
 
 	resolved := ResolveParams(ctx, params)

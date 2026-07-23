@@ -148,7 +148,7 @@ func (e *MongoDBCommandExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeMongoDBCommand,
 		Name:        "MongoDB Command",
-		Description: "Thực thi truy vấn hoặc thao tác dữ liệu trên cơ sở dữ liệu MongoDB",
+		Description: "Runs queries or data operations against MongoDB",
 		Icon:        "Database",
 		Category:    "DATABASE",
 		Retryable:   true,
@@ -158,7 +158,7 @@ func (e *MongoDBCommandExecutor) GetDefinition() NodeDefinition {
 				Label:       "Select Encrypted Credential",
 				Type:        "credential",
 				Required:    false,
-				Description: "Chọn cấu hình lưu trữ URI kết nối đã được mã hóa",
+				Description: "Select an encrypted connection URI credential",
 			},
 			{
 				Name:        "connection_string",
@@ -166,21 +166,21 @@ func (e *MongoDBCommandExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "mongodb://localhost:27017",
 				Required:    false,
-				Description: "Chuỗi URI kết nối trực tiếp (ví dụ: mongodb://user:pass@host:port)",
+				Description: "Direct connection URI, for example mongodb://user:pass@host:port",
 			},
 			{
 				Name:        "database",
 				Label:       "Database Name",
 				Type:        "text",
 				Required:    true,
-				Description: "Tên cơ sở dữ liệu",
+				Description: "Database name",
 			},
 			{
 				Name:        "collection",
 				Label:       "Collection Name",
 				Type:        "text",
 				Required:    true,
-				Description: "Tên collection cần thao tác",
+				Description: "Collection name to operate on",
 			},
 			{
 				Name:        "command",
@@ -189,7 +189,7 @@ func (e *MongoDBCommandExecutor) GetDefinition() NodeDefinition {
 				Default:     "FIND_ONE",
 				Options:     []string{"FIND_ONE", "INSERT_ONE", "UPDATE_ONE", "DELETE_ONE"},
 				Required:    true,
-				Description: "Chọn thao tác cần thực hiện",
+				Description: "Choose the MongoDB operation to run",
 			},
 			{
 				Name:        "filter_json",
@@ -197,7 +197,7 @@ func (e *MongoDBCommandExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "{\n  \"status\": \"active\"\n}",
 				Required:    false,
-				Description: "Đối tượng JSON filter truy vấn (cho FIND_ONE, UPDATE_ONE, DELETE_ONE)",
+				Description: "JSON filter object for FIND_ONE, UPDATE_ONE, or DELETE_ONE",
 			},
 			{
 				Name:        "document_json",
@@ -205,7 +205,7 @@ func (e *MongoDBCommandExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "{\n  \"$set\": { \"status\": \"processed\" }\n}",
 				Required:    false,
-				Description: "Nội dung Document để thêm mới hoặc Update modifiers (ví dụ: {\"$set\": {...}})",
+				Description: "Document to insert, or update modifiers such as a MongoDB set operation.",
 			},
 		},
 	}

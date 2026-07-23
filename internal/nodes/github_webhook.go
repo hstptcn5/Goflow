@@ -95,7 +95,7 @@ func (e *GithubWebhookExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeGithubWebhook,
 		Name:        "GitHub Webhook",
-		Description: "Kích hoạt workflow bằng các sự kiện GitHub Webhooks, hỗ trợ kiểm tra chữ ký Secret",
+		Description: "Starts a workflow from GitHub webhook events with signature verification",
 		Icon:        "GitBranch",
 		Category:    "TRIGGER",
 		Retryable:   true,
@@ -105,7 +105,7 @@ func (e *GithubWebhookExecutor) GetDefinition() NodeDefinition {
 				Label:       "Webhook Secret",
 				Type:        "password",
 				Required:    false,
-				Description: "Khóa bảo mật Secret để xác thực chữ ký GitHub gửi tới (X-Hub-Signature-256)",
+				Description: "Shared secret used to verify GitHub X-Hub-Signature-256",
 			},
 		},
 	}

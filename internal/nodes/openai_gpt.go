@@ -106,7 +106,7 @@ func (e *OpenAIGPTExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeOpenAIGPT,
 		Name:        "OpenAI ChatGPT",
-		Description: "Tu dong goi OpenAI GPT-4o / GPT-3.5 sinh van ban va tra loi",
+		Description: "Calls OpenAI chat models to generate text responses",
 		Icon:        "Bot",
 		Category:    "AI & LLM",
 		Retryable:   true,
@@ -118,7 +118,7 @@ func (e *OpenAIGPTExecutor) GetDefinition() NodeDefinition {
 				Default:     "gpt-4o-mini",
 				Options:     []string{"gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"},
 				Required:    true,
-				Description: "Chon mo hinh OpenAI AI",
+				Description: "Choose the OpenAI model",
 			},
 			{
 				Name:        "prompt",
@@ -126,7 +126,7 @@ func (e *OpenAIGPTExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "Summarize the latest status",
 				Required:    true,
-				Description: "Cau lenh prompt gui cho AI",
+				Description: "Prompt sent to the AI model",
 			},
 			{
 				Name:        "system_message",
@@ -134,7 +134,7 @@ func (e *OpenAIGPTExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "You are a helpful AI assistant.",
 				Required:    false,
-				Description: "Vai tro chi dinh cho AI",
+				Description: "System role and behavior for the AI model",
 			},
 			{
 				Name:        "api_key",
@@ -142,7 +142,7 @@ func (e *OpenAIGPTExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "",
 				Required:    false,
-				Description: "Khoa API OpenAI (sk-...)",
+				Description: "OpenAI API key (sk-...)",
 			},
 			{
 				Name:        "credential_id",
@@ -150,7 +150,7 @@ func (e *OpenAIGPTExecutor) GetDefinition() NodeDefinition {
 				Type:        "credential",
 				Default:     "",
 				Required:    false,
-				Description: "Hoac chon Credential da luu",
+				Description: "Or select a saved credential",
 			},
 		},
 	}

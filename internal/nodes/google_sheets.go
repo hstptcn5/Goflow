@@ -176,7 +176,7 @@ func (e *GoogleSheetsExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeGoogleSheets,
 		Name:        "Google Sheets",
-		Description: "Đọc hoặc thêm dòng mới vào Google Sheets bằng Service Account",
+		Description: "Reads from or appends rows to Google Sheets using a service account",
 		Icon:        "Table",
 		Category:    "COMMUNICATION",
 		Retryable:   true,
@@ -186,21 +186,21 @@ func (e *GoogleSheetsExecutor) GetDefinition() NodeDefinition {
 				Label:       "Select Encrypted Credential",
 				Type:        "credential",
 				Required:    false,
-				Description: "Chọn tệp khóa Service Account JSON đã mã hóa từ Vault",
+				Description: "Select an encrypted service account JSON credential from the vault",
 			},
 			{
 				Name:        "service_account_json",
 				Label:       "Service Account JSON Key",
 				Type:        "textarea",
 				Required:    false,
-				Description: "Dán nội dung khóa Service Account JSON trực tiếp (nếu không dùng Vault)",
+				Description: "Paste the service account JSON key directly if not using the vault",
 			},
 			{
 				Name:        "spreadsheet_id",
 				Label:       "Spreadsheet ID",
 				Type:        "text",
 				Required:    true,
-				Description: "ID của bảng tính (lấy từ đường dẫn Google Sheets URL)",
+				Description: "Spreadsheet ID from the Google Sheets URL",
 			},
 			{
 				Name:        "sheet_name",
@@ -208,7 +208,7 @@ func (e *GoogleSheetsExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "Sheet1",
 				Required:    true,
-				Description: "Tên thẻ trang tính (ví dụ: Sheet1 hoặc Sheet1!A:C)",
+				Description: "Sheet name or range, for example Sheet1 or Sheet1!A:C",
 			},
 			{
 				Name:        "action",
@@ -217,7 +217,7 @@ func (e *GoogleSheetsExecutor) GetDefinition() NodeDefinition {
 				Default:     "APPEND",
 				Options:     []string{"APPEND", "READ"},
 				Required:    true,
-				Description: "Chọn thêm mới dòng (APPEND) hoặc đọc dữ liệu (READ)",
+				Description: "Choose APPEND to add rows or READ to fetch data",
 			},
 			{
 				Name:        "values_json",
@@ -225,7 +225,7 @@ func (e *GoogleSheetsExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "[\n  \"Value 1\",\n  \"Value 2\"\n]",
 				Required:    false,
-				Description: "Mảng JSON chứa các giá trị cho các cột, ví dụ: [\"{{trigger.name}}\", \"{{trigger.email}}\"]",
+				Description: "JSON array of column values. Supports placeholders such as {{trigger.name}}.",
 			},
 		},
 	}

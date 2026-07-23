@@ -118,7 +118,7 @@ func (e *SubWorkflowExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeSubWorkflow,
 		Name:        "Sub-workflow Runner",
-		Description: "Chạy workflow con theo cách tuần tự hoặc vòng lặp song song bằng Goroutine",
+		Description: "Runs a child workflow sequentially or in parallel loop mode",
 		Icon:        "Folder",
 		Category:    "LOGIC & UTILITY",
 		Params: []ParamDefinition{
@@ -127,7 +127,7 @@ func (e *SubWorkflowExecutor) GetDefinition() NodeDefinition {
 				Label:       "Sub-workflow to Run",
 				Type:        "select",
 				Required:    true,
-				Description: "Chọn workflow con để thực thi",
+				Description: "Select the child workflow to execute",
 			},
 			{
 				Name:        "payload_json",
@@ -135,7 +135,7 @@ func (e *SubWorkflowExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "{\n  \"message\": \"Input payload\"\n}",
 				Required:    false,
-				Description: "Điền input dưới dạng text, JSON hoặc biến số {{node.path}}",
+				Description: "Input payload as text, JSON, or placeholders such as {{node.path}}",
 			},
 			{
 				Name:        "loop_mode",
@@ -143,7 +143,7 @@ func (e *SubWorkflowExecutor) GetDefinition() NodeDefinition {
 				Type:        "boolean",
 				Default:     false,
 				Required:    false,
-				Description: "Biểu thị đầu vào payload là một mảng dữ liệu cần lặp qua",
+				Description: "Treat the input payload as an array of items to iterate over",
 			},
 			{
 				Name:        "parallel",
@@ -151,15 +151,15 @@ func (e *SubWorkflowExecutor) GetDefinition() NodeDefinition {
 				Type:        "boolean",
 				Default:     false,
 				Required:    false,
-				Description: "Thực thi vòng lặp song song sử dụng Goroutine hoặc chạy tuần tự",
+				Description: "Run loop items in parallel goroutines or sequentially",
 			},
 			{
 				Name:        "concurrency_limit",
-				Label:       "Concurrency Limit (Giới hạn luồng)",
+				Label:       "Concurrency Limit",
 				Type:        "text",
 				Default:     "5",
 				Required:    false,
-				Description: "Số lượng sub-workflow chạy song song tối đa",
+				Description: "Maximum number of child workflow runs in parallel",
 			},
 		},
 	}

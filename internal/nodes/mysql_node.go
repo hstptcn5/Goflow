@@ -125,7 +125,7 @@ func (e *MySQLQueryExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeMySQLQuery,
 		Name:        "MySQL Query",
-		Description: "Thực thi câu lệnh SQL SELECT/EXECUTE trên cơ sở dữ liệu MySQL",
+		Description: "Runs SELECT or EXECUTE SQL statements against MySQL",
 		Icon:        "Database",
 		Category:    "DATABASE",
 		Retryable:   true,
@@ -135,7 +135,7 @@ func (e *MySQLQueryExecutor) GetDefinition() NodeDefinition {
 				Label:       "Select Encrypted Credential",
 				Type:        "credential",
 				Required:    false,
-				Description: "Chọn cấu hình lưu trữ chuỗi kết nối đã được mã hóa",
+				Description: "Select an encrypted connection string credential",
 			},
 			{
 				Name:        "connection_string",
@@ -143,7 +143,7 @@ func (e *MySQLQueryExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "root:password@tcp(localhost:3306)/mysql",
 				Required:    false,
-				Description: "Chuỗi kết nối trực tiếp (ví dụ: user:pass@tcp(host:port)/db)",
+				Description: "Direct connection string, for example user:pass@tcp(host:port)/db",
 			},
 			{
 				Name:        "query_type",
@@ -152,7 +152,7 @@ func (e *MySQLQueryExecutor) GetDefinition() NodeDefinition {
 				Default:     "SELECT",
 				Options:     []string{"SELECT", "EXECUTE"},
 				Required:    true,
-				Description: "SELECT trả về danh sách dữ liệu, EXECUTE trả về số dòng bị tác động",
+				Description: "SELECT returns rows; EXECUTE returns affected row count",
 			},
 			{
 				Name:        "query",
@@ -160,7 +160,7 @@ func (e *MySQLQueryExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "SELECT * FROM users LIMIT 5;",
 				Required:    true,
-				Description: "Viết câu lệnh SQL của bạn ở đây, hỗ trợ chèn biến động {{node.path}}",
+				Description: "SQL statement. Supports placeholders such as {{node.path}}",
 			},
 		},
 	}

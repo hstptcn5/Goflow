@@ -42,12 +42,12 @@ func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Default Content-Type nếu có body
+	// Default Content-Type n???u c?? body
 	if reqBody != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	// Parse Custom Headers từ JSON string nếu có
+	// Parse Custom Headers t??? JSON string n???u c??
 	if headersMapStr != "" {
 		var headers map[string]string
 		if err := json.Unmarshal([]byte(headersMapStr), &headers); err == nil {
@@ -70,7 +70,7 @@ func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 
 	var jsonResult interface{}
 	if err := json.Unmarshal(respBytes, &jsonResult); err != nil {
-		// Trả về dạng string nếu không phải JSON
+		// Tr??? v??? d???ng string n???u kh??ng ph???i JSON
 		jsonResult = string(respBytes)
 	}
 
@@ -93,7 +93,7 @@ func (e *HTTPRequestExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeHTTPRequest,
 		Name:        "HTTP Request",
-		Description: "Gửi REST API HTTP request (GET, POST, PUT, DELETE)",
+		Description: "Sends HTTP API requests such as GET, POST, PUT, and DELETE",
 		Icon:        "Globe",
 		Category:    "ACTION",
 		Retryable:   true,
@@ -105,7 +105,7 @@ func (e *HTTPRequestExecutor) GetDefinition() NodeDefinition {
 				Default:     "GET",
 				Options:     []string{"GET", "POST", "PUT", "DELETE", "PATCH"},
 				Required:    true,
-				Description: "Phương thức HTTP",
+				Description: "HTTP method",
 			},
 			{
 				Name:        "url",
@@ -113,7 +113,7 @@ func (e *HTTPRequestExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "https://api.github.com",
 				Required:    true,
-				Description: "Địa chỉ URL nhận request",
+				Description: "Target request URL",
 			},
 			{
 				Name:        "headers",
@@ -121,7 +121,7 @@ func (e *HTTPRequestExecutor) GetDefinition() NodeDefinition {
 				Type:        "json",
 				Default:     "{}",
 				Required:    false,
-				Description: "Custom Headers dạng JSON Object",
+				Description: "Custom headers as a JSON object",
 			},
 			{
 				Name:        "body",
@@ -129,7 +129,7 @@ func (e *HTTPRequestExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "",
 				Required:    false,
-				Description: "Nội dung Body (cho POST/PUT)",
+				Description: "Request body for POST, PUT, or PATCH",
 			},
 		},
 	}

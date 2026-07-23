@@ -1,10 +1,8 @@
 package nodes
 
-import (
-	"sync"
-)
+import "sync"
 
-// NodeType đại diện cho mã định danh loại node
+// NodeType identifies a supported node executor type.
 type NodeType string
 
 const (
@@ -37,7 +35,7 @@ const (
 	TypeGoflowPlugin   NodeType = "goflowPlugin"
 )
 
-// Node biểu diễn một nút trên Canvas workflow
+// Node represents one workflow canvas node.
 type Node struct {
 	ID       string                 `json:"id"`
 	Type     NodeType               `json:"type"`
@@ -46,7 +44,7 @@ type Node struct {
 	Params   map[string]interface{} `json:"params"`
 }
 
-// Edge biểu diễn đường nối giữa hai Node
+// Edge represents a connection between two workflow nodes.
 type Edge struct {
 	ID           string `json:"id"`
 	Source       string `json:"source"`
@@ -55,16 +53,18 @@ type Edge struct {
 	TargetHandle string `json:"targetHandle,omitempty"`
 }
 
-// ExecutionContext chứa dữ liệu luồng thực thi và truyền qua các node
+// ExecutionContext carries workflow state, node outputs, and decrypted credentials.
 type ExecutionContext struct {
-	WorkflowID   string
-	ExecutionID  string
-	Outputs      map[string]interface{} // Outputs theo NodeID
-	Credentials  map[string]string      // Credential ID -> decrypted secret
-	mu           sync.RWMutex
-	
-	// Callback to execute another workflow, avoiding circular dependency
+	WorkflowID  string
+	ExecutionID string
+	Outputs     map[string]interface{}
+	Credentials map[string]string
+	mu          sync.RWMutex
+
+	// ExecuteWorkflow runs a child workflow without importing the engine package here.
 	ExecuteWorkflow func(workflowID string, payload interface{}) (interface{}, error)
+
+	// RefreshCredential refreshes an expired credential when the storage layer supports it.
 	RefreshCredential func(id string) (string, error)
 }
 
@@ -93,36 +93,37 @@ func (ctx *ExecutionContext) GetOutput(nodeID string) (interface{}, bool) {
 func (ctx *ExecutionContext) GetOutputs() map[string]interface{} {
 	ctx.mu.RLock()
 	defer ctx.mu.RUnlock()
-	res := make(map[string]interface{})
+
+	res := make(map[string]interface{}, len(ctx.Outputs))
 	for k, v := range ctx.Outputs {
 		res[k] = v
 	}
 	return res
 }
 
-// ParamDefinition định nghĩa tham số cấu hình trên UI
+// ParamDefinition describes one configurable UI parameter.
 type ParamDefinition struct {
 	Name        string   `json:"name"`
 	Label       string   `json:"label"`
-	Type        string   `json:"type"` // 'text', 'textarea', 'select', 'json', 'credential'
+	Type        string   `json:"type"`
 	Default     any      `json:"default,omitempty"`
 	Options     []string `json:"options,omitempty"`
 	Required    bool     `json:"required"`
 	Description string   `json:"description,omitempty"`
 }
 
-// NodeDefinition chứa metadata của loại Node
+// NodeDefinition contains UI metadata for a node type.
 type NodeDefinition struct {
 	Type        NodeType          `json:"type"`
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
 	Icon        string            `json:"icon"`
-	Category    string            `json:"category"` // 'TRIGGER', 'COMMUNICATION', 'AI & LLM', 'LOGIC'
-	Retryable   bool              `json:"retryable"` // Nếu false, engine sẽ không retry khi node thất bại (tránh duplicate side-effects)
+	Category    string            `json:"category"`
+	Retryable   bool              `json:"retryable"` // False disables retry for non-idempotent side effects.
 	Params      []ParamDefinition `json:"params"`
 }
 
-// NodeExecutor interface mà mọi Node Plugin phải implement
+// NodeExecutor is implemented by every built-in node and plugin node.
 type NodeExecutor interface {
 	Execute(ctx *ExecutionContext, node *Node) (interface{}, error)
 	Validate(node *Node) error

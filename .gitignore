@@ -27,8 +27,10 @@ ui/.pnpm-debug.log*
 .env
 .env.local
 .env.*.local
+*.key
 *.secret
 *.pem
+goflow.master.key
 
 # IDE & Editor Files
 .vscode/
