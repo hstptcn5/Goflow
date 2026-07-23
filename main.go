@@ -177,7 +177,7 @@ func main() {
 
 	// 6. Initialize REST API Router & Serve Static Embedded Web UI
 	uiFS := getEmbeddedUI()
-	router := api.NewRouter(wfStore, execStore, credStore, registry, eng, eventBus, uiFS)
+	router := api.NewRouter(wfStore, execStore, credStore, registry, eng, eventBus, uiFS, cfg.APIKey)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),

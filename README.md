@@ -214,7 +214,32 @@ Open your browser and navigate to: `http://localhost:8080` or the port specified
 ```bash
 go build -o goflow.exe main.go static_embed.go
 ```
-Run `goflow.exe` directly on any server without installing runtime dependencies.
+
+### 4. Running Goflow
+
+You can run the Goflow binary in two modes:
+
+#### Option A: Running without Password (Default Mode)
+In this mode, Goflow does not require a password on the Web UI. For security, CORS is strictly restricted to local origins (localhost and local dev ports) to block cross-site scripting:
+- On Windows / Linux / macOS:
+  ```bash
+  ./goflow.exe
+  ```
+
+#### Option B: Running with API Key Authentication (Secure Mode)
+In this mode, Goflow requires clients and the Web UI to authenticate. The browser will prompt for the API key on your first visit:
+- On Windows PowerShell:
+  ```powershell
+  $env:GOFLOW_API_KEY="your_secret_password"
+  ./goflow.exe
+  ```
+- On Linux / macOS / Bash:
+  ```bash
+  export GOFLOW_API_KEY="your_secret_password"
+  ./goflow.exe
+  ```
+- Triggering API/Webhook with authentication:
+  Include `Authorization: Bearer your_secret_password` in the headers, or append `?token=your_secret_password` directly to the URL.
 
 ---
 

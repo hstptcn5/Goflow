@@ -23,6 +23,7 @@ func NewRouter(
 	eng *engine.Engine,
 	eventBus *engine.EventBus,
 	uiFS fs.FS,
+	apiKey string,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -30,12 +31,20 @@ func NewRouter(
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
+	// Thắt chặt cấu hình CORS để tránh CSRF/Cross-Origin RCE
+	var allowedOrigins []string
+	if apiKey == "" {
+		allowedOrigins = []string{"http://localhost:5173", "http://localhost:8080", "http://127.0.0.1:5173", "http://127.0.0.1:8080"}
+	} else {
+		allowedOrigins = []string{"*"}
+	}
+
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
+		AllowCredentials: apiKey == "",
 		MaxAge:           300,
 	}))
 
@@ -49,6 +58,35 @@ func NewRouter(
 
 	// API v1 Routes
 	r.Route("/api/v1", func(r chi.Router) {
+		// Tích hợp API Key Auth Middleware nếu GOFLOW_API_KEY được cấu hình
+		if apiKey != "" {
+			r.Use(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					// Bỏ qua xác thực cho oauth2 callback
+					if strings.HasPrefix(req.URL.Path, "/api/v1/oauth2/callback") {
+						next.ServeHTTP(w, req)
+						return
+					}
+
+					token := ""
+					authHeader := req.Header.Get("Authorization")
+					if strings.HasPrefix(authHeader, "Bearer ") {
+						token = strings.TrimPrefix(authHeader, "Bearer ")
+					} else {
+						token = req.URL.Query().Get("token")
+					}
+
+					if token != apiKey {
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusUnauthorized)
+						_, _ = w.Write([]byte(`{"error": "Unauthorized: Invalid or missing API Key"}`))
+						return
+					}
+					next.ServeHTTP(w, req)
+				})
+			})
+		}
+
 		r.Get("/oauth2/authorize", oauth2Handler.Authorize)
 		r.Get("/oauth2/callback", oauth2Handler.Callback)
 		// Workflows

@@ -10,6 +10,7 @@ type Config struct {
 	MasterKey    string
 	LogLevel     string
 	FrontendDist string
+	APIKey       string
 }
 
 func LoadConfig() *Config {
@@ -34,11 +35,14 @@ func LoadConfig() *Config {
 		logLevel = "info"
 	}
 
+	apiKey := os.Getenv("GOFLOW_API_KEY")
+
 	return &Config{
 		Port:         port,
 		DBPath:       dbPath,
 		MasterKey:    masterKey,
 		LogLevel:     logLevel,
 		FrontendDist: "ui/dist",
+		APIKey:       apiKey,
 	}
 }

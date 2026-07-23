@@ -182,12 +182,18 @@ func (e *Engine) ExecuteWorkflow(wf *storage.Workflow, triggerPayload interface{
 		ctx.SetOutput("$trigger", triggerPayload)
 	}
 
-	// Load decrypted credentials nếu có trong workflow
-	allCreds, _ := e.credStore.ListAll()
-	for _, c := range allCreds {
-		decrypted, err := e.credStore.GetDecryptedData(c.ID)
-		if err == nil {
-			ctx.Credentials[c.ID] = decrypted
+	// Chỉ nạp và giải mã những credentials thực sự được tham chiếu trong các node của workflow
+	var nodesList []nodes.Node
+	if err := json.Unmarshal([]byte(wf.NodesJSON), &nodesList); err == nil {
+		for _, nodeObj := range nodesList {
+			if credID, ok := nodeObj.Params["credential_id"].(string); ok && credID != "" {
+				if _, loaded := ctx.Credentials[credID]; !loaded {
+					decrypted, err := e.credStore.GetDecryptedData(credID)
+					if err == nil {
+						ctx.Credentials[credID] = decrypted
+					}
+				}
+			}
 		}
 	}
 
