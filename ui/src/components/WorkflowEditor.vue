@@ -10,6 +10,7 @@ import { useExecutionStore } from '@/stores/executionStore';
 import NodePalette from './NodePalette.vue';
 import PropertiesPanel from './PropertiesPanel.vue';
 import AIAssistantDrawer from './AIAssistantDrawer.vue';
+import { getNodeIconSVG, getNavIconSVG } from './NodeIcons';
 
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
@@ -322,7 +323,41 @@ function handleLoadAIWorkflow(aiWorkflow) {
   }
 }
 
-defineExpose({ saveCanvas });
+function exportCanvas() {
+  if (!workflowStore.currentWorkflow) return;
+
+  const exportData = {
+    name: workflowStore.currentWorkflow.name,
+    description: workflowStore.currentWorkflow.description,
+    nodes: nodes.value.map((n) => ({
+      id: n.id,
+      type: n.data?.type || n.type,
+      name: n.data?.name || n.label,
+      position: n.position,
+      params: n.data?.params || {},
+    })),
+    edges: edges.value.map((e) => ({
+      id: e.id,
+      source: e.source,
+      sourceHandle: e.sourceHandle || null,
+      target: e.target,
+      targetHandle: e.targetHandle || null,
+    })),
+  };
+
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const fileName = (workflowStore.currentWorkflow.name || 'workflow').replace(/\s+/g, '_');
+  a.download = `${fileName}_workflow.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+defineExpose({ saveCanvas, exportCanvas });
 </script>
 
 <template>
@@ -332,8 +367,8 @@ defineExpose({ saveCanvas });
     <div class="canvas-area" @dragover="onDragOver" @drop="onDrop">
       <!-- Floating Canvas Toolbar -->
       <div class="canvas-toolbar">
-        <button class="btn-toolbar" @click="showAIDrawer = true">
-          🤖 AI Assistant
+        <button class="btn-toolbar" @click="showAIDrawer = true" style="display: inline-flex; align-items: center; gap: 6px;">
+          <span v-html="getNavIconSVG('ai')" style="display: flex;"></span> AI Assistant
         </button>
       </div>
 
@@ -350,7 +385,7 @@ defineExpose({ saveCanvas });
           <div v-if="data" class="custom-node-card" :class="[data.categoryClass, getNodeStatusClass(id), { selected: selected }]">
             <div class="node-accent-bar"></div>
             <div class="node-header">
-              <span class="node-icon">{{ data.icon || '⚙️' }}</span>
+              <span class="node-icon" v-html="getNodeIconSVG(data.type)"></span>
               <span class="node-type-label">{{ data.type || 'unknown' }}</span>
             </div>
             <div class="node-body-title">
@@ -479,6 +514,9 @@ defineExpose({ saveCanvas });
 
 .node-icon {
   font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .node-type-label {

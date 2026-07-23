@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useWorkflowStore } from '@/stores/workflowStore';
+import { api } from '@/services/api';
 
 const emit = defineEmits(['close', 'selectWorkflow']);
 const workflowStore = useWorkflowStore();
@@ -8,6 +9,7 @@ const workflowStore = useWorkflowStore();
 const newName = ref('');
 const newDesc = ref('');
 const creating = ref(false);
+const fileInputRef = ref(null);
 
 onMounted(() => {
   workflowStore.fetchWorkflows();
@@ -27,6 +29,53 @@ async function handleCreate() {
   } finally {
     creating.value = false;
   }
+}
+
+function triggerFileInput() {
+  fileInputRef.value.click();
+}
+
+async function handleImportJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.nodes || !data.edges) {
+        alert('Invalid workflow JSON structure. Missing nodes or edges.');
+        return;
+      }
+      
+      creating.value = true;
+      
+      const wf = await workflowStore.createWorkflow(
+        data.name || file.name.replace('.json', ''),
+        data.description || 'Imported Goflow Workflow'
+      );
+      
+      const payload = {
+        name: wf.name,
+        description: wf.description,
+        is_active: wf.is_active,
+        nodes_json: JSON.stringify(data.nodes),
+        edges_json: JSON.stringify(data.edges),
+      };
+      
+      const updated = await api.updateWorkflow(wf.id, payload);
+      workflowStore.currentWorkflow = updated;
+      
+      emit('selectWorkflow', wf.id);
+      emit('close');
+    } catch (err) {
+      alert('Failed to parse and import file: ' + err.message);
+    } finally {
+      creating.value = false;
+      event.target.value = ''; // Reset file input
+    }
+  };
+  reader.readAsText(file);
 }
 
 async function handleDelete(id) {
@@ -64,9 +113,21 @@ async function handleDelete(id) {
               class="form-input"
             />
           </div>
-          <button class="btn btn-primary" :disabled="creating" @click="handleCreate">
-            + Create Workflow
-          </button>
+          <div class="action-buttons-row" style="display: flex; gap: 8px;">
+            <button class="btn btn-primary" :disabled="creating" @click="handleCreate" style="flex: 1;">
+              + Create Workflow
+            </button>
+            <button class="btn btn-secondary" :disabled="creating" @click="triggerFileInput" style="flex: 1;">
+              📥 Import JSON
+            </button>
+            <input 
+              type="file" 
+              ref="fileInputRef" 
+              accept=".json" 
+              style="display: none;" 
+              @change="handleImportJSON"
+            />
+          </div>
         </div>
 
         <div class="divider"></div>

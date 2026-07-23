@@ -3,11 +3,12 @@ import { ref } from 'vue';
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { useExecutionStore } from '@/stores/executionStore';
 import { api } from '@/services/api';
+import { getNavIconSVG } from './NodeIcons';
 
 const props = defineProps({
   activeTab: String,
 });
-const emit = defineEmits(['update:activeTab', 'openWorkflows', 'openCredentials', 'saveWorkflow']);
+const emit = defineEmits(['update:activeTab', 'openWorkflows', 'openCredentials', 'saveWorkflow', 'exportWorkflow']);
 
 const workflowStore = useWorkflowStore();
 const executionStore = useExecutionStore();
@@ -56,11 +57,11 @@ async function handleRunWorkflow() {
     </div>
 
     <div class="nav-controls">
-      <button class="btn btn-secondary" @click="emit('openWorkflows')">
-        📁 Workflows
+      <button class="btn btn-secondary" @click="emit('openWorkflows')" style="display: inline-flex; align-items: center; gap: 6px;">
+        <span v-html="getNavIconSVG('workflows')" style="display: flex;"></span> Workflows
       </button>
-      <button class="btn btn-secondary" @click="emit('openCredentials')">
-        🔑 Credentials
+      <button class="btn btn-secondary" @click="emit('openCredentials')" style="display: inline-flex; align-items: center; gap: 6px;">
+        <span v-html="getNavIconSVG('credentials')" style="display: flex;"></span> Credentials
       </button>
 
       <div class="divider"></div>
@@ -70,15 +71,17 @@ async function handleRunWorkflow() {
           class="btn-tab"
           :class="{ active: activeTab === 'editor' }"
           @click="emit('update:activeTab', 'editor')"
+          style="display: inline-flex; align-items: center; gap: 6px;"
         >
-          🎨 Canvas
+          <span v-html="getNavIconSVG('canvas')" style="display: flex;"></span> Canvas
         </button>
         <button
           class="btn-tab"
           :class="{ active: activeTab === 'executions' }"
           @click="emit('update:activeTab', 'executions')"
+          style="display: inline-flex; align-items: center; gap: 6px;"
         >
-          📜 Executions History
+          <span v-html="getNavIconSVG('history')" style="display: flex;"></span> Executions History
         </button>
       </div>
 
@@ -87,17 +90,32 @@ async function handleRunWorkflow() {
         class="btn btn-primary"
         :disabled="triggering"
         @click="handleRunWorkflow"
+        style="display: inline-flex; align-items: center; gap: 6px;"
       >
-        <span v-if="triggering">⌛ Executing...</span>
-        <span v-else>▶ Run Workflow</span>
+        <template v-if="triggering">
+          <span v-html="getNavIconSVG('loading')" style="display: flex;"></span> Executing...
+        </template>
+        <template v-else>
+          <span v-html="getNavIconSVG('play')" style="display: flex;"></span> Run Workflow
+        </template>
       </button>
 
       <button
         v-if="workflowStore.currentWorkflow"
         class="btn btn-success"
         @click="emit('saveWorkflow')"
+        style="display: inline-flex; align-items: center; gap: 6px;"
       >
-        💾 Save
+        <span v-html="getNavIconSVG('save')" style="display: flex;"></span> Save
+      </button>
+
+      <button
+        v-if="workflowStore.currentWorkflow"
+        class="btn btn-secondary"
+        @click="emit('exportWorkflow')"
+        style="margin-left: 8px; display: inline-flex; align-items: center; gap: 6px;"
+      >
+        <span v-html="getNavIconSVG('export')" style="display: flex;"></span> Export
       </button>
     </div>
   </header>

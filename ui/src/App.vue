@@ -56,6 +56,12 @@ function handleSaveWorkflow() {
     editorRef.value.saveCanvas();
   }
 }
+
+function handleExportWorkflow() {
+  if (editorRef.value && editorRef.value.exportCanvas) {
+    editorRef.value.exportCanvas();
+  }
+}
 </script>
 
 <template>
@@ -65,6 +71,7 @@ function handleSaveWorkflow() {
       @openWorkflows="showWorkflowsModal = true"
       @openCredentials="showCredentialsModal = true"
       @saveWorkflow="handleSaveWorkflow"
+      @exportWorkflow="handleExportWorkflow"
     />
 
     <main class="main-content">

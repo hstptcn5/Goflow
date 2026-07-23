@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, computed } from 'vue';
 import { useWorkflowStore } from '@/stores/workflowStore';
+import { getNodeIconSVG, getCategoryIconSVG } from './NodeIcons';
 
 const workflowStore = useWorkflowStore();
 
@@ -39,19 +40,6 @@ function getGroupTitle(category) {
   return titles[category] || category;
 }
 
-function getGroupIcon(category) {
-  const icons = {
-    'TRIGGER': '⚡',
-    'ACTION': '⚙️',
-    'LOGIC': '🔀',
-    'LOGIC & UTILITY': '🧩',
-    'DATABASE': '🗄️',
-    'AI & LLM': '🧠',
-    'COMMUNICATION': '💬',
-    'DEVELOPER': '💻',
-  };
-  return icons[category] || '⚙️';
-}
 
 function getPaletteItemClass(category) {
   const classes = {
@@ -64,51 +52,20 @@ function getPaletteItemClass(category) {
   return classes[category] || 'item-logic';
 }
 
-function getNodeIcon(type) {
-  const icons = {
-    webhookTrigger: '🔗',
-    cronTrigger: '⏰',
-    manualTrigger: '⚡',
-    httpRequest: '🌐',
-    telegramBot: '📢',
-    jsonTransform: '🔄',
-    conditionIf: '🌿',
-    emailSMTP: '📧',
-    delaySleep: '⏳',
-    openAIGPT: '🤖',
-    deepseekAI: '🧠',
-    discordBot: '💬',
-    slackBot: '🗣️',
-    jsCodeRunner: '⚙️',
-    subWorkflow: '📁',
-    postgresQuery: '🐘',
-    redisCommand: '🔑',
-    googleSheets: '📊',
-    mysqlQuery: '🐬',
-    mongodbCommand: '🍃',
-    googleDrive: '💾',
-    gmailREST: '✉️',
-    notionPage: '📓',
-    sshRunner: '💻',
-    gitCommand: '🚀',
-    githubWebhook: '🐙',
-    goflowPlugin: '🔌',
-  };
-  return icons[type] || '⚙️';
-}
+
 </script>
 
 <template>
   <aside class="node-palette glass-panel">
     <div class="palette-header">
-      <span class="icon">🧩</span>
+      <span class="icon" v-html="getNodeIconSVG('goflowPlugin')"></span>
       <span class="title">Node Library</span>
     </div>
 
     <div class="palette-scroll">
       <div v-for="(defs, category) in groupedNodes" :key="category" class="category-group">
-        <div class="group-title">
-          <span class="group-icon">{{ getGroupIcon(category) }}</span>
+        <div class="group-title" style="display: flex; align-items: center; gap: 6px;">
+          <span class="group-icon" v-html="getCategoryIconSVG(category)" style="display: flex; align-items: center; color: #64748b;"></span>
           {{ getGroupTitle(category) }}
         </div>
         <div class="nodes-grid">
@@ -120,7 +77,7 @@ function getNodeIcon(type) {
             draggable="true"
             @dragstart="onDragStart($event, def)"
           >
-            <div class="item-icon">{{ getNodeIcon(def.type) }}</div>
+            <div class="item-icon" v-html="getNodeIconSVG(def.type)"></div>
             <div class="item-info">
               <span class="item-name">{{ def.name }}</span>
               <span class="item-desc">{{ def.description }}</span>
@@ -210,6 +167,9 @@ function getNodeIcon(type) {
 
 .item-icon {
   font-size: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .item-info {
