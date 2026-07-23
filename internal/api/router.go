@@ -27,15 +27,16 @@ func NewRouter(
 ) *chi.Mux {
 	r := chi.NewRouter()
 
-	// Middlewares
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.RequestSize(10 << 20))
 
-	// Thắt chặt cấu hình CORS để tránh CSRF/Cross-Origin RCE
-	// Khi có API Key (production/remote): chỉ cho phép localhost, trừ khi set GOFLOW_CORS_ORIGINS
-	// Khi không có API Key (local dev): cho phép localhost origins
-	allowedOrigins := []string{"http://localhost:5173", "http://localhost:8080", "http://127.0.0.1:5173", "http://127.0.0.1:8080"}
-
+	allowedOrigins := []string{
+		"http://localhost:5173",
+		"http://localhost:8080",
+		"http://127.0.0.1:5173",
+		"http://127.0.0.1:8080",
+	}
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -50,43 +51,15 @@ func NewRouter(
 	credHandler := NewCredentialHandler(credStore)
 	nodeHandler := NewNodeHandler(registry)
 	oauth2Handler := NewOAuth2Handler(credStore)
-	wsHandler := NewWSHandler(eventBus)
+	wsHandler := NewWSHandler(eventBus, apiKey)
 	aiHandler := NewAIHandler(credStore, registry)
 
-	// API v1 Routes
 	r.Route("/api/v1", func(r chi.Router) {
-		// Tích hợp API Key Auth Middleware nếu GOFLOW_API_KEY được cấu hình
-		if apiKey != "" {
-			r.Use(func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-					// Bỏ qua xác thực cho oauth2 callback
-					if strings.HasPrefix(req.URL.Path, "/api/v1/oauth2/callback") {
-						next.ServeHTTP(w, req)
-						return
-					}
-
-					token := ""
-					authHeader := req.Header.Get("Authorization")
-					if strings.HasPrefix(authHeader, "Bearer ") {
-						token = strings.TrimPrefix(authHeader, "Bearer ")
-					} else {
-						token = req.URL.Query().Get("token")
-					}
-
-					if token != apiKey {
-						w.Header().Set("Content-Type", "application/json")
-						w.WriteHeader(http.StatusUnauthorized)
-						_, _ = w.Write([]byte(`{"error": "Unauthorized: Invalid or missing API Key"}`))
-						return
-					}
-					next.ServeHTTP(w, req)
-				})
-			})
-		}
+		r.Use(authMiddleware(apiKey, true))
 
 		r.Get("/oauth2/authorize", oauth2Handler.Authorize)
 		r.Get("/oauth2/callback", oauth2Handler.Callback)
-		// Workflows
+
 		r.Get("/workflows", wfHandler.ListWorkflows)
 		r.Post("/workflows", wfHandler.CreateWorkflow)
 		r.Get("/workflows/{id}", wfHandler.GetWorkflow)
@@ -95,30 +68,22 @@ func NewRouter(
 		r.Put("/workflows/{id}/toggle", wfHandler.ToggleActive)
 		r.Post("/workflows/{id}/trigger", wfHandler.TriggerWorkflow)
 
-		// Executions
 		r.Get("/executions/{id}", execHandler.GetExecution)
 		r.Get("/workflows/{workflowId}/executions", execHandler.ListWorkflowExecutions)
 
-		// Credentials
 		r.Get("/credentials", credHandler.ListCredentials)
 		r.Post("/credentials", credHandler.CreateCredential)
 		r.Delete("/credentials/{id}", credHandler.DeleteCredential)
 
-		// Nodes Metadata
 		r.Get("/nodes/definitions", nodeHandler.ListDefinitions)
 
-		// AI Assistant
 		r.Post("/ai/generate", aiHandler.GenerateWorkflow)
 		r.Post("/ai/configure-node", aiHandler.ConfigureNode)
 	})
 
-	// Public Webhook trigger endpoint
-	r.Post("/webhook/{workflowId}", wfHandler.TriggerWorkflow)
-
-	// WebSocket Endpoint
+	r.Post("/webhook/{workflowId}", wfHandler.TriggerWebhook)
 	r.Get("/ws", wsHandler.ServeHTTP)
 
-	// Static UI File Server (Go embed)
 	if uiFS != nil {
 		fileServer := http.FileServer(http.FS(uiFS))
 		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +91,6 @@ func NewRouter(
 				http.NotFound(w, r)
 				return
 			}
-			// Disable browser caching for UI files to ensure hot updates
 			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 			w.Header().Set("Pragma", "no-cache")
 			w.Header().Set("Expires", "0")

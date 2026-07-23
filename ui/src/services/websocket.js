@@ -8,8 +8,16 @@ export class WSClient {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
     const wsUrl = `${protocol}//${host}/ws`;
+    const token = localStorage.getItem('GOFLOW_API_KEY');
 
-    this.ws = new WebSocket(wsUrl);
+    if (token) {
+      const bytes = new TextEncoder().encode(token);
+      const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
+      const encoded = btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+      this.ws = new WebSocket(wsUrl, [`goflow.${encoded}`]);
+    } else {
+      this.ws = new WebSocket(wsUrl);
+    }
 
     this.ws.onopen = () => {
       console.log('⚡ Connected to Goflow Real-time WebSocket');

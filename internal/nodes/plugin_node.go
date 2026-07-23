@@ -31,10 +31,9 @@ func (e *GoflowPluginExecutor) Execute(ctx *ExecutionContext, node *Node) (inter
 	if err != nil {
 		cwd = "."
 	}
-	pluginsDir := filepath.Join(cwd, "plugins")
-	pluginPath := filepath.Join(pluginsDir, pluginName)
-	if runtime.GOOS == "windows" && !strings.HasSuffix(pluginPath, ".exe") {
-		pluginPath += ".exe"
+	pluginPath, err := resolvePluginPath(filepath.Join(cwd, "plugins"), pluginName)
+	if err != nil {
+		return nil, err
 	}
 
 	if _, err := os.Stat(pluginPath); os.IsNotExist(err) {
@@ -44,11 +43,11 @@ func (e *GoflowPluginExecutor) Execute(ctx *ExecutionContext, node *Node) (inter
 	// 2. Prepare JSON stdin payload
 	// Extract the actual outputs to feed to the plugin
 	inputData := map[string]interface{}{
-		"node_id":          node.ID,
-		"params":           node.Params,
-		"outputs":          ctx.GetOutputs(),
-		"workflow_id":      ctx.WorkflowID,
-		"execution_id":     ctx.ExecutionID,
+		"node_id":      node.ID,
+		"params":       node.Params,
+		"outputs":      ctx.GetOutputs(),
+		"workflow_id":  ctx.WorkflowID,
+		"execution_id": ctx.ExecutionID,
 	}
 	inputBytes, err := json.Marshal(inputData)
 	if err != nil {
@@ -114,10 +113,45 @@ func (e *GoflowPluginExecutor) Execute(ctx *ExecutionContext, node *Node) (inter
 
 func (e *GoflowPluginExecutor) Validate(node *Node) error {
 	pluginName, _ := node.Params["plugin_name"].(string)
+	if _, err := resolvePluginPath("plugins", pluginName); err != nil {
+		return err
+	}
 	if strings.TrimSpace(pluginName) == "" {
 		return fmt.Errorf("plugin_name is required")
 	}
 	return nil
+}
+
+func resolvePluginPath(pluginsDir, pluginName string) (string, error) {
+	pluginName = strings.TrimSpace(pluginName)
+	if pluginName == "" {
+		return "", fmt.Errorf("plugin_name is required")
+	}
+	if pluginName != filepath.Base(pluginName) || filepath.IsAbs(pluginName) {
+		return "", fmt.Errorf("plugin_name must be a file name in the plugins directory")
+	}
+	if strings.ContainsAny(pluginName, `/\`) {
+		return "", fmt.Errorf("plugin_name must not contain path separators")
+	}
+
+	pluginPath := filepath.Join(pluginsDir, pluginName)
+	if runtime.GOOS == "windows" && filepath.Ext(pluginPath) == "" {
+		pluginPath += ".exe"
+	}
+
+	cleanDir, err := filepath.Abs(pluginsDir)
+	if err != nil {
+		return "", err
+	}
+	cleanPath, err := filepath.Abs(pluginPath)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(cleanDir, cleanPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("plugin_name resolves outside the plugins directory")
+	}
+	return cleanPath, nil
 }
 
 func (e *GoflowPluginExecutor) GetDefinition() NodeDefinition {

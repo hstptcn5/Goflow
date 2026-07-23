@@ -7,7 +7,6 @@ func NewWebhookTriggerExecutor() *WebhookTriggerExecutor {
 }
 
 func (e *WebhookTriggerExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
-	// Webhook Trigger nhận payload được truyền từ trigger handler vào ExecutionContext với key `$trigger`
 	if triggerData, ok := ctx.GetOutput("$trigger"); ok {
 		return triggerData, nil
 	}
@@ -24,7 +23,7 @@ func (e *WebhookTriggerExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeWebhookTrigger,
 		Name:        "Webhook Trigger",
-		Description: "Khởi tạo workflow bằng một HTTP Webhook Request",
+		Description: "Start a workflow from an HTTP webhook request.",
 		Icon:        "Webhook",
 		Category:    "TRIGGER",
 		Retryable:   true,
@@ -35,7 +34,14 @@ func (e *WebhookTriggerExecutor) GetDefinition() NodeDefinition {
 				Type:        "text",
 				Default:     "/trigger",
 				Required:    false,
-				Description: "Tùy chọn đường dẫn phụ cho Webhook Endpoint",
+				Description: "Optional subpath for documenting the webhook endpoint.",
+			},
+			{
+				Name:        "secret",
+				Label:       "Webhook Secret",
+				Type:        "password",
+				Required:    false,
+				Description: "Optional shared secret required in the X-Goflow-Webhook-Secret header.",
 			},
 		},
 	}

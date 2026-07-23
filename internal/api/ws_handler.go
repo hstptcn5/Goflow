@@ -30,14 +30,27 @@ var upgrader = websocket.Upgrader{
 
 type WSHandler struct {
 	eventBus *engine.EventBus
+	apiKey   string
 }
 
-func NewWSHandler(eb *engine.EventBus) *WSHandler {
-	return &WSHandler{eventBus: eb}
+func NewWSHandler(eb *engine.EventBus, apiKey string) *WSHandler {
+	return &WSHandler{eventBus: eb, apiKey: apiKey}
 }
 
 func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+	if !requireAPIKey(w, r, h.apiKey) {
+		return
+	}
+
+	responseHeader := http.Header{}
+	for _, protocol := range websocketProtocols(r) {
+		if len(protocol) > len("goflow.") && protocol[:len("goflow.")] == "goflow." {
+			responseHeader.Set("Sec-WebSocket-Protocol", protocol)
+			break
+		}
+	}
+
+	conn, err := upgrader.Upgrade(w, r, responseHeader)
 	if err != nil {
 		log.Printf("Failed to upgrade WebSocket: %v", err)
 		return

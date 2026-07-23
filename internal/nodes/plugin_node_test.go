@@ -30,4 +30,15 @@ func TestGoflowPluginExecutorOffline(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "plugin executable not found") {
 		t.Errorf("Expected plugin not found error, got: %v", err)
 	}
+
+	// Test 3: Validation rejects path traversal
+	nodeTraversal := &Node{
+		Params: map[string]interface{}{
+			"plugin_name": "../outside",
+		},
+	}
+	err = executor.Validate(nodeTraversal)
+	if err == nil || !strings.Contains(err.Error(), "file name in the plugins directory") {
+		t.Errorf("Expected path traversal validation failure, got: %v", err)
+	}
 }

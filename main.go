@@ -28,12 +28,8 @@ func main() {
 
 	cfg := config.LoadConfig()
 
-	if cfg.MasterKey == "goflow-master-secret-key-32bytes!" {
-		log.Println("=====================================================================")
-		log.Println("[WARNING] USING DEFAULT MASTER KEY FOR CREDENTIALS ENCRYPTION!")
-		log.Println("[WARNING] Your credentials vault is secured with a default public key.")
-		log.Println("[WARNING] Please configure GOFLOW_MASTER_KEY environment variable.")
-		log.Println("=====================================================================")
+	if cfg.IsPublicBind() && cfg.APIKey == "" {
+		log.Fatalf("[ERROR] Refusing to bind %s:%s without GOFLOW_API_KEY. Set GOFLOW_API_KEY or bind to 127.0.0.1.", cfg.Host, cfg.Port)
 	}
 
 	// 1. Initialize Storage Layer & SQLite Connection Pool
@@ -201,7 +197,7 @@ func main() {
 	router := api.NewRouter(wfStore, execStore, credStore, registry, eng, eventBus, uiFS, cfg.APIKey)
 
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%s", cfg.Port),
+		Addr:         fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
 		Handler:      router,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
@@ -209,7 +205,7 @@ func main() {
 
 	// 7. Graceful Shutdown Handler
 	go func() {
-		log.Printf("[INFO] Goflow Web Server running on http://localhost:%s", cfg.Port)
+		log.Printf("[INFO] Goflow Web Server running on http://%s:%s", cfg.Host, cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("[ERROR] Server error: %v", err)
 		}
