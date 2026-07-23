@@ -1,0 +1,29 @@
+{
+  "name": "Pure Routing Gateway Benchmark",
+  "description": "Minimal workflow to measure absolute maximum routing throughput",
+  "nodes": [
+    {
+      "id": "trigger_1",
+      "type": "webhookTrigger",
+      "name": "Webhook Trigger",
+      "position": { "x": 150, "y": 200 },
+      "params": {}
+    },
+    {
+      "id": "transform_1",
+      "type": "jsonTransform",
+      "name": "Fast Pass-Through",
+      "position": { "x": 400, "y": 200 },
+      "params": {
+        "template": "{\n  \"status\": \"ok\",\n  \"event_id\": \"{{$trigger.id}}\"\n}"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "trigger_1",
+      "target": "transform_1"
+    }
+  ]
+}

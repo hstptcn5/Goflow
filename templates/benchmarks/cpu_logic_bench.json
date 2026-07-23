@@ -1,0 +1,59 @@
+{
+  "name": "CPU and JS Benchmark",
+  "description": "Benchmark containing CPU bound JS Goja scripting and conditional branches",
+  "nodes": [
+    {
+      "id": "trigger_1",
+      "type": "webhookTrigger",
+      "name": "Webhook Trigger",
+      "position": { "x": 100, "y": 150 },
+      "params": {}
+    },
+    {
+      "id": "js_runner_1",
+      "type": "jsCodeRunner",
+      "name": "Fibonacci JS Runner",
+      "position": { "x": 300, "y": 150 },
+      "params": {
+        "code": "function fib(n) {\n  if (n <= 1) return n;\n  return fib(n-1) + fib(n-2);\n}\nconst result = fib(15);\nreturn { status: 'success', result: result, timestamp: new Date().toISOString() };"
+      }
+    },
+    {
+      "id": "transform_1",
+      "type": "jsonTransform",
+      "name": "JSON Structurer",
+      "position": { "x": 500, "y": 150 },
+      "params": {
+        "template": "{\n  \"msg\": \"Computation complete\",\n  \"value\": {{js_runner_1.result}},\n  \"time\": \"{{js_runner_1.timestamp}}\"\n}"
+      }
+    },
+    {
+      "id": "condition_1",
+      "type": "conditionIf",
+      "name": "Branch Validator",
+      "position": { "x": 700, "y": 150 },
+      "params": {
+        "field": "{{transform_1.value}}",
+        "operator": "greater_than",
+        "value": "100"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "trigger_1",
+      "target": "js_runner_1"
+    },
+    {
+      "id": "e2",
+      "source": "js_runner_1",
+      "target": "transform_1"
+    },
+    {
+      "id": "e3",
+      "source": "transform_1",
+      "target": "condition_1"
+    }
+  ]
+}

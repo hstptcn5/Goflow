@@ -32,6 +32,29 @@ Key achievements in the current version include:
 | **Deployment Simplicity** | **Zero configuration copy-and-paste** | Docker compose or npm installs | Cloud subscription |
 | **Extensibility** | **Go Plugins & Process-based JSON IPC** | Node.js modules / custom nodes | Partner developer portal |
 
+### HTTP API Concurrency Benchmark Results
+
+To evaluate Goflow's real-world parallel capacity, a load test was executed triggering a workflow containing API calls (GitHub API and Google Sheets API) under a load of 1,000 total requests with 50 concurrent workers.
+
+Below is the performance comparison between synchronous triggering and background asynchronous triggering:
+
+| Metric | Synchronous Triggering | Asynchronous Triggering (async=true) | Improvement Factor |
+| :--- | :---: | :---: | :---: |
+| Total Time | 140.821 seconds | 1.324 seconds | 106.3x faster |
+| Throughput | 7.10 reqs/sec | 755.40 reqs/sec | 106.3x higher |
+| Successful Requests | 710 / 1000 | 1000 / 1000 | 100% success rate |
+| Average Latency | 6606.1 ms | 65.83 ms | 100x lower |
+| Median Latency (P50) | 2920.1 ms | 18.45 ms | 158x lower |
+| Latency P99 | 15001.5 ms | 608.81 ms | Capped response |
+
+#### Visual Comparison (Throughput - requests/sec)
+- Synchronous Mode:  [#] 7.10 reqs/sec (Baseline)
+- Asynchronous Mode: [##################################################] 755.40 reqs/sec (106x speedup)
+
+#### Visual Comparison (P50 Latency - ms)
+- Synchronous Mode:  [##################################################] 2920.10 ms (158x slower)
+- Asynchronous Mode: [#] 18.45 ms (Optimized)
+
 ---
 
 ## Key Features
@@ -94,6 +117,8 @@ d:/build2026/Goflow/
 ├── main.go                       # Application entrypoint and HTTP web server
 ├── static_embed.go               # Go embed.FS embedding Vue 3 UI into single binary
 ├── go.mod                        # Go module definition and dependencies
+├── NODES.md                      # Comprehensive guide for all 26 built-in nodes
+├── templates/                    # Ready-to-import workflow template JSON files
 ├── config/                       # System configuration loader
 │   └── config.go
 ├── internal/
@@ -105,6 +130,17 @@ d:/build2026/Goflow/
 └── ui/                           # Vue 3 Frontend Project (Vite, Vue Flow, Pinia)
     └── dist/                     # Bundled production Web UI embedded into Go
 ```
+
+---
+
+## Documentation & Workflow Templates
+
+* **Detailed Node Reference**: See [NODES.md](file:///d:/Bot2026/Goflow/NODES.md) for parameter schemas and JSON output payloads of all 26 built-in executors.
+* **Ready-to-use Templates**: Find pre-configured workflows in the [templates/](file:///d:/Bot2026/Goflow/templates) directory. You can easily import them using the "Import" button in the Web UI:
+  - `workflow_ai_assistant.json`: Webhook-triggered DeepSeek text summary pipeline.
+  - `github_repo_monitor.json`: Periodically fetch repository stats with custom API calls.
+  - `multi_branch_stress_test.json`: Stress test concurrency across 3 parallel workflow branches.
+  - `weather_alert_flow.json`: Automatic hourly Open-Meteo weather fetch and condition checks.
 
 ---
 
