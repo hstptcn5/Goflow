@@ -1,6 +1,6 @@
 # Goflow: Super Lightweight, Zero-Dependency Workflow Automation Engine in Go
 
-Goflow is an ultra-lightweight, local-first, zero-dependency alternative to heavy workflow automation platforms like n8n, Zapier, or Make. Compiled into a single executable binary (less than 25 MB) with minimal memory footprint (15 - 25 MB RAM), Goflow features a Pure Go CGO-free SQLite storage engine (modernc.org/sqlite) and an embedded Vue 3 drag-and-drop Web UI.
+Goflow is an ultra-lightweight, local-first, zero-dependency alternative to heavy workflow automation platforms like n8n, Zapier, or Make. Compiled into a single executable binary (around 37 MB) with minimal memory footprint (15 - 25 MB RAM), Goflow features a Pure Go CGO-free SQLite storage engine (modernc.org/sqlite) and an embedded Vue 3 drag-and-drop Web UI.
 
 ---
 
@@ -24,7 +24,7 @@ Key achievements in the current version include:
 | Feature / Benchmark | Goflow (Go) | n8n (Node.js) | Zapier / Make |
 | :--- | :---: | :---: | :---: |
 | **RAM Footprint (Idle)** | **15 - 25 MB** | 400 - 800 MB | Cloud SaaS (Infinite) |
-| **Binary and Packaging** | **Single File (less than 25 MB)** | Heavy Docker Image / Node.js | Closed Cloud SaaS |
+| **Binary and Packaging** | **Single File (around 37 MB)** | Heavy Docker Image / Node.js | Closed Cloud SaaS |
 | **External Dependencies** | **NONE (Zero)** | Node.js, PostgreSQL/SQLite | Closed Cloud SaaS |
 | **Node Delay Overhead** | **~2 - 5 microseconds** (Go channels) | ~50 - 150 milliseconds | ~500 - 2000 milliseconds |
 | **Database Storage** | **Pure Go SQLite (WAL)** | PostgreSQL / SQLite | Cloud SaaS |
