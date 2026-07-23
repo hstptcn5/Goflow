@@ -10,6 +10,7 @@ import { useExecutionStore } from '@/stores/executionStore';
 import NodePalette from './NodePalette.vue';
 import PropertiesPanel from './PropertiesPanel.vue';
 import AIAssistantDrawer from './AIAssistantDrawer.vue';
+import TemplateGallery from './TemplateGallery.vue';
 import { getNodeIconSVG, getNavIconSVG } from './NodeIcons';
 
 import '@vue-flow/core/dist/style.css';
@@ -19,40 +20,40 @@ import '@vue-flow/controls/dist/style.css';
 const workflowStore = useWorkflowStore();
 const executionStore = useExecutionStore();
 const showAIDrawer = ref(false);
+const showTemplateGallery = ref(false);
 
 function getNodeIcon(type) {
   const icons = {
-    webhookTrigger: '🔗',
-    cronTrigger: '⏰',
-    manualTrigger: '⚡',
-    httpRequest: '🌐',
-    telegramBot: '📢',
-    jsonTransform: '🔄',
-    conditionIf: '🌿',
-    emailSMTP: '📧',
-    delaySleep: '⏳',
-    openAIGPT: '🤖',
-    deepseekAI: '🧠',
-    discordBot: '💬',
-    slackBot: '🗣️',
-    jsCodeRunner: '⚙️',
-    subWorkflow: '📁',
-    postgresQuery: '🐘',
-    redisCommand: '🔑',
-    googleSheets: '📊',
-    mysqlQuery: '🐬',
-    mongodbCommand: '🍃',
-    googleDrive: '💾',
-    gmailREST: '✉️',
-    notionPage: '📓',
-    sshRunner: '💻',
-    gitCommand: '🚀',
-    githubWebhook: '🐙',
-    goflowPlugin: '🔌',
+    webhookTrigger: 'Webhook',
+    cronTrigger: 'Cron',
+    manualTrigger: 'Manual',
+    httpRequest: 'HTTP',
+    telegramBot: 'Telegram',
+    jsonTransform: 'JSON',
+    conditionIf: 'IF',
+    emailSMTP: 'SMTP',
+    delaySleep: 'Delay',
+    openAIGPT: 'OpenAI',
+    deepseekAI: 'DeepSeek',
+    discordBot: 'Discord',
+    slackBot: 'Slack',
+    jsCodeRunner: 'JS',
+    subWorkflow: 'Subflow',
+    postgresQuery: 'Postgres',
+    redisCommand: 'Redis',
+    googleSheets: 'Sheets',
+    mysqlQuery: 'MySQL',
+    mongodbCommand: 'MongoDB',
+    googleDrive: 'Drive',
+    gmailREST: 'Gmail',
+    notionPage: 'Notion',
+    sshRunner: 'SSH',
+    gitCommand: 'Git',
+    githubWebhook: 'GitHub',
+    goflowPlugin: 'Plugin',
   };
-  return icons[type] || '⚙️';
+  return icons[type] || 'Node';
 }
-
 function getNodeCategory(type) {
   const triggerNodes = ['webhookTrigger', 'cronTrigger', 'manualTrigger', 'githubWebhook'];
   const databaseNodes = ['postgresQuery', 'mysqlQuery', 'mongodbCommand', 'redisCommand'];
@@ -323,6 +324,12 @@ function handleLoadAIWorkflow(aiWorkflow) {
   }
 }
 
+function handleLoadTemplate(template) {
+  if (!template?.workflow) return;
+  handleLoadAIWorkflow(template.workflow);
+  showTemplateGallery.value = false;
+}
+
 function exportCanvas() {
   if (!workflowStore.currentWorkflow) return;
 
@@ -367,9 +374,22 @@ defineExpose({ saveCanvas, exportCanvas });
     <div class="canvas-area" @dragover="onDragOver" @drop="onDrop">
       <!-- Floating Canvas Toolbar -->
       <div class="canvas-toolbar">
+        <button class="btn-toolbar" @click="showTemplateGallery = true">
+          Templates
+        </button>
         <button class="btn-toolbar" @click="showAIDrawer = true" style="display: inline-flex; align-items: center; gap: 6px;">
           <span v-html="getNavIconSVG('ai')" style="display: flex;"></span> AI Assistant
         </button>
+      </div>
+
+      <div v-if="nodes.length === 0" class="canvas-empty-state">
+        <div class="empty-kicker">No nodes yet</div>
+        <h2>Start from a template or ask AI to draft the workflow.</h2>
+        <p>Templates give you a working node layout first. Replace placeholder credentials, URLs, chat IDs, and secrets before running.</p>
+        <div class="empty-actions">
+          <button class="btn btn-primary" @click="showTemplateGallery = true">Browse Templates</button>
+          <button class="btn btn-secondary" @click="showAIDrawer = true">Open AI Assistant</button>
+        </div>
       </div>
 
       <VueFlow
@@ -425,6 +445,14 @@ defineExpose({ saveCanvas, exportCanvas });
       :currentEdges="edges"
       @close="showAIDrawer = false"
       @loadWorkflow="handleLoadAIWorkflow"
+    />
+
+    <TemplateGallery
+      v-if="showTemplateGallery"
+      title="Load Template Into Canvas"
+      action-label="Load Template"
+      @close="showTemplateGallery = false"
+      @select="handleLoadTemplate"
     />
   </div>
 </template>
@@ -593,5 +621,59 @@ defineExpose({ saveCanvas, exportCanvas });
   color: #2563eb;
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(37, 99, 235, 0.12);
+}
+
+.canvas-empty-state {
+  position: absolute;
+  z-index: 40;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, calc(100% - 80px));
+  background: #ffffff;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  padding: 22px;
+  box-shadow: 0 14px 35px rgba(15, 23, 42, 0.12);
+}
+
+.empty-kicker {
+  color: #2563eb;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.canvas-empty-state h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.25;
+  color: #0f172a;
+}
+
+.canvas-empty-state p {
+  margin: 10px 0 16px;
+  color: #475569;
+  line-height: 1.45;
+  font-size: 0.9rem;
+}
+
+.empty-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .canvas-empty-state {
+    width: calc(100% - 32px);
+    padding: 18px;
+  }
+
+  .empty-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 </style>

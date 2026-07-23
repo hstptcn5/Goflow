@@ -45,6 +45,7 @@ Thumbs.db
 *.out
 *.test
 coverage.txt
+release/
 
 # Exported Workflow JSON Test Files
 goflow_workflow_*.json

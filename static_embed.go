@@ -10,12 +10,12 @@ import (
 var embeddedUI embed.FS
 
 func getEmbeddedUI() fs.FS {
-	// Môi trường Development: Đọc trực tiếp từ ổ đĩa cứng ui/dist để Hot Reload tức thì khi sửa code UI (không cần restart Go)
+	// Development: serve ui/dist directly when it exists.
 	if _, err := os.Stat("ui/dist/index.html"); err == nil {
 		return os.DirFS("ui/dist")
 	}
 
-	// Môi trường Production Single Binary: Đọc từ Go embed.FS tích hợp sẵn trong file binary executable
+	// Production: serve the bundled UI from the single executable.
 	sub, err := fs.Sub(embeddedUI, "ui/dist")
 	if err != nil {
 		return nil

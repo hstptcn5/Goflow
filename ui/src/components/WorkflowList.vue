@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue';
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { api } from '@/services/api';
+import TemplateGallery from './TemplateGallery.vue';
 
 const emit = defineEmits(['close', 'selectWorkflow']);
 const workflowStore = useWorkflowStore();
@@ -10,6 +11,7 @@ const newName = ref('');
 const newDesc = ref('');
 const creating = ref(false);
 const fileInputRef = ref(null);
+const showTemplateGallery = ref(false);
 
 const editingId = ref('');
 const editName = ref('');
@@ -80,6 +82,36 @@ async function handleImportJSON(event) {
     }
   };
   reader.readAsText(file);
+}
+
+async function createFromTemplate(template) {
+  if (!template?.workflow) return;
+  creating.value = true;
+  try {
+    const data = template.workflow;
+    const wf = await workflowStore.createWorkflow(
+      data.name || template.title,
+      data.description || template.summary || 'Workflow created from template'
+    );
+
+    const payload = {
+      name: wf.name,
+      description: wf.description,
+      is_active: wf.is_active,
+      nodes_json: JSON.stringify(data.nodes || []),
+      edges_json: JSON.stringify(data.edges || []),
+    };
+
+    const updated = await api.updateWorkflow(wf.id, payload);
+    workflowStore.currentWorkflow = updated;
+    showTemplateGallery.value = false;
+    emit('selectWorkflow', wf.id);
+    emit('close');
+  } catch (err) {
+    alert('Failed to create workflow from template: ' + err.message);
+  } finally {
+    creating.value = false;
+  }
 }
 
 async function handleDelete(id) {
@@ -153,6 +185,9 @@ async function saveEdit() {
             </button>
             <button class="btn btn-secondary" :disabled="creating" @click="triggerFileInput">
               Import JSON
+            </button>
+            <button class="btn btn-secondary" :disabled="creating" @click="showTemplateGallery = true">
+              Browse Templates
             </button>
             <input
               ref="fileInputRef"
@@ -228,6 +263,14 @@ async function saveEdit() {
         </div>
       </div>
     </div>
+
+    <TemplateGallery
+      v-if="showTemplateGallery"
+      title="Create From Template"
+      action-label="Create Workflow"
+      @close="showTemplateGallery = false"
+      @select="createFromTemplate"
+    />
   </div>
 </template>
 
