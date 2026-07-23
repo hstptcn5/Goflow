@@ -26,12 +26,13 @@ const messages = ref([
   }
 ]);
 
+function isAICredential(cred) {
+  const type = String(cred.type || '').toLowerCase();
+  return type === 'openai' || type === 'deepseek' || type === 'api_key';
+}
+
 const aiCredentials = computed(() => {
-  return workflowStore.credentials.filter(c => 
-    c.type === 'OpenAI' || 
-    c.type === 'DeepSeek' || 
-    c.type === 'API_KEY'
-  );
+  return workflowStore.credentials.filter(isAICredential);
 });
 
 onMounted(() => {
@@ -125,7 +126,8 @@ async function handleSend() {
         id: `msg_ai_${Date.now()}`,
         sender: 'ai',
         type: 'workflow',
-        workflow: response.workflow
+        workflow: response.workflow,
+        validated: response.validated === true
       });
     }
   } catch (err) {
@@ -240,6 +242,7 @@ function renderMarkdown(text) {
                     <div>
                       <strong>Sơ đồ workflow mới/sửa đổi</strong>
                       <p class="workflow-name-preview">Name: {{ msg.workflow.name || 'Unnamed Flow' }}</p>
+                      <p v-if="msg.validated" class="workflow-validation">Validated by Goflow</p>
                     </div>
                   </div>
                   
@@ -527,6 +530,13 @@ function renderMarkdown(text) {
   color: #15803d;
   margin: 2px 0 0 0;
   font-weight: 600;
+}
+
+.workflow-validation {
+  font-size: 0.65rem;
+  color: #166534;
+  margin: 3px 0 0 0;
+  font-weight: 700;
 }
 
 .sequence-chips {

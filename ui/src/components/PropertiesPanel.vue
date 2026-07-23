@@ -18,8 +18,13 @@ const aiHelperPrompt = ref('');
 const aiHelperLoading = ref(false);
 const aiHelperError = ref(null);
 
+function isAICredential(cred) {
+  const type = String(cred.type || '').toLowerCase();
+  return type === 'openai' || type === 'deepseek' || type === 'api_key';
+}
+
 const aiCredentialId = computed(() => {
-  const cred = workflowStore.credentials.find(c => c.type === 'OpenAI' || c.type === 'DeepSeek' || c.type === 'API_KEY');
+  const cred = workflowStore.credentials.find(isAICredential);
   return cred ? cred.id : null;
 });
 
@@ -65,7 +70,8 @@ const executionStore = useExecutionStore();
 watch(
   () => props.selectedNode?.id,
   () => {
-    activeSidebarTab.value = 'config';
+    const status = props.selectedNode ? executionStore.nodeStatuses[props.selectedNode.id] : null;
+    activeSidebarTab.value = status === 'FAILED' ? 'output' : 'config';
     showHelp.value = false;
   }
 );
@@ -82,6 +88,10 @@ watch(
 
 const nodeExecutionResult = computed(() => {
   if (!props.selectedNode) return null;
+  const realtimeEvent = executionStore.nodeEvents[props.selectedNode.id];
+  if (realtimeEvent) {
+    return realtimeEvent;
+  }
   // Lấy lượt chạy gần đây nhất
   const latestExec = executionStore.executionLogs[0];
   if (!latestExec) return null;
@@ -93,6 +103,15 @@ const nodeExecutionResult = computed(() => {
   } catch (e) {
     return null;
   }
+});
+
+const selectedNodeStatus = computed(() => {
+  if (!props.selectedNode) return null;
+  return executionStore.nodeStatuses[props.selectedNode.id] || nodeExecutionResult.value?.status || null;
+});
+
+const selectedNodeError = computed(() => {
+  return nodeExecutionResult.value?.error || null;
 });
 
 function handleParamChange(paramName, value) {
@@ -142,6 +161,11 @@ function handleDeleteNode() {
     </div>
 
     <div class="panel-body">
+      <div v-if="selectedNodeStatus === 'FAILED'" class="node-error-summary">
+        <div class="node-error-title">Node failed</div>
+        <pre class="node-error-message">{{ selectedNodeError || 'No error details were reported for this node.' }}</pre>
+      </div>
+
       <!-- CONFIG TAB -->
       <div v-if="activeSidebarTab === 'config'">
         <div class="form-group">
@@ -356,6 +380,32 @@ function handleDeleteNode() {
   padding: 16px;
   overflow-y: auto;
   flex: 1;
+}
+
+.node-error-summary {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-left: 4px solid #dc2626;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 14px;
+}
+
+.node-error-title {
+  color: #991b1b;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.node-error-message {
+  color: #b91c1c;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  margin: 0;
 }
 
 .divider {

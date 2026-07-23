@@ -29,6 +29,10 @@ async function handleRunWorkflow() {
     triggering.value = false;
   }
 }
+
+function openDocs() {
+  window.open('/NODES.md', '_blank', 'noopener,noreferrer');
+}
 </script>
 
 <template>
@@ -62,6 +66,9 @@ async function handleRunWorkflow() {
       </button>
       <button class="btn btn-secondary" @click="emit('openCredentials')" style="display: inline-flex; align-items: center; gap: 6px;">
         <span v-html="getNavIconSVG('credentials')" style="display: flex;"></span> Credentials
+      </button>
+      <button class="btn btn-secondary" @click="openDocs" style="display: inline-flex; align-items: center; gap: 6px;">
+        Docs
       </button>
 
       <div class="divider"></div>

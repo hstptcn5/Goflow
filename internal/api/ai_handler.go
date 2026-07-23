@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"goflow/internal/engine"
 	"goflow/internal/nodes"
 	"goflow/internal/storage"
 )
@@ -17,8 +18,198 @@ type AIHandler struct {
 	registry  *nodes.PluginRegistry
 }
 
+type workflowDraft struct {
+	Name  string       `json:"name"`
+	Nodes []nodes.Node `json:"nodes"`
+	Edges []nodes.Edge `json:"edges"`
+}
+
 func NewAIHandler(cs *storage.CredentialStore, r *nodes.PluginRegistry) *AIHandler {
 	return &AIHandler{credStore: cs, registry: r}
+}
+
+func resolveAIProvider(cred *storage.Credential, apiKey string) (string, string, bool) {
+	credType := strings.ToLower(strings.TrimSpace(cred.Type))
+	lowerName := strings.ToLower(cred.Name)
+
+	switch credType {
+	case "openai":
+		return "https://api.openai.com/v1/chat/completions", "gpt-4o", true
+	case "deepseek":
+		return "https://api.deepseek.com/v1/chat/completions", "deepseek-chat", true
+	case "api_key":
+		if strings.Contains(lowerName, "deepseek") {
+			return "https://api.deepseek.com/v1/chat/completions", "deepseek-chat", true
+		}
+		if strings.Contains(lowerName, "openai") || strings.Contains(lowerName, "gpt") || strings.HasPrefix(apiKey, "sk-") {
+			return "https://api.openai.com/v1/chat/completions", "gpt-4o", true
+		}
+		return "https://api.openai.com/v1/chat/completions", "gpt-4o", true
+	default:
+		return "", "", false
+	}
+}
+
+func (h *AIHandler) validateWorkflowDraft(draft workflowDraft) []string {
+	var issues []string
+	if strings.TrimSpace(draft.Name) == "" {
+		issues = append(issues, "workflow.name is required")
+	}
+	if len(draft.Nodes) == 0 {
+		issues = append(issues, "workflow.nodes must contain at least one node")
+		return issues
+	}
+
+	seenNodeIDs := make(map[string]bool, len(draft.Nodes))
+	for i := range draft.Nodes {
+		node := &draft.Nodes[i]
+		node.ID = strings.TrimSpace(node.ID)
+		node.Name = strings.TrimSpace(node.Name)
+		if node.Params == nil {
+			node.Params = map[string]interface{}{}
+		}
+
+		if node.ID == "" {
+			issues = append(issues, fmt.Sprintf("nodes[%d].id is required", i))
+			continue
+		}
+		if seenNodeIDs[node.ID] {
+			issues = append(issues, fmt.Sprintf("duplicate node id: %s", node.ID))
+		}
+		seenNodeIDs[node.ID] = true
+
+		executor, ok := h.registry.Get(node.Type)
+		if !ok {
+			issues = append(issues, fmt.Sprintf("node %q uses unknown type %q", node.ID, node.Type))
+			continue
+		}
+
+		def := executor.GetDefinition()
+		allowedParams := make(map[string]nodes.ParamDefinition, len(def.Params))
+		for _, param := range def.Params {
+			allowedParams[param.Name] = param
+		}
+		for paramName := range node.Params {
+			if _, ok := allowedParams[paramName]; !ok {
+				issues = append(issues, fmt.Sprintf("node %q has unsupported parameter %q for type %q", node.ID, paramName, node.Type))
+			}
+		}
+		for _, param := range def.Params {
+			if !param.Required {
+				continue
+			}
+			value, ok := node.Params[param.Name]
+			if !ok || isBlankParam(value) {
+				issues = append(issues, fmt.Sprintf("node %q is missing required parameter %q", node.ID, param.Name))
+			}
+		}
+		if err := executor.Validate(node); err != nil {
+			issues = append(issues, fmt.Sprintf("node %q validation failed: %v", node.ID, err))
+		}
+	}
+
+	edgeIDs := make(map[string]bool, len(draft.Edges))
+	for i, edge := range draft.Edges {
+		if strings.TrimSpace(edge.ID) == "" {
+			issues = append(issues, fmt.Sprintf("edges[%d].id is required", i))
+		} else if edgeIDs[edge.ID] {
+			issues = append(issues, fmt.Sprintf("duplicate edge id: %s", edge.ID))
+		}
+		edgeIDs[edge.ID] = true
+		if strings.TrimSpace(edge.Source) == "" || strings.TrimSpace(edge.Target) == "" {
+			issues = append(issues, fmt.Sprintf("edge %q must include source and target", edge.ID))
+			continue
+		}
+		if !seenNodeIDs[edge.Source] {
+			issues = append(issues, fmt.Sprintf("edge %q references unknown source node %q", edge.ID, edge.Source))
+		}
+		if !seenNodeIDs[edge.Target] {
+			issues = append(issues, fmt.Sprintf("edge %q references unknown target node %q", edge.ID, edge.Target))
+		}
+	}
+
+	if len(issues) == 0 {
+		if _, err := engine.BuildDAGPlan(draft.Nodes, draft.Edges); err != nil {
+			issues = append(issues, err.Error())
+		}
+	}
+	return issues
+}
+
+func (h *AIHandler) parseAndValidateWorkflowJSON(jsonStr string) (map[string]interface{}, []string, bool) {
+	var draft workflowDraft
+	if err := json.Unmarshal([]byte(jsonStr), &draft); err != nil {
+		return nil, []string{fmt.Sprintf("workflow JSON is invalid: %v", err)}, false
+	}
+	issues := h.validateWorkflowDraft(draft)
+	var workflowData map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &workflowData); err != nil {
+		return nil, []string{fmt.Sprintf("workflow JSON object is invalid: %v", err)}, false
+	}
+	return workflowData, issues, true
+}
+
+func isBlankParam(value interface{}) bool {
+	switch v := value.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(v) == ""
+	case []interface{}:
+		return len(v) == 0
+	case map[string]interface{}:
+		return len(v) == 0
+	default:
+		return false
+	}
+}
+
+func callChatCompletion(endpoint, apiKey, model string, messages []map[string]string, timeout time.Duration) (string, error) {
+	apiReqBody := map[string]interface{}{
+		"model":       model,
+		"messages":    messages,
+		"temperature": 0.2,
+	}
+	apiReqJSON, err := json.Marshal(apiReqBody)
+	if err != nil {
+		return "", err
+	}
+
+	client := &http.Client{Timeout: timeout}
+	httpReq, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(apiReqJSON))
+	if err != nil {
+		return "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to call LLM API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp map[string]interface{}
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		errBytes, _ := json.Marshal(errResp)
+		return "", fmt.Errorf("LLM API returned error (HTTP %d): %s", resp.StatusCode, string(errBytes))
+	}
+
+	var apiResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return "", fmt.Errorf("failed to parse LLM API response")
+	}
+	if len(apiResp.Choices) == 0 {
+		return "", fmt.Errorf("LLM returned empty choices")
+	}
+	return strings.TrimSpace(apiResp.Choices[0].Message.Content), nil
 }
 
 func (h *AIHandler) GenerateWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +276,7 @@ Your task is to help the user build, modify, explain, or troubleshoot Goflow wor
 Reply in natural language (Vietnamese by default).
 
 RESPONSE FORMAT RULES:
-1. If you propose a new workflow or suggest changes/fixes to the current workflow structure, write your explanation first, and then include the complete, updated workflow JSON structure inside a markdown code block starting with ` + "`" + "``json" + "`" + ` and ending with ` + "`" + "```" + "`" + `.
+1. If you propose a new workflow or suggest changes/fixes to the current workflow structure, write your explanation first, and then include the complete, updated workflow JSON structure inside a markdown code block starting with `+"`"+"``json"+"`"+` and ending with `+"`"+"```"+"`"+`.
 2. If you are just answering a general question, explaining how a node works, or chatting with the user without modifying the canvas structure, simply reply in plain text. Do NOT include any JSON code block in this case.
 
 Example Goflow JSON Workflow Reference:
@@ -156,41 +347,11 @@ Guidelines for Workflow JSON:
 2. Connect nodes with edges. If connecting from a 'conditionIf' node, you MUST specify "sourceHandle" as either "true" or "false" to connect the branches. For other nodes, sourceHandle should be null or omitted.
 3. For SaaS nodes (like 'openAIGPT', 'telegramBot', 'postgresQuery'), if a credential parameter is needed, do NOT include the actual API key in 'params'. Instead, leave the credential param empty or omit it, as the user will select their credential from the dropdown in the UI.
 4. Cron expression for 'cronTrigger' node MUST be a valid 5-field standard cron string (e.g., "0 9 * * *" for daily 9am, "*/5 * * * *" for every 5 mins). NEVER output partial expressions like "0 9 ".
-5. Begin with "{" and end with "}". No markdown wrapping.`, defsFormatted, currentFlowContext)
+5. The workflow JSON inside the markdown code block must begin with "{" and end with "}".`, defsFormatted, currentFlowContext)
 
 	// 3. Select API Endpoint based on Credential Type or heuristics
-	var endpoint string
-	var model string
-
-	isOpenAI := false
-	isDeepSeek := false
-
-	if cred.Type == "OpenAI" {
-		isOpenAI = true
-	} else if cred.Type == "DeepSeek" {
-		isDeepSeek = true
-	} else if cred.Type == "API_KEY" {
-		// Heuristics for general API_KEY credentials: check name keywords first
-		lowerName := strings.ToLower(cred.Name)
-		if strings.Contains(lowerName, "deepseek") {
-			isDeepSeek = true
-		} else if strings.Contains(lowerName, "openai") || strings.Contains(lowerName, "gpt") {
-			isOpenAI = true
-		} else if strings.HasPrefix(apiKey, "sk-") {
-			// Fallback if no keywords found but has sk- prefix (default to OpenAI)
-			isOpenAI = true
-		} else {
-			isOpenAI = true
-		}
-	}
-
-	if isOpenAI {
-		endpoint = "https://api.openai.com/v1/chat/completions"
-		model = "gpt-4o"
-	} else if isDeepSeek {
-		endpoint = "https://api.deepseek.com/v1/chat/completions"
-		model = "deepseek-chat"
-	} else {
+	endpoint, model, ok := resolveAIProvider(cred, apiKey)
+	if !ok {
 		http.Error(w, "Unsupported credential type for AI Assistant. Please use OpenAI, DeepSeek, or API_KEY credentials.", http.StatusBadRequest)
 		return
 	}
@@ -206,64 +367,11 @@ Guidelines for Workflow JSON:
 		}
 	}
 
-	apiReqBody := map[string]interface{}{
-		"model":       model,
-		"messages":    llmMessages,
-		"temperature": 0.2,
-	}
-
-	apiReqJSON, err := json.Marshal(apiReqBody)
+	content, err := callChatCompletion(endpoint, apiKey, model, llmMessages, 45*time.Second)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	// 5. Send Request to LLM
-	client := &http.Client{Timeout: 45 * time.Second}
-	httpReq, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(apiReqJSON))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to call LLM API: %v", err), http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var errResp map[string]interface{}
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		errBytes, _ := json.Marshal(errResp)
-		http.Error(w, fmt.Sprintf("LLM API returned error (HTTP %d): %s", resp.StatusCode, string(errBytes)), http.StatusInternalServerError)
-		return
-	}
-
-	var apiResp struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		http.Error(w, "Failed to parse LLM API response", http.StatusInternalServerError)
-		return
-	}
-
-	if len(apiResp.Choices) == 0 {
-		http.Error(w, "LLM returned empty choices", http.StatusInternalServerError)
-		return
-	}
-
-	content := apiResp.Choices[0].Message.Content
-	content = strings.TrimSpace(content)
 
 	jsonStr, textStr := extractWorkflowJSON(content)
 
@@ -271,14 +379,45 @@ Guidelines for Workflow JSON:
 
 	if jsonStr != "" {
 		sanitized := sanitizeJSONString(jsonStr)
-		var workflowData map[string]interface{}
-		if err := json.Unmarshal([]byte(sanitized), &workflowData); err == nil {
+		workflowData, validationIssues, parseOK := h.parseAndValidateWorkflowJSON(sanitized)
+		if parseOK && len(validationIssues) > 0 {
+			repairMessages := append([]map[string]string{}, llmMessages...)
+			repairMessages = append(repairMessages,
+				map[string]string{"role": "assistant", "content": content},
+				map[string]string{
+					"role": "user",
+					"content": fmt.Sprintf(`The workflow JSON you returned is invalid for Goflow.
+Fix every validation issue below and return the complete corrected workflow JSON in a single markdown json code block. Do not change the user's intent.
+
+Validation issues:
+- %s`, strings.Join(validationIssues, "\n- ")),
+				},
+			)
+			if repairedContent, err := callChatCompletion(endpoint, apiKey, model, repairMessages, 45*time.Second); err == nil {
+				repairedJSON, repairedText := extractWorkflowJSON(repairedContent)
+				if repairedJSON != "" {
+					workflowData, validationIssues, parseOK = h.parseAndValidateWorkflowJSON(sanitizeJSONString(repairedJSON))
+					if parseOK {
+						textStr = strings.TrimSpace(textStr + "\n" + repairedText)
+					}
+				}
+			}
+		}
+		if parseOK && len(validationIssues) == 0 {
 			responsePayload["type"] = "workflow"
 			responsePayload["workflow"] = workflowData
 			responsePayload["text"] = textStr
-			
+			responsePayload["validated"] = true
+
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(responsePayload)
+			_ = json.NewEncoder(w).Encode(responsePayload)
+			return
+		}
+		if parseOK && len(validationIssues) > 0 {
+			responsePayload["type"] = "text"
+			responsePayload["text"] = fmt.Sprintf("AI generated a workflow, but it failed validation:\n- %s\n\nPlease refine your request or include the missing required values.", strings.Join(validationIssues, "\n- "))
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(responsePayload)
 			return
 		}
 	}
@@ -353,36 +492,8 @@ Modify the parameter values according to the user's request. You must respect th
 Return ONLY a valid JSON object containing the updated parameter key-value pairs. Do not output markdown code fences, backticks, or explanations. Begin with "{" and end with "}".`, req.NodeType, string(defJSONBytes), string(currParamsJSONBytes))
 
 	// 3. Select API Endpoint based on Credential Type or heuristics
-	var endpoint string
-	var model string
-
-	isOpenAI := false
-	isDeepSeek := false
-
-	if cred.Type == "OpenAI" {
-		isOpenAI = true
-	} else if cred.Type == "DeepSeek" {
-		isDeepSeek = true
-	} else if cred.Type == "API_KEY" {
-		lowerName := strings.ToLower(cred.Name)
-		if strings.Contains(lowerName, "deepseek") {
-			isDeepSeek = true
-		} else if strings.Contains(lowerName, "openai") || strings.Contains(lowerName, "gpt") {
-			isOpenAI = true
-		} else if strings.HasPrefix(apiKey, "sk-") {
-			isOpenAI = true
-		} else {
-			isOpenAI = true
-		}
-	}
-
-	if isOpenAI {
-		endpoint = "https://api.openai.com/v1/chat/completions"
-		model = "gpt-4o"
-	} else if isDeepSeek {
-		endpoint = "https://api.deepseek.com/v1/chat/completions"
-		model = "deepseek-chat"
-	} else {
+	endpoint, model, ok := resolveAIProvider(cred, apiKey)
+	if !ok {
 		http.Error(w, "Unsupported credential type for AI node configuration.", http.StatusBadRequest)
 		return
 	}
@@ -477,7 +588,7 @@ func extractWorkflowJSON(content string) (string, string) {
 	// 1. Try to find markdown code block ```json ... ```
 	startFence := "```json"
 	endFence := "```"
-	
+
 	idxStart := strings.Index(content, startFence)
 	if idxStart != -1 {
 		idxEnd := strings.Index(content[idxStart+len(startFence):], endFence)
@@ -488,7 +599,7 @@ func extractWorkflowJSON(content string) (string, string) {
 			return strings.TrimSpace(jsonStr), strings.TrimSpace(textStr)
 		}
 	}
-	
+
 	// Fallback to generic ``` code fence
 	startFence = "```"
 	idxStart = strings.Index(content, startFence)
@@ -520,7 +631,7 @@ func sanitizeJSONString(s string) string {
 	var sb strings.Builder
 	inQuote := false
 	escaped := false
-	
+
 	runes := []rune(s)
 	for i := 0; i < len(runes); i++ {
 		r := runes[i]

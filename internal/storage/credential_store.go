@@ -20,14 +20,20 @@ type Credential struct {
 }
 
 type CredentialStore struct {
-	db     *DB
-	crypto *crypto.CryptoManager
+	db             *DB
+	crypto         *crypto.CryptoManager
+	legacyFallback *crypto.CryptoManager
 }
 
 func NewCredentialStore(db *DB, cm *crypto.CryptoManager) *CredentialStore {
+	var legacyFallback *crypto.CryptoManager
+	if cm != nil {
+		legacyFallback = crypto.NewCryptoManager(crypto.LegacyDefaultMasterKey)
+	}
 	return &CredentialStore{
-		db:     db,
-		crypto: cm,
+		db:             db,
+		crypto:         cm,
+		legacyFallback: legacyFallback,
 	}
 }
 
@@ -72,7 +78,15 @@ func (s *CredentialStore) GetDecryptedData(id string) (string, error) {
 
 	decryptedBytes, err := s.crypto.Decrypt(encryptedData)
 	if err != nil {
-		return "", err
+		if s.legacyFallback == nil {
+			return "", err
+		}
+		legacyBytes, legacyErr := s.legacyFallback.Decrypt(encryptedData)
+		if legacyErr != nil {
+			return "", err
+		}
+		_ = s.UpdateData(id, string(legacyBytes))
+		return string(legacyBytes), nil
 	}
 	return string(decryptedBytes), nil
 }

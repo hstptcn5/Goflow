@@ -11,20 +11,18 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-// CryptoManager quản lý mã hóa và giải mã AES-256-GCM
+const LegacyDefaultMasterKey = "goflow-master-secret-key-32bytes!"
+
 type CryptoManager struct {
 	key []byte
 }
 
-// NewCryptoManager tạo một crypto manager từ master passphrase
 func NewCryptoManager(masterPassphrase string) *CryptoManager {
-	// Sử dụng Argon2id với salt cố định để derive 32-byte key từ master passphrase
 	salt := []byte("goflow-argon2id-salt-constant")
 	key := argon2.IDKey([]byte(masterPassphrase), salt, 1, 64*1024, 4, 32)
 	return &CryptoManager{key: key}
 }
 
-// Encrypt mã hóa dữ liệu theo chuẩn AES-256-GCM
 func (c *CryptoManager) Encrypt(plaintext []byte) (string, error) {
 	block, err := aes.NewCipher(c.key)
 	if err != nil {
@@ -41,12 +39,10 @@ func (c *CryptoManager) Encrypt(plaintext []byte) (string, error) {
 		return "", err
 	}
 
-	// GCM Seal chèn nonce ở đầu dữ liệu
 	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
-// Decrypt giải mã dữ liệu Base64 AES-256-GCM
 func (c *CryptoManager) Decrypt(encodedCiphertext string) ([]byte, error) {
 	ciphertext, err := base64.StdEncoding.DecodeString(encodedCiphertext)
 	if err != nil {

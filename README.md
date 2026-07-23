@@ -192,8 +192,8 @@ d:/build2026/Goflow/
 
 ## Documentation & Workflow Templates
 
-* **Detailed Node Reference**: See [NODES.md](file:///d:/Bot2026/Goflow/NODES.md) for parameter schemas and JSON output payloads of all 26 built-in executors.
-* **Ready-to-use Templates**: Find pre-configured workflows in the [templates/](file:///d:/Bot2026/Goflow/templates) directory. You can easily import them using the "Import" button in the Web UI:
+* **Detailed Node Reference**: See [NODES.md](NODES.md) for a bilingual English/Vietnamese guide to the built-in nodes, placeholders, credentials, recipes, and troubleshooting.
+* **Ready-to-use Templates**: Find pre-configured workflows in the [templates/](templates/) directory. You can easily import them using the "Import" button in the Web UI:
   - `workflow_ai_assistant.json`: Webhook-triggered DeepSeek text summary pipeline.
   - `github_repo_monitor.json`: Periodically fetch repository stats with custom API calls.
   - `multi_branch_stress_test.json`: Stress test concurrency across 3 parallel workflow branches.

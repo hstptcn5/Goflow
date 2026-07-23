@@ -104,6 +104,35 @@ export const useWorkflowStore = defineStore('workflow', {
       }
     },
 
+    async updateWorkflowMetadata(id, name, description) {
+      const existing = this.workflows.find((w) => w.id === id)
+        || (this.currentWorkflow?.id === id ? this.currentWorkflow : null);
+      if (!existing) throw new Error('Workflow not found');
+
+      const payload = {
+        name,
+        description,
+        is_active: existing.is_active,
+        nodes_json: existing.nodes_json,
+        edges_json: existing.edges_json,
+      };
+
+      try {
+        const updated = await api.updateWorkflow(id, payload);
+        const idx = this.workflows.findIndex((w) => w.id === id);
+        if (idx !== -1) {
+          this.workflows[idx] = updated;
+        }
+        if (this.currentWorkflow?.id === id) {
+          this.currentWorkflow = updated;
+        }
+        return updated;
+      } catch (err) {
+        this.error = err.message;
+        throw err;
+      }
+    },
+
     async toggleActive(id, isActive) {
       try {
         await api.toggleWorkflowActive(id, isActive);
