@@ -65,6 +65,8 @@ async function handleDelete(id) {
               <option value="API_KEY">API Key</option>
               <option value="BEARER_TOKEN">Bearer Token</option>
               <option value="BASIC_AUTH">Basic Auth</option>
+              <option value="OpenAI">OpenAI API Key</option>
+              <option value="DeepSeek">DeepSeek API Key</option>
             </select>
           </div>
           <div class="form-group">

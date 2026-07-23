@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { useExecutionStore } from '@/stores/executionStore';
 import { nodeHelpMap } from './NodeHelpData';
+import { api } from '@/services/api';
 
 const props = defineProps({
   selectedNode: Object,
@@ -12,6 +13,42 @@ const emit = defineEmits(['updateNodeParams', 'deleteNode', 'close']);
 const workflowStore = useWorkflowStore();
 const showHelp = ref(false);
 const activeSidebarTab = ref('config'); // 'config' | 'output'
+
+const aiHelperPrompt = ref('');
+const aiHelperLoading = ref(false);
+const aiHelperError = ref(null);
+
+const aiCredentialId = computed(() => {
+  const cred = workflowStore.credentials.find(c => c.type === 'OpenAI' || c.type === 'DeepSeek' || c.type === 'API_KEY');
+  return cred ? cred.id : null;
+});
+
+async function runAIHelper() {
+  if (!props.selectedNode || !aiHelperPrompt.value.trim() || aiHelperLoading.value) return;
+  
+  if (!aiCredentialId.value) {
+    aiHelperError.value = '⚠️ No AI API key found. Add one in Credentials first.';
+    return;
+  }
+
+  aiHelperLoading.value = true;
+  aiHelperError.value = null;
+
+  try {
+    const updatedParams = await api.configureNodeParams(
+      props.selectedNode.type,
+      aiHelperPrompt.value,
+      props.selectedNode.params || {},
+      aiCredentialId.value
+    );
+    emit('updateNodeParams', props.selectedNode.id, updatedParams);
+    aiHelperPrompt.value = '';
+  } catch (err) {
+    aiHelperError.value = `❌ Failed: ${err.message}`;
+  } finally {
+    aiHelperLoading.value = false;
+  }
+}
 
 const nodeDef = computed(() => {
   if (!props.selectedNode) return null;
@@ -173,6 +210,33 @@ function handleDeleteNode() {
         </div>
         <div v-else class="empty-params">
           No configurable parameters for this node.
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- AI Parameter Configurer -->
+        <div class="ai-node-configurer">
+          <label class="ai-configurer-title">🪄 AI Quick Config (Cấu hình nhanh)</label>
+          <p class="ai-configurer-desc">Yêu cầu AI tự điền tham số cho node này (ví dụ: "Đặt URL lấy thời tiết Luân Đôn")</p>
+          <div class="ai-configurer-input-row">
+            <input
+              v-model="aiHelperPrompt"
+              type="text"
+              placeholder="Nhập yêu cầu cấu hình node..."
+              class="form-input ai-configurer-input"
+              :disabled="aiHelperLoading"
+              @keyup.enter="runAIHelper"
+            />
+            <button
+              class="btn btn-primary ai-configurer-btn"
+              @click="runAIHelper"
+              :disabled="aiHelperLoading || !aiHelperPrompt.trim()"
+            >
+              <span v-if="aiHelperLoading">...</span>
+              <span v-else>🪄</span>
+            </button>
+          </div>
+          <p v-if="aiHelperError" class="ai-configurer-error">{{ aiHelperError }}</p>
         </div>
 
         <!-- Help Documentation Box -->
@@ -542,5 +606,58 @@ function handleDeleteNode() {
   font-size: 0.725rem;
   color: var(--text-secondary);
   opacity: 0.8;
+}
+/* AI Parameter Configurer inside node panel */
+.ai-node-configurer {
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  padding: 12px;
+  border-radius: 8px;
+  margin-top: 10px;
+}
+
+.ai-configurer-title {
+  font-size: 0.725rem;
+  font-weight: 700;
+  color: #0f172a;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.ai-configurer-desc {
+  font-size: 0.65rem;
+  color: #64748b;
+  margin: 0 0 8px 0;
+  line-height: 1.3;
+}
+
+.ai-configurer-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-configurer-input {
+  flex: 1;
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  height: 32px;
+}
+
+.ai-configurer-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+}
+
+.ai-configurer-error {
+  margin-top: 6px;
+  font-size: 0.65rem;
+  color: #dc2626;
+  font-weight: 600;
+  line-height: 1.3;
 }
 </style>

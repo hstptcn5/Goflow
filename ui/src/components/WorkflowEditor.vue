@@ -9,6 +9,7 @@ import { useExecutionStore } from '@/stores/executionStore';
 
 import NodePalette from './NodePalette.vue';
 import PropertiesPanel from './PropertiesPanel.vue';
+import AIAssistantDrawer from './AIAssistantDrawer.vue';
 
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
@@ -16,6 +17,7 @@ import '@vue-flow/controls/dist/style.css';
 
 const workflowStore = useWorkflowStore();
 const executionStore = useExecutionStore();
+const showAIDrawer = ref(false);
 
 function getNodeIcon(type) {
   const icons = {
@@ -241,6 +243,85 @@ function saveCanvas() {
   workflowStore.saveCurrentWorkflow(serializableNodes, serializableEdges);
 }
 
+function handleLoadAIWorkflow(aiWorkflow) {
+  if (!aiWorkflow) return;
+
+  const mappedAINodes = (aiWorkflow.nodes || []).map((n) => {
+    const nodeDef = workflowStore.nodeDefinitions.find((d) => d.type === n.type);
+    const defaultParams = {};
+    if (nodeDef && nodeDef.params) {
+      nodeDef.params.forEach((p) => {
+        defaultParams[p.name] = p.default ?? '';
+      });
+    }
+    return {
+      id: n.id,
+      type: 'custom',
+      position: n.position || { x: 250, y: 150 },
+      label: n.name || (nodeDef ? nodeDef.name : n.type),
+      data: {
+        id: n.id,
+        type: n.type,
+        name: n.name || (nodeDef ? nodeDef.name : n.type),
+        params: { ...defaultParams, ...n.params },
+        categoryClass: getNodeCategory(n.type),
+        icon: getNodeIcon(n.type),
+      },
+    };
+  });
+
+  const existingNodes = [...nodes.value];
+  const finalNodes = [];
+
+  mappedAINodes.forEach((aiNode) => {
+    const existing = existingNodes.find((ex) => ex.id === aiNode.id);
+    if (existing) {
+      // Smart merge parameters
+      const mergedParams = { ...existing.data.params };
+      Object.keys(aiNode.data.params).forEach((key) => {
+        const aiVal = aiNode.data.params[key];
+        // Only overwrite if the AI returned a non-empty, non-null value
+        if (aiVal !== '' && aiVal !== null && aiVal !== undefined) {
+          mergedParams[key] = aiVal;
+        }
+      });
+
+      finalNodes.push({
+        ...existing,
+        position: aiNode.position || existing.position,
+        label: aiNode.label || existing.label,
+        data: {
+          ...existing.data,
+          name: aiNode.data.name || existing.data.name,
+          params: mergedParams,
+        }
+      });
+    } else {
+      finalNodes.push(aiNode);
+    }
+  });
+
+  const mappedAIEdges = (aiWorkflow.edges || []).map((e) => ({
+    id: e.id || `edge_${e.source}-${e.target}_${Date.now()}`,
+    source: e.source,
+    sourceHandle: e.sourceHandle || null,
+    target: e.target,
+    targetHandle: e.targetHandle || null,
+    animated: true,
+    style: { stroke: '#38bdf8', strokeWidth: 3 },
+  }));
+
+  nodes.value = finalNodes;
+  edges.value = mappedAIEdges;
+  workflowStore.isDirty = true;
+  showAIDrawer.value = false;
+
+  // Select the first new/updated node
+  if (mappedAINodes.length > 0) {
+    selectedNodeId.value = mappedAINodes[0].id;
+  }
+}
+
 defineExpose({ saveCanvas });
 </script>
 
@@ -249,6 +330,13 @@ defineExpose({ saveCanvas });
     <NodePalette />
 
     <div class="canvas-area" @dragover="onDragOver" @drop="onDrop">
+      <!-- Floating Canvas Toolbar -->
+      <div class="canvas-toolbar">
+        <button class="btn-toolbar" @click="showAIDrawer = true">
+          🤖 AI Assistant
+        </button>
+      </div>
+
       <VueFlow
         v-model:nodes="nodes"
         v-model:edges="edges"
@@ -293,6 +381,15 @@ defineExpose({ saveCanvas });
       @updateNodeParams="handleUpdateNodeParams"
       @deleteNode="handleDeleteNode"
       @close="selectedNodeId = null"
+    />
+
+    <!-- AI Assistant Drawer -->
+    <AIAssistantDrawer
+      :visible="showAIDrawer"
+      :currentNodes="nodes"
+      :currentEdges="edges"
+      @close="showAIDrawer = false"
+      @loadWorkflow="handleLoadAIWorkflow"
     />
   </div>
 </template>
@@ -424,5 +521,39 @@ defineExpose({ saveCanvas });
   100% {
     box-shadow: 0 0 0 5px rgba(217, 119, 6, 0.4), 0 4px 12px rgba(0, 0, 0, 0.05);
   }
+}
+
+/* Floating Canvas Toolbar styling */
+.canvas-toolbar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 100;
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.btn-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #0f172a;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  transition: all 0.15s ease;
+}
+
+.btn-toolbar:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.12);
 }
 </style>

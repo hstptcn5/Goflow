@@ -45,6 +45,7 @@ func NewRouter(
 	nodeHandler := NewNodeHandler(registry)
 	oauth2Handler := NewOAuth2Handler(credStore)
 	wsHandler := NewWSHandler(eventBus)
+	aiHandler := NewAIHandler(credStore, registry)
 
 	// API v1 Routes
 	r.Route("/api/v1", func(r chi.Router) {
@@ -70,6 +71,10 @@ func NewRouter(
 
 		// Nodes Metadata
 		r.Get("/nodes/definitions", nodeHandler.ListDefinitions)
+
+		// AI Assistant
+		r.Post("/ai/generate", aiHandler.GenerateWorkflow)
+		r.Post("/ai/configure-node", aiHandler.ConfigureNode)
 	})
 
 	// Public Webhook trigger endpoint

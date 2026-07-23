@@ -102,4 +102,41 @@ export const api = {
     if (!res.ok) throw new Error('Failed to fetch node definitions');
     return res.json();
   },
+
+  // AI Assistant
+  async generateAIWorkflow(messages, credentialId, currentNodes = [], currentEdges = []) {
+    const res = await fetch(`${API_BASE}/ai/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        messages, 
+        credential_id: credentialId,
+        current_nodes: currentNodes,
+        current_edges: currentEdges
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(errText || 'Failed to generate workflow with AI');
+    }
+    return res.json();
+  },
+
+  async configureNodeParams(nodeType, prompt, currentParams, credentialId) {
+    const res = await fetch(`${API_BASE}/ai/configure-node`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        node_type: nodeType, 
+        prompt: prompt, 
+        current_params: currentParams, 
+        credential_id: credentialId 
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(errText || 'Failed to configure node with AI');
+    }
+    return res.json();
+  },
 };
