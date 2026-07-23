@@ -1,0 +1,76 @@
+{
+  "name": "Customer Support AI Triage",
+  "description": "Webhook receives a support ticket, AI classifies urgency, and the workflow routes urgent tickets to Telegram while logging normal tickets to Slack.",
+  "nodes": [
+    {
+      "id": "support_webhook",
+      "type": "webhookTrigger",
+      "name": "Support Ticket Webhook",
+      "position": { "x": 60, "y": 180 },
+      "params": {}
+    },
+    {
+      "id": "prepare_ticket",
+      "type": "jsonTransform",
+      "name": "Prepare Ticket Context",
+      "position": { "x": 340, "y": 180 },
+      "params": {
+        "json_template": "{\n  \"customer\": \"{{support_webhook.body.customer}}\",\n  \"subject\": \"{{support_webhook.body.subject}}\",\n  \"message\": \"{{support_webhook.body.message}}\"\n}"
+      }
+    },
+    {
+      "id": "ai_triage",
+      "type": "deepseekAI",
+      "name": "Classify Ticket Urgency",
+      "position": { "x": 650, "y": 180 },
+      "params": {
+        "model": "deepseek-chat",
+        "system_message": "You classify support tickets. Reply with one compact JSON object containing urgency: urgent or normal, reason, and suggested_reply.",
+        "prompt": "Classify this ticket: {{prepare_ticket}}",
+        "temperature": "0.2",
+        "credential_id": ""
+      }
+    },
+    {
+      "id": "is_urgent",
+      "type": "conditionIf",
+      "name": "Urgent?",
+      "position": { "x": 970, "y": 180 },
+      "params": {
+        "field": "{{ai_triage.ai_response}}",
+        "operator": "contains",
+        "value": "urgent"
+      }
+    },
+    {
+      "id": "telegram_urgent",
+      "type": "telegramBot",
+      "name": "Notify On-call",
+      "position": { "x": 1250, "y": 80 },
+      "params": {
+        "credential_id": "",
+        "chat_id": "",
+        "message": "Urgent support ticket: {{prepare_ticket.subject}}\nAI triage: {{ai_triage.ai_response}}"
+      }
+    },
+    {
+      "id": "slack_normal",
+      "type": "slackBot",
+      "name": "Post Normal Ticket",
+      "position": { "x": 1250, "y": 300 },
+      "params": {
+        "webhook_url": "",
+        "username": "Goflow Support",
+        "text": "New support ticket triaged as normal:\n{{ai_triage.ai_response}}"
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "support_webhook", "target": "prepare_ticket" },
+    { "id": "e2", "source": "prepare_ticket", "target": "ai_triage" },
+    { "id": "e3", "source": "ai_triage", "target": "is_urgent" },
+    { "id": "e4", "source": "is_urgent", "sourceHandle": "true", "target": "telegram_urgent" },
+    { "id": "e5", "source": "is_urgent", "sourceHandle": "false", "target": "slack_normal" }
+  ]
+}
+

@@ -1,12 +1,14 @@
-# Goflow: Super Lightweight, Zero-Dependency Workflow Automation Engine in Go
+# Goflow: Single-Binary, Local-First Workflow Automation in Go
 
-Goflow is an ultra-lightweight, local-first, zero-dependency alternative to heavy workflow automation platforms like n8n, Zapier, or Make. Compiled into a single executable binary (around 37 MB) with minimal memory footprint (15 - 25 MB RAM), Goflow features a Pure Go CGO-free SQLite storage engine (modernc.org/sqlite) and an embedded Vue 3 drag-and-drop Web UI.
+Goflow is a single-binary, local-first workflow automation engine for small servers, homelabs, edge devices, and internal self-hosted deployments. It runs as one Go executable with an embedded Vue 3 drag-and-drop Web UI and SQLite storage, so production use does not require Docker, Node.js, PostgreSQL, or a separate frontend server.
+
+The project is best treated as a production-capable preview for trusted, single-user self-hosted environments. It is not positioned as a shared multi-tenant SaaS platform.
 
 ---
 
 ## Current Project Status
 
-Goflow has completed all phases of development, including Phase 3 (Extended Nodes Integration and SDK) and Phase 4 (UI/UX Upgrades), making it fully production-ready for self-hosted workflow automation.
+Goflow is in secure preview for self-hosted workflow automation. The core workflow engine, credential vault, embedded UI, webhook execution, and common integration nodes are implemented, with ongoing work focused on documentation, release packaging, examples, and operational polish.
 
 Key achievements in the current version include:
 - Core DAG Engine Optimization: Implemented Node Skip Logic where non-matching conditional branches are marked as skipped to prevent execution waste.
@@ -19,30 +21,28 @@ Key achievements in the current version include:
 
 ---
 
-## Strategic Comparison: Goflow vs. n8n vs. Zapier
+## Positioning and Fit
 
-| Feature / Benchmark | Goflow (Go) | n8n (Node.js) | Zapier / Make |
-| :--- | :---: | :---: | :---: |
-| **RAM Footprint (Idle)** | **15 - 25 MB** | 400 - 800 MB | Cloud SaaS (Infinite) |
-| **Binary and Packaging** | **Single File (around 37 MB)** | Heavy Docker Image / Node.js | Closed Cloud SaaS |
-| **External Dependencies** | **NONE (Zero)** | Node.js, PostgreSQL/SQLite | Closed Cloud SaaS |
-| **Node Delay Overhead** | **~2 - 5 microseconds** (Go channels) | ~50 - 150 milliseconds | ~500 - 2000 milliseconds |
-| **Database Storage** | **Pure Go SQLite (WAL)** | PostgreSQL / SQLite | Cloud SaaS |
-| **Hosting Cost** | **$0 (Runs on Raspberry Pi / $1 VPS)** | $10 - $40/month VPS | $20 - $100+/month |
-| **Deployment Simplicity** | **Zero configuration copy-and-paste** | Docker compose or npm installs | Cloud subscription |
-| **Extensibility** | **Go Plugins & Process-based JSON IPC** | Node.js modules / custom nodes | Partner developer portal |
+| Area | Goflow | Larger automation platforms |
+| :--- | :---: | :---: |
+| **Best fit** | Local automations, internal tools, webhook routing, small server jobs | Teams, multi-user operations, enterprise governance |
+| **Runtime shape** | Single executable with embedded UI | SaaS account, Docker stack, or larger runtime |
+| **Production dependencies** | No external runtime services required by default | Often requires hosted service, Docker, Node.js, or database services |
+| **Storage** | Local SQLite using WAL mode | Cloud storage or external database |
+| **Operations model** | Simple backup, local credentials, API key protection | User management, billing, advanced permissions, managed scaling |
+| **Extensibility** | Built-in nodes, Go nodes, process-based JSON plugins | Marketplace nodes, SDKs, partner integrations |
 
-### Performance & Load Benchmarks
+### Local Benchmarks
 
-Goflow's execution capacity was evaluated across three distinct high-concurrency scenarios (1,000 total requests, 50 concurrent workers, client-side timeout of 15 seconds):
+The numbers below are local benchmark results from a specific test environment. Treat them as directional smoke tests, not vendor-neutral performance claims. In asynchronous mode, webhook latency measures how quickly Goflow accepts the trigger and schedules execution; it does not mean the full external workflow finished in that time.
 
 #### 1. Scenario A: Heavy API-Bound Integration (GitHub API + Google Sheets API)
 This scenario performs external network calls and writes results into Google Sheets, showing the difference between synchronous blocking and background asynchronous executions.
 
-| Metric | Synchronous Triggering | Asynchronous Triggering (async=true) | Improvement Factor |
+| Metric | Synchronous Triggering | Asynchronous Triggering (async=true) | Notes |
 | :--- | :---: | :---: | :---: |
-| Total Time | 43.256 seconds | 2.356 seconds | 18.3x faster |
-| Throughput | 23.12 reqs/sec | 424.50 reqs/sec | 18.3x higher |
+| Total Time | 43.256 seconds | 2.356 seconds | Trigger acceptance is much faster in async mode |
+| Throughput | 23.12 reqs/sec | 424.50 reqs/sec | Measures trigger acceptance rate |
 | Success Rate | 100% (1000 / 1000) | 100% (1000 / 1000) | No timeouts |
 | Average Latency | 2098.60 ms | 115.86 ms | 18.1x lower |
 | Median Latency (P50) | 2136.33 ms | 25.12 ms | 85.0x lower |
@@ -50,7 +50,7 @@ This scenario performs external network calls and writes results into Google She
 | Idle Memory | 22.05 MB | 22.05 MB | Baseline footprint |
 | Peak Memory | ~45.00 MB | 162.07 MB | Highly efficient scaling |
 
-Note: Under a peak concurrency load of 1,000 parallel executions (50 workers), Goflow's maximum RAM usage is only 162.07 MB, which is less than half of n8n's idle memory footprint (400-800 MB). After executions complete, RAM safely returns to the baseline footprint via Go's garbage collector.
+Note: Under the measured peak concurrency load of 1,000 requests with 50 workers, Goflow reached 162.07 MB RAM and returned toward the baseline footprint after executions completed.
 
 #### 2. Scenario B: CPU-Bound JS Scripting & JSON Transformation
 This scenario computes recursive Fibonacci(15) inside Goflow's sandboxed Goja JavaScript VM and maps the data via JSON Transform.
@@ -116,7 +116,7 @@ graph TD
 
 ## Key Features
 
-- **Single Binary and Zero External Dependencies**: Requires no Docker, Node.js, or PostgreSQL in production. Everything is bundled into one executable file.
+- **Single Binary and No External Runtime Services by Default**: Requires no Docker, Node.js, or PostgreSQL in production. The Web UI is bundled into one executable file.
 - **DAG Execution Engine**: Concurrent execution of independent nodes via Goroutines and Channels with Kahn's topological sort and cyclic dependency detection.
 - **Pure Go SQLite Storage**: High performance Write-Ahead Logging (WAL mode), isolated Single Writer pool (MaxOpenConns=1), and Reader connection pool (MaxOpenConns=8).
 - **AES-256-GCM Encrypted Credentials**: Authenticated encryption with Argon2id key derivation protecting API keys, passwords, and Bot Tokens.
@@ -193,11 +193,15 @@ d:/build2026/Goflow/
 ## Documentation & Workflow Templates
 
 * **Detailed Node Reference**: See [NODES.md](NODES.md) for a bilingual English/Vietnamese guide to the built-in nodes, placeholders, credentials, recipes, and troubleshooting.
+* **Backup and Restore Guide**: See [BACKUP.md](BACKUP.md) for protecting the SQLite database, credential master key, environment variables, and workflow exports.
 * **Ready-to-use Templates**: Find pre-configured workflows in the [templates/](templates/) directory. You can easily import them using the "Import" button in the Web UI:
   - `workflow_ai_assistant.json`: Webhook-triggered DeepSeek text summary pipeline.
   - `github_repo_monitor.json`: Periodically fetch repository stats with custom API calls.
   - `multi_branch_stress_test.json`: Stress test concurrency across 3 parallel workflow branches.
   - `weather_alert_flow.json`: Automatic hourly Open-Meteo weather fetch and condition checks.
+  - `uptime_incident_response.json`: Health-check monitor with Redis incident logging and Discord alerts.
+  - `customer_support_ai_triage.json`: AI-assisted support ticket triage with urgent/normal routing.
+  - `release_smoke_test.json`: Deployment helper that pulls code, restarts a service, runs a smoke test, and sends success/failure alerts.
 
 ---
 
@@ -252,6 +256,19 @@ In this mode, Goflow requires clients and the Web UI to authenticate. The browse
   The bundled Web UI forwards the saved API key through the WebSocket subprotocol during `/ws` connection setup.
 - Webhook secret:
   If a webhook trigger defines a secret, callers must include `X-Goflow-Webhook-Secret: <secret>`.
+
+### 5. Safety and Retention Settings
+
+Goflow includes conservative defaults for local/self-hosted use. Override them with environment variables when needed:
+
+| Variable | Default | Purpose |
+| :--- | :---: | :--- |
+| `GOFLOW_MAX_CONCURRENT_EXECUTIONS` | `10` | Maximum workflows executing at the same time. Returns HTTP 429 when full. |
+| `GOFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE` | `60` | Maximum webhook requests per minute per workflow/IP. Set `0` to disable. |
+| `GOFLOW_EXECUTION_RETENTION_DAYS` | `30` | Deletes execution records older than this many days. Set `0` to disable age cleanup. |
+| `GOFLOW_MAX_EXECUTIONS_PER_WORKFLOW` | `1000` | Keeps only the newest N executions per workflow. Set `0` to disable count cleanup. |
+
+On startup, any execution left in `RUNNING` from a previous crash or shutdown is marked as `INTERRUPTED`.
 
 ---
 

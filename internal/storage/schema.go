@@ -42,6 +42,9 @@ func (db *DB) InitSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_executions_workflow_status 
 		ON executions(workflow_id, status, started_at DESC);
 
+	CREATE INDEX IF NOT EXISTS idx_executions_started_at
+		ON executions(started_at DESC);
+
 	CREATE INDEX IF NOT EXISTS idx_workflows_active 
 		ON workflows(is_active) WHERE is_active = 1;
 

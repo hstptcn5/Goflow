@@ -2,9 +2,11 @@ package engine
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"goflow/internal/nodes"
 	"goflow/internal/storage"
@@ -33,6 +35,55 @@ func (m *mockAction) Execute(ctx *nodes.ExecutionContext, node *nodes.Node) (int
 func (m *mockAction) Validate(node *nodes.Node) error { return nil }
 func (m *mockAction) GetDefinition() nodes.NodeDefinition {
 	return nodes.NodeDefinition{Type: "mockAction"}
+}
+
+type slowAction struct{}
+
+func (m *slowAction) Execute(ctx *nodes.ExecutionContext, node *nodes.Node) (interface{}, error) {
+	time.Sleep(200 * time.Millisecond)
+	return map[string]interface{}{"status": "done"}, nil
+}
+func (m *slowAction) Validate(node *nodes.Node) error { return nil }
+func (m *slowAction) GetDefinition() nodes.NodeDefinition {
+	return nodes.NodeDefinition{Type: "slowAction"}
+}
+
+func TestExecuteWorkflowConcurrencyLimit(t *testing.T) {
+	registry := nodes.NewPluginRegistry()
+	_ = registry.Register(&slowAction{})
+
+	db, err := storage.NewDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open memory db: %v", err)
+	}
+	defer db.Close()
+
+	execStore := storage.NewExecutionStore(db)
+	credStore := storage.NewCredentialStore(db, nil)
+	wfStore := storage.NewWorkflowStore(db)
+	eventBus := NewEventBus()
+	eng := NewEngine(registry, execStore, credStore, eventBus, wfStore, 1)
+
+	nodeList := []nodes.Node{
+		{ID: "slow_1", Type: "slowAction", Name: "Slow", Params: map[string]interface{}{}},
+	}
+	nodesJSON, _ := json.Marshal(nodeList)
+	wf := &storage.Workflow{
+		ID:        "wf-limit",
+		Name:      "Concurrency limit",
+		NodesJSON: string(nodesJSON),
+		EdgesJSON: "[]",
+	}
+
+	if err := eng.ExecuteWorkflowAsync(wf, nil); err != nil {
+		t.Fatalf("first async execution should start: %v", err)
+	}
+
+	_, err = eng.ExecuteWorkflow(wf, nil)
+	if !errors.Is(err, ErrConcurrencyLimit) {
+		t.Fatalf("expected ErrConcurrencyLimit, got %v", err)
+	}
+	time.Sleep(250 * time.Millisecond)
 }
 
 func TestExecuteWorkflowWithSkipLogic(t *testing.T) {

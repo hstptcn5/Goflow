@@ -3,9 +3,11 @@ package api
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"goflow/internal/engine"
 	"goflow/internal/nodes"
@@ -15,14 +17,16 @@ import (
 )
 
 type WorkflowHandler struct {
-	wfStore *storage.WorkflowStore
-	engine  *engine.Engine
+	wfStore            *storage.WorkflowStore
+	engine             *engine.Engine
+	webhookRateLimiter *fixedWindowRateLimiter
 }
 
-func NewWorkflowHandler(ws *storage.WorkflowStore, eng *engine.Engine) *WorkflowHandler {
+func NewWorkflowHandler(ws *storage.WorkflowStore, eng *engine.Engine, webhookRateLimitPerMinute int) *WorkflowHandler {
 	return &WorkflowHandler{
-		wfStore: ws,
-		engine:  eng,
+		wfStore:            ws,
+		engine:             eng,
+		webhookRateLimiter: newFixedWindowRateLimiter(webhookRateLimitPerMinute, time.Minute),
 	}
 }
 
@@ -137,16 +141,17 @@ func (h *WorkflowHandler) TriggerWorkflow(w http.ResponseWriter, r *http.Request
 
 	// Thực thi async hoặc sync dựa trên query param `async=true`
 	if r.URL.Query().Get("async") == "true" {
-		go func() {
-			_, _ = h.engine.ExecuteWorkflow(wf, payload)
-		}()
+		if err := h.engine.ExecuteWorkflowAsync(wf, payload); err != nil {
+			writeExecutionError(w, err)
+			return
+		}
 		renderJSON(w, http.StatusAccepted, map[string]string{"message": "Workflow triggered in background"})
 		return
 	}
 
 	exec, err := h.engine.ExecuteWorkflow(wf, payload)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeExecutionError(w, err)
 		return
 	}
 
@@ -162,6 +167,10 @@ func (h *WorkflowHandler) TriggerWebhook(w http.ResponseWriter, r *http.Request)
 	}
 	if !wf.IsActive {
 		http.Error(w, "Workflow is inactive", http.StatusConflict)
+		return
+	}
+	if !h.webhookRateLimiter.Allow(rateLimitKey(r, id)) {
+		http.Error(w, "Webhook rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
 
@@ -218,17 +227,26 @@ func (h *WorkflowHandler) TriggerWebhook(w http.ResponseWriter, r *http.Request)
 	}
 
 	if r.URL.Query().Get("async") == "true" {
-		go func() {
-			_, _ = h.engine.ExecuteWorkflow(wf, payload)
-		}()
+		if err := h.engine.ExecuteWorkflowAsync(wf, payload); err != nil {
+			writeExecutionError(w, err)
+			return
+		}
 		renderJSON(w, http.StatusAccepted, map[string]string{"message": "Workflow triggered in background"})
 		return
 	}
 
 	exec, err := h.engine.ExecuteWorkflow(wf, payload)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeExecutionError(w, err)
 		return
 	}
 	renderJSON(w, http.StatusOK, exec)
+}
+
+func writeExecutionError(w http.ResponseWriter, err error) {
+	if errors.Is(err, engine.ErrConcurrencyLimit) {
+		http.Error(w, err.Error(), http.StatusTooManyRequests)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusInternalServerError)
 }

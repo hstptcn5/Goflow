@@ -24,6 +24,7 @@ func NewRouter(
 	eventBus *engine.EventBus,
 	uiFS fs.FS,
 	apiKey string,
+	webhookRateLimitPerMinute int,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -46,7 +47,7 @@ func NewRouter(
 		MaxAge:           300,
 	}))
 
-	wfHandler := NewWorkflowHandler(wfStore, eng)
+	wfHandler := NewWorkflowHandler(wfStore, eng, webhookRateLimitPerMinute)
 	execHandler := NewExecutionHandler(execStore)
 	credHandler := NewCredentialHandler(credStore)
 	nodeHandler := NewNodeHandler(registry)

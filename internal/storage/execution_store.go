@@ -9,13 +9,13 @@ import (
 )
 
 type Execution struct {
-	ID          string     `json:"id"`
-	WorkflowID  string     `json:"workflow_id"`
-	Status      string     `json:"status"` // 'RUNNING', 'SUCCESS', 'FAILED'
-	DurationMs  int64      `json:"duration_ms"`
-	LogsJSON    string     `json:"logs_json"`
-	StartedAt   time.Time  `json:"started_at"`
-	FinishedAt  *time.Time `json:"finished_at,omitempty"`
+	ID         string     `json:"id"`
+	WorkflowID string     `json:"workflow_id"`
+	Status     string     `json:"status"` // 'RUNNING', 'SUCCESS', 'FAILED', 'INTERRUPTED'
+	DurationMs int64      `json:"duration_ms"`
+	LogsJSON   string     `json:"logs_json"`
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
 }
 
 type ExecutionStore struct {
@@ -102,4 +102,53 @@ func (s *ExecutionStore) ListByWorkflow(workflowID string, limit int) ([]Executi
 		result = append(result, exec)
 	}
 	return result, nil
+}
+
+func (s *ExecutionStore) MarkRunningInterrupted() (int64, error) {
+	now := time.Now()
+	query := `
+		UPDATE executions
+		SET status = 'INTERRUPTED', finished_at = ?
+		WHERE status = 'RUNNING'
+	`
+	res, err := s.db.WriteDB.Exec(query, now)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (s *ExecutionStore) Cleanup(retentionDays int, maxPerWorkflow int) (int64, error) {
+	var total int64
+
+	if retentionDays > 0 {
+		cutoff := time.Now().AddDate(0, 0, -retentionDays)
+		res, err := s.db.WriteDB.Exec(`DELETE FROM executions WHERE started_at < ?`, cutoff)
+		if err != nil {
+			return total, err
+		}
+		affected, _ := res.RowsAffected()
+		total += affected
+	}
+
+	if maxPerWorkflow > 0 {
+		res, err := s.db.WriteDB.Exec(`
+			DELETE FROM executions
+			WHERE id IN (
+				SELECT id FROM (
+					SELECT id,
+						ROW_NUMBER() OVER (PARTITION BY workflow_id ORDER BY started_at DESC) AS rn
+					FROM executions
+				)
+				WHERE rn > ?
+			)
+		`, maxPerWorkflow)
+		if err != nil {
+			return total, err
+		}
+		affected, _ := res.RowsAffected()
+		total += affected
+	}
+
+	return total, nil
 }

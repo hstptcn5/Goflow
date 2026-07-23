@@ -45,6 +45,16 @@ func main() {
 	credStore := storage.NewCredentialStore(db, cm)
 	wfStore := storage.NewWorkflowStore(db)
 	execStore := storage.NewExecutionStore(db)
+	if interrupted, err := execStore.MarkRunningInterrupted(); err != nil {
+		log.Printf("[WARN] Failed to mark interrupted executions: %v", err)
+	} else if interrupted > 0 {
+		log.Printf("[INFO] Marked %d previously running executions as INTERRUPTED", interrupted)
+	}
+	if deleted, err := execStore.Cleanup(cfg.ExecutionRetentionDays, cfg.MaxExecutionsPerWorkflow); err != nil {
+		log.Printf("[WARN] Initial execution cleanup failed: %v", err)
+	} else if deleted > 0 {
+		log.Printf("[INFO] Cleaned up %d old execution records", deleted)
+	}
 
 	// 3. Initialize Plugin Registry and Register All Built-in Node Executors
 	registry := nodes.NewPluginRegistry()
@@ -78,7 +88,7 @@ func main() {
 
 	// 4. Initialize EventBus and DAG Execution Engine
 	eventBus := engine.NewEventBus()
-	eng := engine.NewEngine(registry, execStore, credStore, eventBus, wfStore)
+	eng := engine.NewEngine(registry, execStore, credStore, eventBus, wfStore, cfg.MaxConcurrentExecutions)
 
 	// 5. Initialize Cron Scheduler for Timed Triggers
 	cScheduler := cron.New()
@@ -94,6 +104,26 @@ func main() {
 
 	// Context for graceful shutdown of background goroutines
 	cronCtx, cronCancel := context.WithCancel(context.Background())
+	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
+
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-cleanupCtx.Done():
+				log.Println("[Cleanup] Execution cleanup goroutine stopped gracefully")
+				return
+			case <-ticker.C:
+				deleted, err := execStore.Cleanup(cfg.ExecutionRetentionDays, cfg.MaxExecutionsPerWorkflow)
+				if err != nil {
+					log.Printf("[Cleanup] Failed to clean execution records: %v", err)
+				} else if deleted > 0 {
+					log.Printf("[Cleanup] Removed %d old execution records", deleted)
+				}
+			}
+		}
+	}()
 
 	// Background task to scan active workflows and register cron schedules
 	go func() {
@@ -194,7 +224,7 @@ func main() {
 
 	// 6. Initialize REST API Router & Serve Static Embedded Web UI
 	uiFS := getEmbeddedUI()
-	router := api.NewRouter(wfStore, execStore, credStore, registry, eng, eventBus, uiFS, cfg.APIKey)
+	router := api.NewRouter(wfStore, execStore, credStore, registry, eng, eventBus, uiFS, cfg.APIKey, cfg.WebhookRateLimitPerMinute)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
@@ -219,6 +249,7 @@ func main() {
 
 	// Cancel background goroutines first
 	cronCancel()
+	cleanupCancel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

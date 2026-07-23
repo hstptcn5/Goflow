@@ -1,0 +1,96 @@
+{
+  "name": "Release Smoke Test And Alert",
+  "description": "Webhook-triggered deployment helper: pull code, run a remote restart command, check the public health endpoint, and notify success or failure.",
+  "nodes": [
+    {
+      "id": "release_webhook",
+      "type": "webhookTrigger",
+      "name": "Release Webhook",
+      "position": { "x": 60, "y": 200 },
+      "params": {}
+    },
+    {
+      "id": "pull_repo",
+      "type": "gitCommand",
+      "name": "Pull Repository",
+      "position": { "x": 330, "y": 200 },
+      "params": {
+        "action": "PULL",
+        "repository_url": "",
+        "target_directory": "D:/apps/my-service",
+        "branch": "main",
+        "commit_message": ""
+      }
+    },
+    {
+      "id": "restart_service",
+      "type": "sshRunner",
+      "name": "Restart Remote Service",
+      "position": { "x": 630, "y": 200 },
+      "params": {
+        "credential_id": "",
+        "address": "127.0.0.1:22",
+        "username": "ubuntu",
+        "password": "",
+        "private_key": "",
+        "command": "cd /opt/my-service && ./deploy.sh && systemctl status my-service --no-pager"
+      }
+    },
+    {
+      "id": "smoke_check",
+      "type": "httpRequest",
+      "name": "Public Health Check",
+      "position": { "x": 940, "y": 200 },
+      "params": {
+        "method": "GET",
+        "url": "https://example.com/health",
+        "headers": "{}",
+        "body": ""
+      }
+    },
+    {
+      "id": "deploy_ok",
+      "type": "conditionIf",
+      "name": "Health Check OK?",
+      "position": { "x": 1230, "y": 200 },
+      "params": {
+        "field": "{{smoke_check.status_code}}",
+        "operator": "equals",
+        "value": "200"
+      }
+    },
+    {
+      "id": "telegram_success",
+      "type": "telegramBot",
+      "name": "Notify Success",
+      "position": { "x": 1510, "y": 90 },
+      "params": {
+        "credential_id": "",
+        "chat_id": "",
+        "message": "Release smoke test passed. Status: {{smoke_check.status_code}}"
+      }
+    },
+    {
+      "id": "discord_failure",
+      "type": "discordBot",
+      "name": "Notify Failure",
+      "position": { "x": 1510, "y": 310 },
+      "params": {
+        "webhook_url": "",
+        "username": "Goflow Release Bot",
+        "content": "Release smoke test failed.",
+        "embed_title": "Deployment Needs Attention",
+        "embed_desc": "Health check status: {{smoke_check.status_code}}\nSSH output: {{restart_service.output}}"
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "release_webhook", "target": "pull_repo" },
+    { "id": "e2", "source": "pull_repo", "target": "restart_service" },
+    { "id": "e3", "source": "restart_service", "target": "smoke_check" },
+    { "id": "e4", "source": "smoke_check", "target": "deploy_ok" },
+    { "id": "e5", "source": "deploy_ok", "sourceHandle": "true", "target": "telegram_success" },
+    { "id": "e6", "source": "deploy_ok", "sourceHandle": "false", "target": "discord_failure" }
+  ]
+}
+

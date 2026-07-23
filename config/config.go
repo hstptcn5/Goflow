@@ -7,17 +7,22 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
 type Config struct {
-	Host         string
-	Port         string
-	DBPath       string
-	MasterKey    string
-	LogLevel     string
-	FrontendDist string
-	APIKey       string
+	Host                      string
+	Port                      string
+	DBPath                    string
+	MasterKey                 string
+	LogLevel                  string
+	FrontendDist              string
+	APIKey                    string
+	MaxConcurrentExecutions   int
+	WebhookRateLimitPerMinute int
+	ExecutionRetentionDays    int
+	MaxExecutionsPerWorkflow  int
 }
 
 func LoadConfig() *Config {
@@ -53,13 +58,17 @@ func LoadConfig() *Config {
 	apiKey := os.Getenv("GOFLOW_API_KEY")
 
 	return &Config{
-		Host:         host,
-		Port:         port,
-		DBPath:       dbPath,
-		MasterKey:    masterKey,
-		LogLevel:     logLevel,
-		FrontendDist: "ui/dist",
-		APIKey:       apiKey,
+		Host:                      host,
+		Port:                      port,
+		DBPath:                    dbPath,
+		MasterKey:                 masterKey,
+		LogLevel:                  logLevel,
+		FrontendDist:              "ui/dist",
+		APIKey:                    apiKey,
+		MaxConcurrentExecutions:   getEnvInt("GOFLOW_MAX_CONCURRENT_EXECUTIONS", 10),
+		WebhookRateLimitPerMinute: getEnvInt("GOFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE", 60),
+		ExecutionRetentionDays:    getEnvInt("GOFLOW_EXECUTION_RETENTION_DAYS", 30),
+		MaxExecutionsPerWorkflow:  getEnvInt("GOFLOW_MAX_EXECUTIONS_PER_WORKFLOW", 1000),
 	}
 }
 
@@ -110,4 +119,16 @@ func loadOrCreateMasterKey(dbPath string) (string, error) {
 		return "", err
 	}
 	return key, nil
+}
+
+func getEnvInt(name string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return fallback
+	}
+	return value
 }

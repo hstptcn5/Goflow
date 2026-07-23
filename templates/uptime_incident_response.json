@@ -1,0 +1,85 @@
+{
+  "name": "Uptime Incident Response",
+  "description": "Cron checks a health endpoint, records status in Redis, and sends a Discord alert when the endpoint is not healthy.",
+  "nodes": [
+    {
+      "id": "cron_every_5m",
+      "type": "cronTrigger",
+      "name": "Every 5 Minutes",
+      "position": { "x": 60, "y": 180 },
+      "params": {
+        "cron_expression": "*/5 * * * *"
+      }
+    },
+    {
+      "id": "check_api",
+      "type": "httpRequest",
+      "name": "Check API Health",
+      "position": { "x": 330, "y": 180 },
+      "params": {
+        "method": "GET",
+        "url": "https://example.com/health",
+        "headers": "{}",
+        "body": ""
+      }
+    },
+    {
+      "id": "is_unhealthy",
+      "type": "conditionIf",
+      "name": "Status Is Not 200",
+      "position": { "x": 620, "y": 180 },
+      "params": {
+        "field": "{{check_api.status_code}}",
+        "operator": "not_equals",
+        "value": "200"
+      }
+    },
+    {
+      "id": "record_incident",
+      "type": "redisCommand",
+      "name": "Record Incident In Redis",
+      "position": { "x": 910, "y": 80 },
+      "params": {
+        "address": "localhost:6379",
+        "db": "0",
+        "command": "SET",
+        "key": "goflow:incident:last_down",
+        "value": "Health check failed with status {{check_api.status_code}}"
+      }
+    },
+    {
+      "id": "discord_alert",
+      "type": "discordBot",
+      "name": "Send Discord Alert",
+      "position": { "x": 1210, "y": 80 },
+      "params": {
+        "webhook_url": "",
+        "username": "Goflow Monitor",
+        "content": "API health check failed.",
+        "embed_title": "Incident Detected",
+        "embed_desc": "Endpoint returned status {{check_api.status_code}}. Check {{check_api.data}}"
+      }
+    },
+    {
+      "id": "record_ok",
+      "type": "redisCommand",
+      "name": "Record Healthy Status",
+      "position": { "x": 910, "y": 300 },
+      "params": {
+        "address": "localhost:6379",
+        "db": "0",
+        "command": "SET",
+        "key": "goflow:incident:last_ok",
+        "value": "Health check passed with status {{check_api.status_code}}"
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "cron_every_5m", "target": "check_api" },
+    { "id": "e2", "source": "check_api", "target": "is_unhealthy" },
+    { "id": "e3", "source": "is_unhealthy", "sourceHandle": "true", "target": "record_incident" },
+    { "id": "e4", "source": "record_incident", "target": "discord_alert" },
+    { "id": "e5", "source": "is_unhealthy", "sourceHandle": "false", "target": "record_ok" }
+  ]
+}
+

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -14,6 +15,8 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 )
+
+var ErrConcurrencyLimit = errors.New("execution concurrency limit reached")
 
 type NodeLog struct {
 	NodeID     string      `json:"node_id"`
@@ -30,6 +33,7 @@ type Engine struct {
 	credStore      *storage.CredentialStore
 	eventBus       *EventBus
 	wfStore        *storage.WorkflowStore
+	executionSlots chan struct{}
 }
 
 func NewEngine(
@@ -38,13 +42,19 @@ func NewEngine(
 	cs *storage.CredentialStore,
 	eb *EventBus,
 	ws *storage.WorkflowStore,
+	maxConcurrent ...int,
 ) *Engine {
+	var slots chan struct{}
+	if len(maxConcurrent) > 0 && maxConcurrent[0] > 0 {
+		slots = make(chan struct{}, maxConcurrent[0])
+	}
 	return &Engine{
 		registry:       r,
 		executionStore: es,
 		credStore:      cs,
 		eventBus:       eb,
 		wfStore:        ws,
+		executionSlots: slots,
 	}
 }
 
@@ -59,6 +69,41 @@ const (
 )
 
 func (e *Engine) ExecuteWorkflow(wf *storage.Workflow, triggerPayload interface{}) (*storage.Execution, error) {
+	release, err := e.acquireExecutionSlot()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	return e.executeWorkflow(wf, triggerPayload)
+}
+
+func (e *Engine) ExecuteWorkflowAsync(wf *storage.Workflow, triggerPayload interface{}) error {
+	release, err := e.acquireExecutionSlot()
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		defer release()
+		_, _ = e.executeWorkflow(wf, triggerPayload)
+	}()
+	return nil
+}
+
+func (e *Engine) acquireExecutionSlot() (func(), error) {
+	if e.executionSlots == nil {
+		return func() {}, nil
+	}
+	select {
+	case e.executionSlots <- struct{}{}:
+		return func() { <-e.executionSlots }, nil
+	default:
+		return nil, ErrConcurrencyLimit
+	}
+}
+
+func (e *Engine) executeWorkflow(wf *storage.Workflow, triggerPayload interface{}) (*storage.Execution, error) {
 	var nodeList []nodes.Node
 	if err := json.Unmarshal([]byte(wf.NodesJSON), &nodeList); err != nil {
 		return nil, fmt.Errorf("invalid workflow nodes_json: %w", err)
