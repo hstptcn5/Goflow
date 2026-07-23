@@ -32,28 +32,51 @@ Key achievements in the current version include:
 | **Deployment Simplicity** | **Zero configuration copy-and-paste** | Docker compose or npm installs | Cloud subscription |
 | **Extensibility** | **Go Plugins & Process-based JSON IPC** | Node.js modules / custom nodes | Partner developer portal |
 
-### HTTP API Concurrency Benchmark Results
+### Performance & Load Benchmarks
 
-To evaluate Goflow's real-world parallel capacity, a load test was executed triggering a workflow containing API calls (GitHub API and Google Sheets API) under a load of 1,000 total requests with 50 concurrent workers.
+Goflow's execution capacity was evaluated across three distinct high-concurrency scenarios (1,000 total requests, 50 concurrent workers, client-side timeout of 15 seconds):
 
-Below is the performance comparison between synchronous triggering and background asynchronous triggering:
+#### 1. Scenario A: Heavy API-Bound Integration (GitHub API + Google Sheets API)
+This scenario performs external network calls and writes results into Google Sheets, showing the difference between synchronous blocking and background asynchronous executions.
 
 | Metric | Synchronous Triggering | Asynchronous Triggering (async=true) | Improvement Factor |
 | :--- | :---: | :---: | :---: |
 | Total Time | 140.821 seconds | 1.324 seconds | 106.3x faster |
 | Throughput | 7.10 reqs/sec | 755.40 reqs/sec | 106.3x higher |
-| Successful Requests | 710 / 1000 | 1000 / 1000 | 100% success rate |
-| Average Latency | 6606.1 ms | 65.83 ms | 100x lower |
-| Median Latency (P50) | 2920.1 ms | 18.45 ms | 158x lower |
-| Latency P99 | 15001.5 ms | 608.81 ms | Capped response |
+| Success Rate | 71.0% (710 / 1000) | 100% (1000 / 1000) | No timeouts |
+| Average Latency | 6606.10 ms | 65.83 ms | 100x lower |
+| Median Latency (P50) | 2920.10 ms | 18.45 ms | 158x lower |
+| Latency P99 | 15001.50 ms | 608.81 ms | Response capped |
 
-#### Visual Comparison (Throughput - requests/sec)
-- Synchronous Mode:  [#] 7.10 reqs/sec (Baseline)
-- Asynchronous Mode: [##################################################] 755.40 reqs/sec (106x speedup)
+#### 2. Scenario B: CPU-Bound JS Scripting & JSON Transformation
+This scenario computes recursive Fibonacci(15) inside Goflow's sandboxed Goja JavaScript VM and maps the data via JSON Transform.
 
-#### Visual Comparison (P50 Latency - ms)
-- Synchronous Mode:  [##################################################] 2920.10 ms (158x slower)
-- Asynchronous Mode: [#] 18.45 ms (Optimized)
+- Total Time: 1.226 seconds
+- Throughput: 815.98 reqs/sec
+- Success Rate: 100%
+- Average Latency: 60.47 ms
+- Median Latency (P50): 33.95 ms
+- Latency P99: 287.31 ms
+
+#### 3. Scenario C: Pure Gateway Routing (Fast Pass-Through)
+This scenario acts as a high-speed webhook router, transferring incoming JSON payloads directly to outputs without heavy JS calculations or external network calls.
+
+- Total Time: 1.052 seconds
+- Throughput: 950.29 reqs/sec
+- Success Rate: 100%
+- Average Latency: 52.25 ms
+- Median Latency (P50): 12.66 ms
+- Latency P99: 301.22 ms
+
+#### Visual Comparison (Maximum Throughput - requests/sec)
+- Scenario A (API Bound Async):   [#######################################] 755.40 reqs/sec
+- Scenario B (CPU JS Logic Async): [###########################################] 815.98 reqs/sec
+- Scenario C (Pure Routing Async):  [##################################################] 950.29 reqs/sec
+
+#### Visual Comparison (P50 Latency - ms, lower is better)
+- Scenario A (API Bound Async):   [############] 18.45 ms
+- Scenario B (CPU JS Logic Async): [########################] 33.95 ms
+- Scenario C (Pure Routing Async):  [########] 12.66 ms
 
 ---
 
