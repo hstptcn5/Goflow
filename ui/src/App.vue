@@ -16,26 +16,33 @@ const executionStore = useExecutionStore();
 const activeTab = ref('editor'); // 'editor' | 'executions'
 const showWorkflowsModal = ref(false);
 const showCredentialsModal = ref(false);
+const initialLoading = ref(true);
 
 const editorRef = ref(null);
 let unsubscribeWS = null;
 
 onMounted(async () => {
-  // Connect WebSocket real-time updates
-  wsClient.connect();
-  unsubscribeWS = wsClient.subscribe((event) => {
-    executionStore.handleWSEvent(event);
-  });
+  try {
+    // Connect WebSocket real-time updates
+    wsClient.connect();
+    unsubscribeWS = wsClient.subscribe((event) => {
+      executionStore.handleWSEvent(event);
+    });
 
-  // Load initial data
-  await workflowStore.fetchWorkflows();
-  await workflowStore.fetchNodeDefinitions();
+    // Load initial data
+    await workflowStore.fetchWorkflows();
+    await workflowStore.fetchNodeDefinitions();
 
-  // Pick first workflow if available
-  if (workflowStore.workflows.length > 0) {
-    await workflowStore.selectWorkflow(workflowStore.workflows[0].id);
-  } else {
-    showWorkflowsModal.value = true;
+    // Pick first workflow if available
+    if (workflowStore.workflows.length > 0) {
+      await workflowStore.selectWorkflow(workflowStore.workflows[0].id);
+    } else {
+      showWorkflowsModal.value = true;
+    }
+  } catch (err) {
+    console.error('Failed to initialize app', err);
+  } finally {
+    initialLoading.value = false;
   }
 });
 
@@ -61,8 +68,14 @@ function handleSaveWorkflow() {
     />
 
     <main class="main-content">
+      <!-- Sleek Loading overlay during initial fetch -->
+      <div v-if="initialLoading" class="loading-overlay">
+        <div class="spinner"></div>
+        <p>Loading Goflow Workspace...</p>
+      </div>
+
       <WorkflowEditor
-        v-if="activeTab === 'editor' && workflowStore.currentWorkflow"
+        v-else-if="activeTab === 'editor' && workflowStore.currentWorkflow"
         ref="editorRef"
       />
 
@@ -139,5 +152,31 @@ function handleSaveWorkflow() {
 .empty-box p {
   color: var(--text-secondary);
   font-size: 0.9rem;
+}
+.loading-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.9rem;
+  gap: 16px;
+  background: #ebf3fc;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 4.5px solid rgba(37, 99, 235, 0.1);
+  border-left-color: #2563eb;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

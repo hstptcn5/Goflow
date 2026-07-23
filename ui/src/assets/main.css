@@ -182,6 +182,14 @@ body {
   box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.25), 0 10px 25px -5px rgba(0, 0, 0, 0.1) !important;
 }
 
+.vue-flow__node-custom {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  min-width: auto !important;
+}
+
 .vue-flow__handle {
   width: 12px !important;
   height: 12px !important;

@@ -258,8 +258,8 @@ defineExpose({ saveCanvas });
         class="goflow-canvas"
       >
         <!-- Custom Node Design Template -->
-        <template #node-custom="{ id, data }">
-          <div v-if="data" class="custom-node-card" :class="[data.categoryClass, getNodeStatusClass(id)]">
+        <template #node-custom="{ id, data, selected }">
+          <div v-if="data" class="custom-node-card" :class="[data.categoryClass, getNodeStatusClass(id), { selected: selected }]">
             <div class="node-accent-bar"></div>
             <div class="node-header">
               <span class="node-icon">{{ data.icon || '⚙️' }}</span>
@@ -336,6 +336,11 @@ defineExpose({ saveCanvas });
 .custom-node-card:hover {
   border-color: #3b82f6;
   box-shadow: 0 6px 16px rgba(59, 130, 246, 0.15);
+}
+
+.custom-node-card.selected {
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.25), 0 6px 18px rgba(124, 58, 237, 0.15) !important;
 }
 
 .node-accent-bar {

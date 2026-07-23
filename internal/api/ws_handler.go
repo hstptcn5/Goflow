@@ -47,8 +47,11 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ch := h.eventBus.Subscribe()
 	defer h.eventBus.Unsubscribe(ch)
 
+	done := make(chan struct{})
+
 	// Keep-alive/Read pump để phát hiện disconnect
 	go func() {
+		defer close(done)
 		for {
 			if _, _, err := conn.ReadMessage(); err != nil {
 				break
@@ -57,9 +60,17 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Broadcast execution events
-	for event := range ch {
-		if err := conn.WriteJSON(event); err != nil {
-			break
+	for {
+		select {
+		case event, ok := <-ch:
+			if !ok {
+				return
+			}
+			if err := conn.WriteJSON(event); err != nil {
+				return
+			}
+		case <-done:
+			return
 		}
 	}
 }
