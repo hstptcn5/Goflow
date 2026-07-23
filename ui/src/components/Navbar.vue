@@ -3,7 +3,7 @@ import { ref } from 'vue';
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { useExecutionStore } from '@/stores/executionStore';
 import { api } from '@/services/api';
-import { getNavIconSVG } from './NodeIcons';
+import { getNavIconSVG, getLogoSVG } from './NodeIcons';
 
 const props = defineProps({
   activeTab: String,
@@ -34,7 +34,7 @@ async function handleRunWorkflow() {
 <template>
   <header class="navbar glass-panel">
     <div class="brand">
-      <div class="logo-icon">⚡</div>
+      <div class="logo-icon" v-html="getLogoSVG()"></div>
       <div class="brand-text">
         <span class="title">Goflow</span>
         <span class="tag">MVP</span>
@@ -142,6 +142,9 @@ async function handleRunWorkflow() {
 
 .logo-icon {
   font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .brand-text {

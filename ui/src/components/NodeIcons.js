@@ -65,3 +65,17 @@ export function getCategoryIconSVG(category) {
 export function getNavIconSVG(name) {
   return navSvgMap[name] || '';
 }
+
+export function getLogoSVG() {
+  return `<svg class="goflow-logo-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 24px; height: 24px; display: flex;">
+  <defs>
+    <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f2fe" />
+      <stop offset="100%" stop-color="#4facfe" />
+    </linearGradient>
+  </defs>
+  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="url(#logo-grad)" stroke="none" />
+  <circle cx="3" cy="14" r="2" fill="#00f2fe" />
+  <circle cx="21" cy="10" r="2" fill="#4facfe" />
+</svg>`;
+}
