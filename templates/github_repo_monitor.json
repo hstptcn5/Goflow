@@ -1,0 +1,47 @@
+{
+  "name": "GitHub Repo Live Monitor",
+  "nodes": [
+    {
+      "id": "node_webhook",
+      "type": "webhookTrigger",
+      "name": "Webhook Trigger",
+      "position": { "x": 60, "y": 160 },
+      "params": {}
+    },
+    {
+      "id": "node_github_api",
+      "type": "httpRequest",
+      "name": "Fetch Go Repo Info (GitHub API)",
+      "position": { "x": 340, "y": 160 },
+      "params": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/golang/go"
+      }
+    },
+    {
+      "id": "node_delay",
+      "type": "delaySleep",
+      "name": "Delay 1 Second",
+      "position": { "x": 640, "y": 160 },
+      "params": {
+        "seconds": "1"
+      }
+    },
+    {
+      "id": "node_post_report",
+      "type": "httpRequest",
+      "name": "Post Audit Log",
+      "position": { "x": 940, "y": 160 },
+      "params": {
+        "method": "POST",
+        "url": "https://httpbin.org/post",
+        "body": "{\"repo\": \"golang/go\", \"audit\": \"COMPLETED\"}"
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "node_webhook", "target": "node_github_api" },
+    { "id": "e2", "source": "node_github_api", "target": "node_delay" },
+    { "id": "e3", "source": "node_delay", "target": "node_post_report" }
+  ]
+}

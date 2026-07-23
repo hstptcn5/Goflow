@@ -1,0 +1,49 @@
+{
+  "name": "Live Weather Query & Alert Flow",
+  "nodes": [
+    {
+      "id": "node_cron",
+      "type": "cronTrigger",
+      "name": "Cron Trigger",
+      "position": { "x": 60, "y": 160 },
+      "params": {
+        "cron_expression": "*/5 * * * *"
+      }
+    },
+    {
+      "id": "node_weather_api",
+      "type": "httpRequest",
+      "name": "Fetch Open-Meteo Weather API",
+      "position": { "x": 340, "y": 160 },
+      "params": {
+        "method": "GET",
+        "url": "https://api.open-meteo.com/v1/forecast?latitude=21.0285&longitude=105.8542&current_weather=true"
+      }
+    },
+    {
+      "id": "node_transform",
+      "type": "jsonTransform",
+      "name": "Process Weather Report",
+      "position": { "x": 640, "y": 160 },
+      "params": {
+        "json_template": "{\n  \"city\": \"Hanoi\",\n  \"status\": \"FETCHED\"\n}"
+      }
+    },
+    {
+      "id": "node_if_condition",
+      "type": "conditionIf",
+      "name": "Check Weather Status",
+      "position": { "x": 940, "y": 160 },
+      "params": {
+        "field": "FETCHED",
+        "operator": "equals",
+        "value": "FETCHED"
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "node_cron", "target": "node_weather_api" },
+    { "id": "e2", "source": "node_weather_api", "target": "node_transform" },
+    { "id": "e3", "source": "node_transform", "target": "node_if_condition" }
+  ]
+}

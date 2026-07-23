@@ -3,6 +3,7 @@ package api
 import (
 	"log"
 	"net/http"
+	"net/url"
 
 	"goflow/internal/engine"
 
@@ -11,7 +12,19 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Cho phép kết nối từ mọi origin trong môi trường local
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		// Cho phép localhost, 127.0.0.1 hoặc trùng khớp Host của HTTP Request (cùng nguồn)
+		if u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Host == r.Host {
+			return true
+		}
+		return false
 	},
 }
 

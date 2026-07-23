@@ -3,7 +3,9 @@ package nodes
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dop251/goja"
 )
@@ -24,6 +26,25 @@ func (e *JSCodeRunnerExecutor) Execute(ctx *ExecutionContext, node *Node) (inter
 	var jsonResult map[string]interface{}
 	if err := json.Unmarshal([]byte(codeStr), &jsonResult); err == nil {
 		return jsonResult, nil
+	}
+
+	// Resolve timeout parameter (default to 5 seconds)
+	timeoutSeconds := 5
+	if timeoutVal, ok := node.Params["timeout"]; ok {
+		switch t := timeoutVal.(type) {
+		case string:
+			if val, err := strconv.Atoi(t); err == nil && val > 0 {
+				timeoutSeconds = val
+			}
+		case float64:
+			if t > 0 {
+				timeoutSeconds = int(t)
+			}
+		case int:
+			if t > 0 {
+				timeoutSeconds = t
+			}
+		}
 	}
 
 	// 2. Otherwise execute actual JavaScript using Goja engine
@@ -47,6 +68,12 @@ func (e *JSCodeRunnerExecutor) Execute(ctx *ExecutionContext, node *Node) (inter
 	} else {
 		scriptToRun = codeStr
 	}
+
+	// Set interrupt timer
+	timer := time.AfterFunc(time.Duration(timeoutSeconds)*time.Second, func() {
+		vm.Interrupt("timeout")
+	})
+	defer timer.Stop()
 
 	val, err := vm.RunString(scriptToRun)
 	if err != nil {
@@ -79,6 +106,14 @@ func (e *JSCodeRunnerExecutor) GetDefinition() NodeDefinition {
 				Default:     "{\n  \"status\": \"processed\",\n  \"message\": \"Custom Code Execution\"\n}",
 				Required:    true,
 				Description: "Viet doan ma Javascript hoac JSON Expression",
+			},
+			{
+				Name:        "timeout",
+				Label:       "Execution Timeout (Seconds)",
+				Type:        "text",
+				Default:     "5",
+				Required:    false,
+				Description: "Thoi gian chay toi da cua script tinh bang giay",
 			},
 		},
 	}

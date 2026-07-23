@@ -3,6 +3,7 @@ package nodes
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"sync"
 )
 
@@ -47,11 +48,32 @@ func (e *SubWorkflowExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 		var errMu sync.Mutex
 
 		if parallel {
+			maxConcurrency := 5
+			if limitVal, ok := node.Params["concurrency_limit"]; ok {
+				switch l := limitVal.(type) {
+				case string:
+					if val, err := strconv.Atoi(l); err == nil && val > 0 {
+						maxConcurrency = val
+					}
+				case float64:
+					if l > 0 {
+						maxConcurrency = int(l)
+					}
+				case int:
+					if l > 0 {
+						maxConcurrency = l
+					}
+				}
+			}
+
+			sem := make(chan struct{}, maxConcurrency)
 			var wg sync.WaitGroup
 			for i, item := range slicePayload {
 				wg.Add(1)
+				sem <- struct{}{} // Acquire slot
 				go func(idx int, it interface{}) {
 					defer wg.Done()
+					defer func() { <-sem }() // Release slot
 					res, err := ctx.ExecuteWorkflow(subWfID, it)
 					errMu.Lock()
 					defer errMu.Unlock()
@@ -130,6 +152,14 @@ func (e *SubWorkflowExecutor) GetDefinition() NodeDefinition {
 				Default:     false,
 				Required:    false,
 				Description: "Thực thi vòng lặp song song sử dụng Goroutine hoặc chạy tuần tự",
+			},
+			{
+				Name:        "concurrency_limit",
+				Label:       "Concurrency Limit (Giới hạn luồng)",
+				Type:        "text",
+				Default:     "5",
+				Required:    false,
+				Description: "Số lượng sub-workflow chạy song song tối đa",
 			},
 		},
 	}

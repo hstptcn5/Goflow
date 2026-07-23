@@ -1,0 +1,87 @@
+{
+  "name": "Heavy 3-Branch Parallel Stress Test",
+  "nodes": [
+    {
+      "id": "node_webhook",
+      "type": "webhookTrigger",
+      "name": "Webhook Trigger",
+      "position": { "x": 60, "y": 200 },
+      "params": {}
+    },
+    {
+      "id": "node_transform_start",
+      "type": "jsonTransform",
+      "name": "Start Dispatcher",
+      "position": { "x": 320, "y": 200 },
+      "params": {
+        "json_template": "{\n  \"batch_id\": \"STRESS-TEST-8899\"\n}"
+      }
+    },
+    {
+      "id": "node_delay_1",
+      "type": "delaySleep",
+      "name": "Branch A (Delay 1s)",
+      "position": { "x": 600, "y": 60 },
+      "params": {
+        "seconds": "1"
+      }
+    },
+    {
+      "id": "node_http_a",
+      "type": "httpRequest",
+      "name": "HTTP Post A",
+      "position": { "x": 880, "y": 60 },
+      "params": {
+        "method": "POST",
+        "url": "https://httpbin.org/post",
+        "body": "{\"branch\": \"A\"}"
+      }
+    },
+    {
+      "id": "node_delay_2",
+      "type": "delaySleep",
+      "name": "Branch B (Delay 2s)",
+      "position": { "x": 600, "y": 200 },
+      "params": {
+        "seconds": "2"
+      }
+    },
+    {
+      "id": "node_http_b",
+      "type": "httpRequest",
+      "name": "HTTP Get B",
+      "position": { "x": 880, "y": 200 },
+      "params": {
+        "method": "GET",
+        "url": "https://httpbin.org/get?branch=B"
+      }
+    },
+    {
+      "id": "node_delay_3",
+      "type": "delaySleep",
+      "name": "Branch C (Delay 3s)",
+      "position": { "x": 600, "y": 340 },
+      "params": {
+        "seconds": "3"
+      }
+    },
+    {
+      "id": "node_transform_c",
+      "type": "jsonTransform",
+      "name": "Final Digest C",
+      "position": { "x": 880, "y": 340 },
+      "params": {
+        "json_template": "{\n  \"branch\": \"C\",\n  \"status\": \"OK\"\n}"
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "node_webhook", "target": "node_transform_start" },
+    { "id": "e2", "source": "node_transform_start", "target": "node_delay_1" },
+    { "id": "e3", "source": "node_delay_1", "target": "node_http_a" },
+    { "id": "e4", "source": "node_transform_start", "target": "node_delay_2" },
+    { "id": "e5", "source": "node_delay_2", "target": "node_http_b" },
+    { "id": "e6", "source": "node_transform_start", "target": "node_delay_3" },
+    { "id": "e7", "source": "node_delay_3", "target": "node_transform_c" }
+  ]
+}

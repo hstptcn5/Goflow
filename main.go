@@ -28,6 +28,14 @@ func main() {
 
 	cfg := config.LoadConfig()
 
+	if cfg.MasterKey == "goflow-master-secret-key-32bytes!" {
+		log.Println("=====================================================================")
+		log.Println("[WARNING] USING DEFAULT MASTER KEY FOR CREDENTIALS ENCRYPTION!")
+		log.Println("[WARNING] Your credentials vault is secured with a default public key.")
+		log.Println("[WARNING] Please configure GOFLOW_MASTER_KEY environment variable.")
+		log.Println("=====================================================================")
+	}
+
 	// 1. Initialize Storage Layer & SQLite Connection Pool
 	db, err := storage.NewDB(cfg.DBPath)
 	if err != nil {

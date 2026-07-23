@@ -1,0 +1,47 @@
+{
+  "name": "AI DeepSeek Test Pipeline",
+  "nodes": [
+    {
+      "id": "node_webhook",
+      "type": "webhookTrigger",
+      "name": "Webhook Trigger",
+      "position": { "x": 60, "y": 160 },
+      "params": {}
+    },
+    {
+      "id": "node_ai_prompt",
+      "type": "jsonTransform",
+      "name": "Prepare AI Prompt",
+      "position": { "x": 340, "y": 160 },
+      "params": {
+        "json_template": "{\n  \"task\": \"Summarize AI benefits\",\n  \"prompt\": \"Explain why lightweight software architectures are fast.\"\n}"
+      }
+    },
+    {
+      "id": "node_deepseek",
+      "type": "deepseekAI",
+      "name": "DeepSeek AI Generator",
+      "position": { "x": 640, "y": 160 },
+      "params": {
+        "model": "deepseek-chat",
+        "prompt": "Explain why lightweight software architectures are fast and efficient in 2 sentences.",
+        "system_message": "You are a software architecture expert.",
+        "api_key": "YOUR_DEEPSEEK_API_KEY_HERE"
+      }
+    },
+    {
+      "id": "node_format_output",
+      "type": "jsonTransform",
+      "name": "Format AI Answer",
+      "position": { "x": 940, "y": 160 },
+      "params": {
+        "json_template": "{\n  \"status\": \"COMPLETED\",\n  \"ai_processed\": true\n}"
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "node_webhook", "target": "node_ai_prompt" },
+    { "id": "e2", "source": "node_ai_prompt", "target": "node_deepseek" },
+    { "id": "e3", "source": "node_deepseek", "target": "node_format_output" }
+  ]
+}
