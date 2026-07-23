@@ -150,6 +150,9 @@ async function handleDelete(id) {
                 </span>
               </div>
               <span class="wf-desc">{{ wf.description || 'No description' }}</span>
+              <span class="wf-id" style="font-size: 0.65rem; color: #94a3b8; font-family: var(--font-mono); display: block; margin-top: 4px; user-select: all;">
+                ID: {{ wf.id }}
+              </span>
             </div>
 
             <button class="btn-icon danger" @click.stop="handleDelete(wf.id)">

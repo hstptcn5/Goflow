@@ -311,3 +311,50 @@ func TestSubWorkflowExecution(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkEngineParallel(b *testing.B) {
+	registry := nodes.NewPluginRegistry()
+	_ = registry.Register(&mockTrigger{})
+	_ = registry.Register(&mockAction{executed: make(map[string]bool)})
+
+	db, err := storage.NewDB(":memory:")
+	if err != nil {
+		b.Fatalf("failed to open memory db: %v", err)
+	}
+	defer db.Close()
+
+	execStore := storage.NewExecutionStore(db)
+	credStore := storage.NewCredentialStore(db, nil)
+	wfStore := storage.NewWorkflowStore(db)
+	eventBus := NewEventBus()
+	eng := NewEngine(registry, execStore, credStore, eventBus, wfStore)
+
+	nodeList := []nodes.Node{
+		{ID: "trigger_1", Type: "mockTrigger", Name: "Trigger", Params: map[string]interface{}{"val": "BENCH"}},
+		{ID: "action_1", Type: "mockAction", Name: "Action 1"},
+		{ID: "action_2", Type: "mockAction", Name: "Action 2"},
+	}
+	edgeList := []nodes.Edge{
+		{ID: "e1", Source: "trigger_1", Target: "action_1"},
+		{ID: "e2", Source: "action_1", Target: "action_2"},
+	}
+	nodesJSON, _ := json.Marshal(nodeList)
+	edgesJSON, _ := json.Marshal(edgeList)
+
+	wf := &storage.Workflow{
+		ID:        "wf-bench",
+		Name:      "Bench Workflow",
+		NodesJSON: string(nodesJSON),
+		EdgesJSON: string(edgesJSON),
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, err := eng.ExecuteWorkflow(wf, nil)
+			if err != nil {
+				b.Errorf("ExecuteWorkflow failed: %v", err)
+			}
+		}
+	})
+}
