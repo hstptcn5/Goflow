@@ -26,6 +26,7 @@ func (e *CronTriggerExecutor) GetDefinition() NodeDefinition {
 		Description: "Tự động kích hoạt workflow theo biểu thức Lịch Cron",
 		Icon:        "Clock",
 		Category:    "TRIGGER",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "cron_expression",

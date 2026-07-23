@@ -33,7 +33,7 @@ func NewDB(dbPath string) (*DB, error) {
 	readDB.SetMaxIdleConns(8)
 
 	// Cấu hình PRAGMAs tối ưu hiệu năng
-	pragmas := []string{
+	writePragmas := []string{
 		"PRAGMA journal_mode = WAL;",
 		"PRAGMA synchronous = NORMAL;",
 		"PRAGMA temp_store = MEMORY;",
@@ -42,9 +42,22 @@ func NewDB(dbPath string) (*DB, error) {
 		"PRAGMA cache_size = -32000;", // 32MB cache
 	}
 
-	for _, pragma := range pragmas {
+	for _, pragma := range writePragmas {
 		if _, err := writeDB.Exec(pragma); err != nil {
-			log.Printf("Warning setting pragma '%s': %v", pragma, err)
+			log.Printf("Warning setting write pragma '%s': %v", pragma, err)
+		}
+	}
+
+	// PRAGMAs cho ReadDB (bỏ qua journal_mode và foreign_keys vì là query_only)
+	readPragmas := []string{
+		"PRAGMA temp_store = MEMORY;",
+		"PRAGMA busy_timeout = 5000;",
+		"PRAGMA cache_size = -32000;", // 32MB cache
+	}
+
+	for _, pragma := range readPragmas {
+		if _, err := readDB.Exec(pragma); err != nil {
+			log.Printf("Warning setting read pragma '%s': %v", pragma, err)
 		}
 	}
 

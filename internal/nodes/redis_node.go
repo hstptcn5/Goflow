@@ -165,6 +165,7 @@ func (e *RedisCommandExecutor) GetDefinition() NodeDefinition {
 		Description: "Tương tác với cơ sở dữ liệu Redis (GET, SET, DEL, HSET, v.v.)",
 		Icon:        "Database",
 		Category:    "DATABASE",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "credential_id",

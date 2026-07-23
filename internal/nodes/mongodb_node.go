@@ -151,6 +151,7 @@ func (e *MongoDBCommandExecutor) GetDefinition() NodeDefinition {
 		Description: "Thực thi truy vấn hoặc thao tác dữ liệu trên cơ sở dữ liệu MongoDB",
 		Icon:        "Database",
 		Category:    "DATABASE",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "credential_id",

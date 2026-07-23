@@ -37,6 +37,7 @@ func (e *DelaySleepExecutor) GetDefinition() NodeDefinition {
 		Description: "Tạm dừng luồng thực thi workflow trong khoảng thời gian cấu hình",
 		Icon:        "Hourglass",
 		Category:    "LOGIC",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "seconds",

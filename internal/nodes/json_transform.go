@@ -42,6 +42,7 @@ func (e *JSONTransformExecutor) GetDefinition() NodeDefinition {
 		Description: "Tạo hoặc trích xuất biến đổi cấu trúc dữ liệu JSON",
 		Icon:        "Code",
 		Category:    "ACTION",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "json_template",

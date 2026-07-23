@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -78,15 +79,11 @@ func TestJSCodeRunnerExecutor(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Expected timeout error, but got nil")
 	}
-	if !reflect.ValueOf(err).IsValid() || !reflect.ValueOf(err.Error()).IsValid() {
+	if !reflect.ValueOf(err).IsValid() {
 		t.Fatalf("Invalid error returned")
 	}
-	if !reflect.ValueOf(err.Error()).String() != "" && reflect.ValueOf(err.Error()).String() != "JS evaluation error: timeout" && !reflect.ValueOf(err.Error()).String().Contains("timeout") {
-		// Wait, let's keep it simple: just check if error string contains "timeout"
-	}
-	// Let's do standard error check:
 	errStr := err.Error()
-	if !reflect.ValueOf(errStr).String().Contains("timeout") && !reflect.ValueOf(errStr).String().Contains("interrupted") {
+	if !strings.Contains(errStr, "timeout") && !strings.Contains(errStr, "interrupted") {
 		t.Errorf("Expected error to contain 'timeout' or 'interrupted', got: %v", errStr)
 	}
 }

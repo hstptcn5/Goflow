@@ -183,15 +183,12 @@ func (e *Engine) ExecuteWorkflow(wf *storage.Workflow, triggerPayload interface{
 	}
 
 	// Chỉ nạp và giải mã những credentials thực sự được tham chiếu trong các node của workflow
-	var nodesList []nodes.Node
-	if err := json.Unmarshal([]byte(wf.NodesJSON), &nodesList); err == nil {
-		for _, nodeObj := range nodesList {
-			if credID, ok := nodeObj.Params["credential_id"].(string); ok && credID != "" {
-				if _, loaded := ctx.Credentials[credID]; !loaded {
-					decrypted, err := e.credStore.GetDecryptedData(credID)
-					if err == nil {
-						ctx.Credentials[credID] = decrypted
-					}
+	for _, nodeObj := range nodeList {
+		if credID, ok := nodeObj.Params["credential_id"].(string); ok && credID != "" {
+			if _, loaded := ctx.Credentials[credID]; !loaded {
+				decrypted, err := e.credStore.GetDecryptedData(credID)
+				if err == nil {
+					ctx.Credentials[credID] = decrypted
 				}
 			}
 		}
@@ -338,8 +335,12 @@ schedulerLoop:
 					Params:   resolvedParams,
 				}
 
-				// Auto-retry Loop (Tối đa 3 lần thử khi gặp lỗi)
-				maxRetries := 3
+				// Auto-retry Loop: chỉ retry cho các node có Retryable=true (an toàn khi thực thi lại)
+				// Các node có side-effect (gửi email, tin nhắn) mặc định Retryable=false → chỉ chạy 1 lần
+				maxRetries := 1
+				if executor.GetDefinition().Retryable {
+					maxRetries = 3
+				}
 				var lastErr error
 				var output interface{}
 				attemptsUsed := 0

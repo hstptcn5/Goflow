@@ -111,6 +111,7 @@ func (e *DeepSeekAIExecutor) GetDefinition() NodeDefinition {
 		Description: "Tự động gọi DeepSeek-V3 / DeepSeek-R1 (Reasoner) sinh câu trả lời AI",
 		Icon:        "Brain",
 		Category:    "AI & LLM",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "model",

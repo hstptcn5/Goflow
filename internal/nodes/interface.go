@@ -118,6 +118,7 @@ type NodeDefinition struct {
 	Description string            `json:"description"`
 	Icon        string            `json:"icon"`
 	Category    string            `json:"category"` // 'TRIGGER', 'COMMUNICATION', 'AI & LLM', 'LOGIC'
+	Retryable   bool              `json:"retryable"` // Nếu false, engine sẽ không retry khi node thất bại (tránh duplicate side-effects)
 	Params      []ParamDefinition `json:"params"`
 }
 

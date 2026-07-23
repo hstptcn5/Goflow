@@ -27,6 +27,7 @@ func (e *WebhookTriggerExecutor) GetDefinition() NodeDefinition {
 		Description: "Khởi tạo workflow bằng một HTTP Webhook Request",
 		Icon:        "Webhook",
 		Category:    "TRIGGER",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "path",

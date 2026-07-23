@@ -128,6 +128,7 @@ func (e *PostgresQueryExecutor) GetDefinition() NodeDefinition {
 		Description: "Thực thi câu lệnh SQL SELECT/EXECUTE trên cơ sở dữ liệu PostgreSQL",
 		Icon:        "Database",
 		Category:    "DATABASE",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "credential_id",

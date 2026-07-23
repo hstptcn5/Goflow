@@ -55,7 +55,7 @@ func (s *ExecutionStore) GetByID(id string) (*Execution, error) {
 		SELECT id, workflow_id, status, duration_ms, logs_json, started_at, finished_at
 		FROM executions WHERE id = ?
 	`
-	row := s.db.WriteDB.QueryRow(query, id)
+	row := s.db.ReadDB.QueryRow(query, id)
 
 	var exec Execution
 	var finishedAt sql.NullTime
@@ -83,7 +83,7 @@ func (s *ExecutionStore) ListByWorkflow(workflowID string, limit int) ([]Executi
 		ORDER BY started_at DESC
 		LIMIT ?
 	`
-	rows, err := s.db.WriteDB.Query(query, workflowID, limit)
+	rows, err := s.db.ReadDB.Query(query, workflowID, limit)
 	if err != nil {
 		return nil, err
 	}

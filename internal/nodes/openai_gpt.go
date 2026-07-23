@@ -109,6 +109,7 @@ func (e *OpenAIGPTExecutor) GetDefinition() NodeDefinition {
 		Description: "Tu dong goi OpenAI GPT-4o / GPT-3.5 sinh van ban va tra loi",
 		Icon:        "Bot",
 		Category:    "AI & LLM",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "model",

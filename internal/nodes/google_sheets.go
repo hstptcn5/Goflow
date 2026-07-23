@@ -179,6 +179,7 @@ func (e *GoogleSheetsExecutor) GetDefinition() NodeDefinition {
 		Description: "Đọc hoặc thêm dòng mới vào Google Sheets bằng Service Account",
 		Icon:        "Table",
 		Category:    "COMMUNICATION",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "credential_id",

@@ -13,6 +13,19 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// getOAuth2RedirectURL derives the OAuth2 callback URL dynamically from the incoming request
+func getOAuth2RedirectURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	host := r.Host
+	if fwdHost := r.Header.Get("X-Forwarded-Host"); fwdHost != "" {
+		host = fwdHost
+	}
+	return fmt.Sprintf("%s://%s/api/v1/oauth2/callback", scheme, host)
+}
+
 type OAuth2Handler struct {
 	credStore *storage.CredentialStore
 }
@@ -69,11 +82,8 @@ func (h *OAuth2Handler) Authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Build redirect auth URL
-	var redirectURL = "http://localhost:8089/api/v1/oauth2/callback"
-	if port := r.Header.Get("X-Forwarded-Port"); port != "" {
-		redirectURL = fmt.Sprintf("http://localhost:%s/api/v1/oauth2/callback", port)
-	}
+	// 2. Build redirect auth URL dynamically from the incoming request
+	redirectURL := getOAuth2RedirectURL(r)
 
 	conf := &oauth2.Config{
 		ClientID:     clientID,
@@ -132,8 +142,8 @@ func (h *OAuth2Handler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Exchange code for token
-	var redirectURL = "http://localhost:8089/api/v1/oauth2/callback"
+	// 2. Exchange code for token (redirect URL must match the one used in Authorize)
+	redirectURL := getOAuth2RedirectURL(r)
 	conf := &oauth2.Config{
 		ClientID:     payload.Config.ClientID,
 		ClientSecret: payload.Config.ClientSecret,

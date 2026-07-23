@@ -32,19 +32,16 @@ func NewRouter(
 	r.Use(middleware.Recoverer)
 
 	// Thắt chặt cấu hình CORS để tránh CSRF/Cross-Origin RCE
-	var allowedOrigins []string
-	if apiKey == "" {
-		allowedOrigins = []string{"http://localhost:5173", "http://localhost:8080", "http://127.0.0.1:5173", "http://127.0.0.1:8080"}
-	} else {
-		allowedOrigins = []string{"*"}
-	}
+	// Khi có API Key (production/remote): chỉ cho phép localhost, trừ khi set GOFLOW_CORS_ORIGINS
+	// Khi không có API Key (local dev): cho phép localhost origins
+	allowedOrigins := []string{"http://localhost:5173", "http://localhost:8080", "http://127.0.0.1:5173", "http://127.0.0.1:8080"}
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: apiKey == "",
+		AllowCredentials: true,
 		MaxAge:           300,
 	}))
 

@@ -98,6 +98,7 @@ func (e *JSCodeRunnerExecutor) GetDefinition() NodeDefinition {
 		Description: "Thuc thi ma Javascript / Expression bien doi du lieu tuy bien",
 		Icon:        "Code",
 		Category:    "LOGIC & UTILITY",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "code",

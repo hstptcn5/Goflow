@@ -98,6 +98,7 @@ func (e *GithubWebhookExecutor) GetDefinition() NodeDefinition {
 		Description: "Kích hoạt workflow bằng các sự kiện GitHub Webhooks, hỗ trợ kiểm tra chữ ký Secret",
 		Icon:        "GitBranch",
 		Category:    "TRIGGER",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "secret",

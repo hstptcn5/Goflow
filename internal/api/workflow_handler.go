@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"goflow/internal/engine"
 	"goflow/internal/storage"
@@ -127,7 +128,7 @@ func (h *WorkflowHandler) TriggerWorkflow(w http.ResponseWriter, r *http.Request
 	}
 
 	var payload interface{}
-	if r.Header.Get("Content-Type") == "application/json" {
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		_ = json.NewDecoder(r.Body).Decode(&payload)
 	}
 

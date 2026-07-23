@@ -167,6 +167,7 @@ func (e *GoogleDriveExecutor) GetDefinition() NodeDefinition {
 		Description: "Tải tệp tin hoặc liệt kê các tệp trên Google Drive bằng Service Account",
 		Icon:        "Folder",
 		Category:    "COMMUNICATION",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "credential_id",

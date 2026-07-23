@@ -128,6 +128,7 @@ func (e *MySQLQueryExecutor) GetDefinition() NodeDefinition {
 		Description: "Thực thi câu lệnh SQL SELECT/EXECUTE trên cơ sở dữ liệu MySQL",
 		Icon:        "Database",
 		Category:    "DATABASE",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "credential_id",

@@ -96,6 +96,7 @@ func (e *HTTPRequestExecutor) GetDefinition() NodeDefinition {
 		Description: "Gửi REST API HTTP request (GET, POST, PUT, DELETE)",
 		Icon:        "Globe",
 		Category:    "ACTION",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "method",

@@ -57,6 +57,7 @@ func (e *ConditionIFExecutor) GetDefinition() NodeDefinition {
 		Description: "Rẽ nhánh thực thi workflow dựa theo điều kiện so sánh",
 		Icon:        "GitBranch",
 		Category:    "LOGIC",
+		Retryable:   true,
 		Params: []ParamDefinition{
 			{
 				Name:        "field",
