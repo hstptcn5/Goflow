@@ -31,7 +31,7 @@ go test ./...
 go vet ./...
 go build -trimpath -ldflags="-s -w" -o (Join-Path $stage "goflow.exe") main.go static_embed.go
 
-Copy-Item README.md, NODES.md, BACKUP.md, CHANGELOG.md, LICENSE, VERSION -Destination $stage
+Copy-Item README.md, NODES.md, BACKUP.md, CHANGELOG.md, COMMERCIAL.md, TRADEMARK.md, LICENSE, VERSION -Destination $stage
 Copy-Item templates -Destination $stage -Recurse
 
 if (Test-Path $archive) {
@@ -44,4 +44,3 @@ $hash.Hash | Out-File "$archive.sha256" -Encoding ascii
 
 Write-Host "Created $archive"
 Write-Host "SHA256 $($hash.Hash)"
-

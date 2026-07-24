@@ -42,6 +42,8 @@ This guide describes how to prepare a Goflow preview release.
    - `NODES.md`
    - `BACKUP.md`
    - `CHANGELOG.md`
+   - `COMMERCIAL.md`
+   - `TRADEMARK.md`
    - `templates/`
 
 ## Windows Packaging
@@ -73,4 +75,3 @@ Do not include local runtime secrets in release archives:
 - API keys, OAuth tokens, private keys, and service account JSON files
 
 For production backups, use `BACKUP.md` instead.
-

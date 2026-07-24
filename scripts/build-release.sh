@@ -34,11 +34,10 @@ go test ./...
 go vet ./...
 GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$stage/goflow$ext" main.go static_embed.go
 
-cp README.md NODES.md BACKUP.md CHANGELOG.md LICENSE VERSION "$stage/"
+cp README.md NODES.md BACKUP.md CHANGELOG.md COMMERCIAL.md TRADEMARK.md LICENSE VERSION "$stage/"
 cp -R templates "$stage/"
 
 tar -czf "$archive" -C "$release_root" "$(basename "$stage")"
 sha256sum "$archive" > "$archive.sha256"
 
 echo "Created $archive"
-

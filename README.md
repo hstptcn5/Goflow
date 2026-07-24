@@ -21,6 +21,20 @@ Key achievements in the current version include:
 
 ---
 
+## Editions and Commercial Use
+
+Goflow follows an open-core direction:
+
+- **Goflow Community**: the self-hosted core in this repository, licensed under the MIT License.
+- **Goflow Pro / Enterprise**: future commercial offerings for teams and companies that need governance, support, advanced operations, or premium integrations.
+- **Goflow Cloud**: a possible hosted managed service for users who do not want to operate Goflow themselves.
+
+Community users can run real local and internal automations without a paid license. Commercial offerings are expected to focus on features such as multi-user workspaces, RBAC, SSO, audit logs, version history, managed OAuth connectors, premium node packs, hosted infrastructure, and priority support.
+
+See [COMMERCIAL.md](COMMERCIAL.md) for the commercial roadmap boundary and [TRADEMARK.md](TRADEMARK.md) for branding guidance.
+
+---
+
 ## Positioning and Fit
 
 | Area | Goflow | Larger automation platforms |
@@ -195,6 +209,7 @@ d:/build2026/Goflow/
 * **Detailed Node Reference**: See [NODES.md](NODES.md) for a bilingual English/Vietnamese guide to the built-in nodes, placeholders, credentials, recipes, and troubleshooting.
 * **Backup and Restore Guide**: See [BACKUP.md](BACKUP.md) for protecting the SQLite database, credential master key, environment variables, and workflow exports.
 * **Release Guide**: See [RELEASE.md](RELEASE.md) and [CHANGELOG.md](CHANGELOG.md) for packaging and release notes.
+* **Commercial and Trademark Guidance**: See [COMMERCIAL.md](COMMERCIAL.md) and [TRADEMARK.md](TRADEMARK.md) for the open-core direction and branding boundaries.
 * **Ready-to-use Templates**: Find pre-configured workflows in the [templates/](templates/) directory. You can easily import them using the "Import" button in the Web UI:
   - `workflow_ai_assistant.json`: Webhook-triggered DeepSeek text summary pipeline.
   - `github_repo_monitor.json`: Periodically fetch repository stats with custom API calls.
@@ -293,4 +308,4 @@ On startup, any execution left in `RUNNING` from a previous crash or shutdown is
 
 ## License
 
-This project is licensed under the MIT License.
+The Community edition in this repository is licensed under the MIT License. The MIT License covers the software code; it does not grant trademark rights to the Goflow name, logo, or branding.
