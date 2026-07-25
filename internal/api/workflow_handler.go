@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -88,6 +89,9 @@ func (h *WorkflowHandler) UpdateWorkflow(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	wf.ID = id
+	if existing, err := h.wfStore.GetByID(id); err == nil {
+		preserveWorkflowInterface(&wf, existing)
+	}
 
 	if err := h.wfStore.Update(&wf); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -96,6 +100,43 @@ func (h *WorkflowHandler) UpdateWorkflow(w http.ResponseWriter, r *http.Request)
 
 	updated, _ := h.wfStore.GetByID(id)
 	renderJSON(w, http.StatusOK, updated)
+}
+
+func (h *WorkflowHandler) GetWorkflowInterface(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	wf, err := h.wfStore.GetByID(id)
+	if err != nil {
+		http.Error(w, "Workflow not found", http.StatusNotFound)
+		return
+	}
+	renderJSON(w, http.StatusOK, workflowInterfaceFromWorkflow(wf))
+}
+
+func (h *WorkflowHandler) UpdateWorkflowInterface(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	wf, err := h.wfStore.GetByID(id)
+	if err != nil {
+		http.Error(w, "Workflow not found", http.StatusNotFound)
+		return
+	}
+
+	var req workflowInterface
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if err := validateWorkflowInterface(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	applyWorkflowInterface(wf, req)
+	if err := h.wfStore.Update(wf); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	updated, _ := h.wfStore.GetByID(id)
+	renderJSON(w, http.StatusOK, workflowInterfaceFromWorkflow(updated))
 }
 
 func (h *WorkflowHandler) ToggleActive(w http.ResponseWriter, r *http.Request) {
@@ -333,4 +374,109 @@ func writeExecutionError(w http.ResponseWriter, err error) {
 		return
 	}
 	http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+
+type workflowInterface struct {
+	WorkflowID        string `json:"workflow_id,omitempty"`
+	Slug              string `json:"slug"`
+	InputSchemaJSON   string `json:"input_schema_json"`
+	OutputSchemaJSON  string `json:"output_schema_json"`
+	ExposeCLI         bool   `json:"expose_cli"`
+	ExposeMCP         bool   `json:"expose_mcp"`
+	MCPToolName       string `json:"mcp_tool_name"`
+	MCPDescription    string `json:"mcp_description"`
+	RiskLevel         string `json:"risk_level"`
+	RequiresApproval  bool   `json:"requires_approval"`
+	MaxConcurrentRuns int    `json:"max_concurrent_runs"`
+	ConcurrencyPolicy string `json:"concurrency_policy"`
+}
+
+var interfaceNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
+
+func workflowInterfaceFromWorkflow(wf *storage.Workflow) workflowInterface {
+	return workflowInterface{
+		WorkflowID:        wf.ID,
+		Slug:              wf.Slug,
+		InputSchemaJSON:   wf.InputSchemaJSON,
+		OutputSchemaJSON:  wf.OutputSchemaJSON,
+		ExposeCLI:         wf.ExposeCLI,
+		ExposeMCP:         wf.ExposeMCP,
+		MCPToolName:       wf.MCPToolName,
+		MCPDescription:    wf.MCPDescription,
+		RiskLevel:         wf.RiskLevel,
+		RequiresApproval:  wf.RequiresApproval,
+		MaxConcurrentRuns: wf.MaxConcurrentRuns,
+		ConcurrencyPolicy: wf.ConcurrencyPolicy,
+	}
+}
+
+func applyWorkflowInterface(wf *storage.Workflow, req workflowInterface) {
+	wf.Slug = strings.TrimSpace(req.Slug)
+	wf.InputSchemaJSON = strings.TrimSpace(req.InputSchemaJSON)
+	wf.OutputSchemaJSON = strings.TrimSpace(req.OutputSchemaJSON)
+	wf.ExposeCLI = req.ExposeCLI
+	wf.ExposeMCP = req.ExposeMCP
+	wf.MCPToolName = strings.TrimSpace(req.MCPToolName)
+	wf.MCPDescription = strings.TrimSpace(req.MCPDescription)
+	wf.RiskLevel = strings.TrimSpace(req.RiskLevel)
+	wf.RequiresApproval = req.RequiresApproval
+	wf.MaxConcurrentRuns = req.MaxConcurrentRuns
+	wf.ConcurrencyPolicy = strings.TrimSpace(req.ConcurrencyPolicy)
+}
+
+func preserveWorkflowInterface(wf *storage.Workflow, existing *storage.Workflow) {
+	wf.Slug = existing.Slug
+	wf.InputSchemaJSON = existing.InputSchemaJSON
+	wf.OutputSchemaJSON = existing.OutputSchemaJSON
+	wf.ExposeCLI = existing.ExposeCLI
+	wf.ExposeMCP = existing.ExposeMCP
+	wf.MCPToolName = existing.MCPToolName
+	wf.MCPDescription = existing.MCPDescription
+	wf.RiskLevel = existing.RiskLevel
+	wf.RequiresApproval = existing.RequiresApproval
+	wf.MaxConcurrentRuns = existing.MaxConcurrentRuns
+	wf.ConcurrencyPolicy = existing.ConcurrencyPolicy
+}
+
+func validateWorkflowInterface(req workflowInterface) error {
+	if req.Slug != "" && !interfaceNamePattern.MatchString(req.Slug) {
+		return errors.New("slug must use letters, numbers, dash, or underscore and be 1-64 characters")
+	}
+	if req.MCPToolName != "" && !interfaceNamePattern.MatchString(req.MCPToolName) {
+		return errors.New("MCP tool name must use letters, numbers, dash, or underscore and be 1-64 characters")
+	}
+	if err := validateJSONObject(req.InputSchemaJSON, "input_schema_json"); err != nil {
+		return err
+	}
+	if err := validateJSONObject(req.OutputSchemaJSON, "output_schema_json"); err != nil {
+		return err
+	}
+	switch req.RiskLevel {
+	case "", "low", "medium", "high":
+	default:
+		return errors.New("risk_level must be low, medium, or high")
+	}
+	switch req.ConcurrencyPolicy {
+	case "", "global", "allow", "reject", "queue":
+	default:
+		return errors.New("concurrency_policy must be global, allow, reject, or queue")
+	}
+	if req.MaxConcurrentRuns < 0 {
+		return errors.New("max_concurrent_runs cannot be negative")
+	}
+	return nil
+}
+
+func validateJSONObject(raw string, field string) error {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var decoded interface{}
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		return errors.New(field + " must be valid JSON")
+	}
+	if _, ok := decoded.(map[string]interface{}); !ok {
+		return errors.New(field + " must be a JSON object")
+	}
+	return nil
 }

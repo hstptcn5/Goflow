@@ -73,6 +73,25 @@ export const api = {
     return res.json();
   },
 
+  async getWorkflowInterface(id) {
+    const res = await customFetch(`${API_BASE}/workflows/${id}/interface`);
+    if (!res.ok) throw new Error('Failed to fetch workflow interface');
+    return res.json();
+  },
+
+  async updateWorkflowInterface(id, data) {
+    const res = await customFetch(`${API_BASE}/workflows/${id}/interface`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || 'Failed to update workflow interface');
+    }
+    return res.json();
+  },
+
   async deleteWorkflow(id) {
     const res = await customFetch(`${API_BASE}/workflows/${id}`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to delete workflow');

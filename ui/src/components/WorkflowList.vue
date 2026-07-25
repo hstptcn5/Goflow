@@ -17,6 +17,9 @@ const editingId = ref('');
 const editName = ref('');
 const editDesc = ref('');
 const savingEdit = ref(false);
+const interfaceEditingId = ref('');
+const interfaceForm = ref(defaultInterfaceForm());
+const savingInterface = ref(false);
 
 onMounted(() => {
   workflowStore.fetchWorkflows();
@@ -150,6 +153,62 @@ async function saveEdit() {
     savingEdit.value = false;
   }
 }
+
+function defaultInterfaceForm() {
+  return {
+    slug: '',
+    input_schema_json: '{}',
+    output_schema_json: '{}',
+    expose_cli: true,
+    expose_mcp: false,
+    mcp_tool_name: '',
+    mcp_description: '',
+    risk_level: 'medium',
+    requires_approval: false,
+    max_concurrent_runs: 0,
+    concurrency_policy: 'global',
+  };
+}
+
+function openInterfaceEditor(wf) {
+  interfaceEditingId.value = wf.id;
+  interfaceForm.value = {
+    slug: wf.slug || '',
+    input_schema_json: wf.input_schema_json || '{}',
+    output_schema_json: wf.output_schema_json || '{}',
+    expose_cli: wf.expose_cli !== false,
+    expose_mcp: !!wf.expose_mcp,
+    mcp_tool_name: wf.mcp_tool_name || '',
+    mcp_description: wf.mcp_description || wf.description || '',
+    risk_level: wf.risk_level || 'medium',
+    requires_approval: !!wf.requires_approval,
+    max_concurrent_runs: wf.max_concurrent_runs || 0,
+    concurrency_policy: wf.concurrency_policy || 'global',
+  };
+}
+
+function closeInterfaceEditor() {
+  interfaceEditingId.value = '';
+  interfaceForm.value = defaultInterfaceForm();
+}
+
+async function saveInterface() {
+  if (!interfaceEditingId.value) return;
+  savingInterface.value = true;
+  try {
+    JSON.parse(interfaceForm.value.input_schema_json || '{}');
+    JSON.parse(interfaceForm.value.output_schema_json || '{}');
+    await workflowStore.updateWorkflowInterface(interfaceEditingId.value, {
+      ...interfaceForm.value,
+      max_concurrent_runs: Number(interfaceForm.value.max_concurrent_runs || 0),
+    });
+    closeInterfaceEditor();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    savingInterface.value = false;
+  }
+}
 </script>
 
 <template>
@@ -242,6 +301,7 @@ async function saveEdit() {
                   <span class="badge" :class="wf.is_active ? 'badge-green' : 'badge-gray'">
                     {{ wf.is_active ? 'Active' : 'Inactive' }}
                   </span>
+                  <span v-if="wf.expose_mcp" class="badge badge-blue">MCP</span>
                 </div>
                 <span class="wf-desc">{{ wf.description || 'No description' }}</span>
               </template>
@@ -249,9 +309,83 @@ async function saveEdit() {
               <span class="wf-id">
                 ID: {{ wf.id }}
               </span>
+
+              <div v-if="interfaceEditingId === wf.id" class="interface-panel" @click.stop>
+                <div class="interface-grid">
+                  <label>
+                    Slug
+                    <input v-model="interfaceForm.slug" class="form-input edit-input" placeholder="daily-release-check" />
+                  </label>
+                  <label>
+                    MCP Tool Name
+                    <input v-model="interfaceForm.mcp_tool_name" class="form-input edit-input" placeholder="daily_release_check" />
+                  </label>
+                  <label class="wide">
+                    MCP Description
+                    <input v-model="interfaceForm.mcp_description" class="form-input edit-input" placeholder="Describe what this workflow does for AI clients" />
+                  </label>
+                  <label>
+                    Risk
+                    <select v-model="interfaceForm.risk_level" class="form-input edit-input">
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </label>
+                  <label>
+                    Concurrency
+                    <select v-model="interfaceForm.concurrency_policy" class="form-input edit-input">
+                      <option value="global">Global</option>
+                      <option value="allow">Allow</option>
+                      <option value="reject">Reject</option>
+                      <option value="queue">Queue</option>
+                    </select>
+                  </label>
+                  <label>
+                    Max Runs
+                    <input v-model.number="interfaceForm.max_concurrent_runs" type="number" min="0" class="form-input edit-input" />
+                  </label>
+                </div>
+
+                <div class="interface-toggles">
+                  <label class="check-row">
+                    <input v-model="interfaceForm.expose_cli" type="checkbox" />
+                    Enable CLI
+                  </label>
+                  <label class="check-row">
+                    <input v-model="interfaceForm.expose_mcp" type="checkbox" />
+                    Expose to MCP
+                  </label>
+                  <label class="check-row">
+                    <input v-model="interfaceForm.requires_approval" type="checkbox" />
+                    Requires Approval
+                  </label>
+                </div>
+
+                <label class="schema-label">
+                  Input Schema JSON
+                  <textarea v-model="interfaceForm.input_schema_json" class="form-input schema-textarea" spellcheck="false"></textarea>
+                </label>
+                <label class="schema-label">
+                  Output Schema JSON
+                  <textarea v-model="interfaceForm.output_schema_json" class="form-input schema-textarea" spellcheck="false"></textarea>
+                </label>
+
+                <div class="edit-actions">
+                  <button class="btn btn-primary btn-xs" :disabled="savingInterface" @click="saveInterface">
+                    Save Interface
+                  </button>
+                  <button class="btn btn-secondary btn-xs" :disabled="savingInterface" @click="closeInterfaceEditor">
+                    Cancel
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div class="wf-actions">
+              <button v-if="interfaceEditingId !== wf.id" class="btn-icon" title="Workflow interface settings" @click.stop="openInterfaceEditor(wf)">
+                Interface
+              </button>
               <button v-if="editingId !== wf.id" class="btn-icon" title="Rename workflow" @click.stop="startEdit(wf)">
                 Edit
               </button>
@@ -439,6 +573,66 @@ async function saveEdit() {
 .badge-gray {
   background: rgba(156, 163, 175, 0.15);
   color: var(--text-secondary);
+}
+
+.badge-blue {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+
+.interface-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.interface-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.interface-grid label,
+.schema-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.interface-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.interface-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--text-primary);
+}
+
+.schema-label {
+  margin-top: 8px;
+}
+
+.schema-textarea {
+  min-height: 74px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 1.45;
 }
 
 .btn-icon {

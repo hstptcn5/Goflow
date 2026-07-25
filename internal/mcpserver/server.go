@@ -69,7 +69,7 @@ func (s *Server) registerTools(server *mcp.Server) {
 }
 
 type listWorkflowsInput struct {
-	ActiveOnly bool `json:"active_only,omitempty" jsonschema:"return only active workflows"`
+	ActiveOnly bool `json:"active_only,omitempty" jsonschema:"deprecated; MCP always lists only active exposed workflows"`
 }
 
 type listWorkflowsOutput struct {
@@ -84,7 +84,7 @@ func (s *Server) listWorkflows(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	filtered := make([]client.Workflow, 0, len(workflows))
 	for _, workflow := range workflows {
-		if input.ActiveOnly && !workflow.IsActive {
+		if !workflow.ExposeMCP || !workflow.IsActive {
 			continue
 		}
 		filtered = append(filtered, workflow)
@@ -101,7 +101,7 @@ type workflowOutput struct {
 }
 
 func (s *Server) getWorkflow(ctx context.Context, req *mcp.CallToolRequest, input workflowRefInput) (*mcp.CallToolResult, workflowOutput, error) {
-	workflow, err := s.client.ResolveWorkflow(input.Workflow)
+	workflow, err := s.resolveAllowedWorkflow(input.Workflow)
 	if err != nil {
 		return nil, workflowOutput{}, err
 	}
@@ -123,7 +123,7 @@ type runWorkflowOutput struct {
 }
 
 func (s *Server) runWorkflow(ctx context.Context, req *mcp.CallToolRequest, input runWorkflowInput) (*mcp.CallToolResult, runWorkflowOutput, error) {
-	workflow, err := s.client.ResolveWorkflow(input.Workflow)
+	workflow, err := s.resolveAllowedWorkflow(input.Workflow)
 	if err != nil {
 		return nil, runWorkflowOutput{}, err
 	}
@@ -167,7 +167,7 @@ type listExecutionsOutput struct {
 }
 
 func (s *Server) listExecutions(ctx context.Context, req *mcp.CallToolRequest, input workflowRefInput) (*mcp.CallToolResult, listExecutionsOutput, error) {
-	workflow, err := s.client.ResolveWorkflow(input.Workflow)
+	workflow, err := s.resolveAllowedWorkflow(input.Workflow)
 	if err != nil {
 		return nil, listExecutionsOutput{}, err
 	}
@@ -176,6 +176,23 @@ func (s *Server) listExecutions(ctx context.Context, req *mcp.CallToolRequest, i
 		return nil, listExecutionsOutput{}, err
 	}
 	return nil, listExecutionsOutput{Workflow: *workflow, Executions: executions, Count: len(executions)}, nil
+}
+
+func (s *Server) resolveAllowedWorkflow(ref string) (*client.Workflow, error) {
+	workflow, err := s.client.ResolveWorkflow(ref)
+	if err != nil {
+		return nil, err
+	}
+	if !workflow.ExposeMCP {
+		return nil, fmt.Errorf("workflow is not exposed to MCP")
+	}
+	if !workflow.IsActive {
+		return nil, fmt.Errorf("workflow is inactive")
+	}
+	if workflow.RequiresApproval {
+		return nil, fmt.Errorf("workflow requires approval and cannot be run through MCP alpha")
+	}
+	return workflow, nil
 }
 
 func readVersion() string {

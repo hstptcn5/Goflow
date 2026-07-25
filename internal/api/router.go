@@ -67,6 +67,8 @@ func NewRouter(
 		r.Post("/workflows", wfHandler.CreateWorkflow)
 		r.Get("/workflows/{id}", wfHandler.GetWorkflow)
 		r.Put("/workflows/{id}", wfHandler.UpdateWorkflow)
+		r.Get("/workflows/{id}/interface", wfHandler.GetWorkflowInterface)
+		r.Put("/workflows/{id}/interface", wfHandler.UpdateWorkflowInterface)
 		r.Delete("/workflows/{id}", wfHandler.DeleteWorkflow)
 		r.Put("/workflows/{id}/toggle", wfHandler.ToggleActive)
 		r.Post("/workflows/{id}/trigger", wfHandler.TriggerWorkflow)

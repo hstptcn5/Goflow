@@ -14,10 +14,10 @@ timeline
       Execution API : Async returns execution_id, idempotency, trigger source/principal
       Hardening : Secret redaction in execution logs/events
       CLI Alpha Start : status, workflow list/describe/run, execution get/watch
-      MCP stdio Alpha : Static MCP tools over REST client and smoke test script
+      MCP stdio Alpha : Static MCP tools, smoke test script, and workflow MCP allowlist
 
     section Current
-      Workflow Interfaces : MCP allowlist API/UI and dynamic workflow tool mapping
+      Dynamic MCP Tools : Expose allowed workflows as separate AI tools
 
     section Next
       Dynamic MCP Tools : Expose selected workflows as AI tools
@@ -33,7 +33,7 @@ timeline
 | `v0.2.0-foundation-preview` | Migration, execution metadata, async execution ID, idempotency | Mostly complete and tested manually |
 | `v0.3.0-cli-alpha` | CLI status/list/describe/run/get/watch | Initial implementation complete; needs more real-workflow testing |
 | `v0.4.0-mcp-stdio-alpha` | MCP stdio static tools | Initial implementation complete; smoke script added |
-| `v0.5.0-mcp-dynamic-preview` | Workflow MCP exposure, dynamic tools, input schema validation | Not started |
+| `v0.5.0-mcp-dynamic-preview` | Workflow MCP exposure, dynamic tools, input schema validation | Workflow allowlist API/UI complete; dynamic tools pending |
 | Hardening | Concurrency, cancellation, scoped token, audit | Secret redaction complete; other items pending |
 | Streamable HTTP MCP | `/mcp` HTTP transport | Deferred |
 
@@ -50,7 +50,7 @@ timeline
 [x] TriggerService service layer
 [x] MCP stdio static tools
 [x] MCP client smoke test script
-[ ] Workflow MCP allowlist UI/API
+[x] Workflow MCP allowlist UI/API
 [ ] Global/per-client MCP concurrency
 ```
 
@@ -70,21 +70,22 @@ gantt
     TriggerService extraction      :done, svc1, 2026-07-26, 1d
     MCP stdio static tools         :done, mcp1, 2026-07-26, 1d
     MCP smoke test script          :done, mcp2, 2026-07-26, 1d
+    Workflow MCP allowlist API/UI  :done, mcp3, 2026-07-27, 1d
 
     section Now
-    Workflow MCP allowlist API/UI  :active, mcp3, 2026-07-27, 4d
+    Dynamic MCP workflow tools     :active, mcp4, 2026-07-27, 5d
 
     section Next
-    Dynamic MCP workflow tools     :mcp4, after mcp3, 5d
+    Input schema validation        :mcp5, after mcp4, 2d
 
     section Later
-    Concurrency hardening          :hard1, after mcp4, 4d
+    Concurrency hardening          :hard1, after mcp5, 4d
     Cancellation API               :hard2, after hard1, 4d
 ```
 
 ## Next Priorities
 
 1. Run `node scripts/mcp-smoke-test.mjs --workflow <workflow>` against a real workflow before release.
-2. Add workflow MCP allowlist API/UI before dynamic tools.
-3. Add dynamic MCP workflow tools for explicitly exposed workflows.
+2. Add dynamic MCP workflow tools for explicitly exposed workflows.
+3. Add server-side input schema validation for workflow runs.
 4. Add per-client MCP concurrency limits.

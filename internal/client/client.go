@@ -26,7 +26,11 @@ type Workflow struct {
 	OutputSchemaJSON  string `json:"output_schema_json"`
 	ExposeCLI         bool   `json:"expose_cli"`
 	ExposeMCP         bool   `json:"expose_mcp"`
+	MCPToolName       string `json:"mcp_tool_name"`
+	MCPDescription    string `json:"mcp_description"`
 	RiskLevel         string `json:"risk_level"`
+	RequiresApproval  bool   `json:"requires_approval"`
+	MaxConcurrentRuns int    `json:"max_concurrent_runs"`
 	ConcurrencyPolicy string `json:"concurrency_policy"`
 }
 

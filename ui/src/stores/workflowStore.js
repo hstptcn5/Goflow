@@ -133,6 +133,36 @@ export const useWorkflowStore = defineStore('workflow', {
       }
     },
 
+    async updateWorkflowInterface(id, data) {
+      try {
+        const updatedInterface = await api.updateWorkflowInterface(id, data);
+        const workflowPatch = {
+          slug: updatedInterface.slug,
+          input_schema_json: updatedInterface.input_schema_json,
+          output_schema_json: updatedInterface.output_schema_json,
+          expose_cli: updatedInterface.expose_cli,
+          expose_mcp: updatedInterface.expose_mcp,
+          mcp_tool_name: updatedInterface.mcp_tool_name,
+          mcp_description: updatedInterface.mcp_description,
+          risk_level: updatedInterface.risk_level,
+          requires_approval: updatedInterface.requires_approval,
+          max_concurrent_runs: updatedInterface.max_concurrent_runs,
+          concurrency_policy: updatedInterface.concurrency_policy,
+        };
+        const idx = this.workflows.findIndex((w) => w.id === id);
+        if (idx !== -1) {
+          this.workflows[idx] = { ...this.workflows[idx], ...workflowPatch };
+        }
+        if (this.currentWorkflow?.id === id) {
+          this.currentWorkflow = { ...this.currentWorkflow, ...workflowPatch };
+        }
+        return updatedInterface;
+      } catch (err) {
+        this.error = err.message;
+        throw err;
+      }
+    },
+
     async toggleActive(id, isActive) {
       try {
         await api.toggleWorkflowActive(id, isActive);

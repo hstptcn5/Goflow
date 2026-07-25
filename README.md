@@ -327,6 +327,8 @@ Available static tools:
 - `goflow_get_execution`
 - `goflow_list_executions`
 
+MCP workflow access is opt-in. Open **Workflows > Interface** and enable **Expose to MCP** for each workflow that an MCP client may see or run. The stdio MCP bridge only lists active workflows with MCP exposure enabled, and the alpha blocks workflows marked **Requires Approval**.
+
 For MCP clients, set the environment used by the launched process:
 
 ```bash
