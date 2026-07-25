@@ -279,6 +279,7 @@ goflow workflow describe <workflow-id-or-slug>
 goflow workflow run <workflow-id-or-slug> --json '{"source":"cli"}' --wait
 goflow execution get <execution-id>
 goflow execution watch <execution-id>
+goflow mcp stdio
 ```
 
 On Windows PowerShell, prefer `--set` or `--input` because inline JSON quoting can be fragile:
@@ -309,6 +310,31 @@ Use `GOFLOW_URL` and `GOFLOW_API_KEY` for remote or protected instances:
 GOFLOW_URL=http://127.0.0.1:8080
 GOFLOW_API_KEY=your-api-key
 ```
+
+### 6. MCP stdio Alpha
+
+Goflow can expose static MCP tools over stdio. The MCP server is a local bridge: it calls the configured Goflow REST API and does not execute workflows directly.
+
+```bash
+goflow mcp stdio
+```
+
+Available static tools:
+
+- `goflow_list_workflows`
+- `goflow_get_workflow`
+- `goflow_run_workflow`
+- `goflow_get_execution`
+- `goflow_list_executions`
+
+For MCP clients, set the environment used by the launched process:
+
+```bash
+GOFLOW_URL=http://127.0.0.1:8080
+GOFLOW_API_KEY=your-api-key
+```
+
+The stdio transport writes MCP protocol messages to stdout. Diagnostic logs should go to stderr.
 
 #### Option B: Running with API Key Authentication (Secure Mode)
 In this mode, Goflow requires clients and the Web UI to authenticate. The browser will prompt for the API key on your first API request:

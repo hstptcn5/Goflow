@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"goflow/internal/client"
+	"goflow/internal/mcpserver"
 )
 
 const (
@@ -54,6 +56,8 @@ func (r Runner) Run(args []string) int {
 		return r.workflow(args[1:])
 	case "execution":
 		return r.execution(args[1:])
+	case "mcp":
+		return r.mcp(args[1:])
 	default:
 		fmt.Fprintf(r.Stderr, "unknown command: %s\n\n", args[0])
 		r.usage()
@@ -72,6 +76,7 @@ Usage:
   goflow workflow run <workflow-id|slug|name> [--json JSON | --input file | --stdin | --set key=value] [--idempotency-key key] [--wait] [--timeout 60s] [--output table|json]
   goflow execution get <execution-id> [--output table|json]
   goflow execution watch <execution-id> [--timeout 60s] [--interval 1s] [--output table|json]
+  goflow mcp stdio
 
 Environment:
   GOFLOW_URL      Goflow server URL, default http://127.0.0.1:8080
@@ -79,6 +84,35 @@ Environment:
 
 PowerShell tip:
   Prefer --set or --input payload.json. Inline --json quoting can be fragile on Windows PowerShell.`)
+}
+
+func (r Runner) mcp(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(r.Stderr, "mcp subcommand is required")
+		return ExitInvalidInput
+	}
+	switch args[0] {
+	case "stdio":
+		fs := flag.NewFlagSet("mcp stdio", flag.ContinueOnError)
+		fs.SetOutput(r.Stderr)
+		clientOpts := addClientFlags(fs)
+		if err := fs.Parse(args[1:]); err != nil {
+			return ExitInvalidInput
+		}
+		opts := mcpserver.Options{BaseURL: *clientOpts.url, APIKey: *clientOpts.apiKey}
+		if err := mcpserver.ValidateOptions(opts); err != nil {
+			fmt.Fprintln(r.Stderr, err)
+			return ExitInvalidInput
+		}
+		if err := mcpserver.RunStdio(context.Background(), opts); err != nil {
+			fmt.Fprintln(r.Stderr, err)
+			return ExitExecutionFailed
+		}
+		return ExitOK
+	default:
+		fmt.Fprintf(r.Stderr, "unknown mcp subcommand: %s\n", args[0])
+		return ExitInvalidInput
+	}
 }
 
 func addClientFlags(fs *flag.FlagSet) clientOptions {

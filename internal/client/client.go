@@ -128,6 +128,17 @@ func (c *Client) GetExecution(id string) (*Execution, error) {
 	return &execution, nil
 }
 
+func (c *Client) ListExecutions(workflowID string) ([]Execution, error) {
+	var executions []Execution
+	if err := c.doJSON(http.MethodGet, "/api/v1/workflows/"+workflowID+"/executions", nil, &executions); err != nil {
+		return nil, err
+	}
+	if executions == nil {
+		executions = []Execution{}
+	}
+	return executions, nil
+}
+
 func (c *Client) doJSON(method, path string, in interface{}, out interface{}) error {
 	var body io.Reader
 	if in != nil {

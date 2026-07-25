@@ -18,6 +18,7 @@ All notable changes to Goflow are tracked here.
 - Commercial strategy and trademark guidance in `COMMERCIAL.md` and `TRADEMARK.md`.
 - CLI alpha commands for status, workflow list/describe/run, and execution get/watch.
 - Shared TriggerService foundation for API, webhook, cron, CLI, and future MCP trigger paths.
+- MCP stdio alpha with static workflow and execution tools backed by the REST client.
 - GitHub Actions CI for backend tests, frontend build, vet, and cross-platform binary builds.
 - Ready-to-import workflow templates for AI triage, uptime incident response, release smoke tests, weather alerts, GitHub monitoring, and stress tests.
 
