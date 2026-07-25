@@ -265,7 +265,27 @@ By default, Goflow binds to `127.0.0.1:8080` and does not require a password on 
 - On Windows / Linux / macOS:
   ```bash
   ./goflow.exe
-  ```
+```
+
+### 5. CLI Alpha
+
+The same `goflow` binary also includes an early CLI. The CLI calls the running Goflow REST API; it does not open SQLite directly.
+
+```bash
+goflow status
+goflow workflow list
+goflow workflow describe <workflow-id-or-slug>
+goflow workflow run <workflow-id-or-slug> --json '{"source":"cli"}' --wait
+goflow execution get <execution-id>
+goflow execution watch <execution-id>
+```
+
+Use `GOFLOW_URL` and `GOFLOW_API_KEY` for remote or protected instances:
+
+```bash
+GOFLOW_URL=http://127.0.0.1:8080
+GOFLOW_API_KEY=your-api-key
+```
 
 #### Option B: Running with API Key Authentication (Secure Mode)
 In this mode, Goflow requires clients and the Web UI to authenticate. The browser will prompt for the API key on your first API request:

@@ -13,6 +13,7 @@ import (
 
 	"goflow/config"
 	"goflow/internal/api"
+	"goflow/internal/cli"
 	"goflow/internal/crypto"
 	"goflow/internal/engine"
 	"goflow/internal/nodes"
@@ -22,6 +23,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] != "serve" {
+		os.Exit(cli.Run(os.Args[1:], os.Stdout, os.Stderr))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "serve" {
+		os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
+	}
+
 	log.Println("==================================================")
 	log.Println("[INFO] Starting Goflow Workflow Automation Engine...")
 	log.Println("==================================================")
