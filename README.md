@@ -211,6 +211,7 @@ d:/build2026/Goflow/
 * **Backup and Restore Guide**: See [BACKUP.md](BACKUP.md) for protecting the SQLite database, credential master key, environment variables, and workflow exports.
 * **Roadmap**: See [ROADMAP.md](ROADMAP.md) for the current product direction and commercial/community boundary.
 * **CLI and MCP Roadmap**: See [CLI_MCP_ROADMAP.md](CLI_MCP_ROADMAP.md) for the proposed CLI and MCP expansion plan.
+* **Roadmap Progress**: See [ROADMAP_PROGRESS.md](ROADMAP_PROGRESS.md) for the current implementation timeline and checklist.
 * **Release Guide**: See [RELEASE.md](RELEASE.md) and [CHANGELOG.md](CHANGELOG.md) for packaging and release notes.
 * **Commercial and Trademark Guidance**: See [COMMERCIAL.md](COMMERCIAL.md) and [TRADEMARK.md](TRADEMARK.md) for the open-core direction and branding boundaries.
 * **Ready-to-use Templates**: Find pre-configured workflows in the [templates/](templates/) directory. You can easily import them using the "Import" button in the Web UI:
@@ -278,6 +279,28 @@ goflow workflow describe <workflow-id-or-slug>
 goflow workflow run <workflow-id-or-slug> --json '{"source":"cli"}' --wait
 goflow execution get <execution-id>
 goflow execution watch <execution-id>
+```
+
+On Windows PowerShell, prefer `--set` or `--input` because inline JSON quoting can be fragile:
+
+```powershell
+.\goflow.exe workflow run <workflow-id-or-slug> `
+  --set source=cli `
+  --set date=2026-07-25 `
+  --wait
+```
+
+Or use a JSON file:
+
+```powershell
+@'
+{
+  "source": "cli",
+  "date": "2026-07-25"
+}
+'@ | Set-Content payload.json
+
+.\goflow.exe workflow run <workflow-id-or-slug> --input payload.json --wait
 ```
 
 Use `GOFLOW_URL` and `GOFLOW_API_KEY` for remote or protected instances:

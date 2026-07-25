@@ -64,7 +64,7 @@ Goal: let advanced users extend Goflow without changing the core binary.
 - Optional node packs for domain-specific integrations.
 - Security model for trusted plugin directories and signed plugin metadata.
 
-See `CLI_MCP_ROADMAP.md` for the deeper plan to expose Goflow workflows through a CLI and MCP-compatible AI tool interface.
+See `CLI_MCP_ROADMAP.md` for the deeper plan to expose Goflow workflows through a CLI and MCP-compatible AI tool interface. See `ROADMAP_PROGRESS.md` for the current implementation timeline and checklist.
 
 ## Phase 4: Team and Pro Foundations
 

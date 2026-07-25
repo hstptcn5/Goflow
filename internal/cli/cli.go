@@ -75,7 +75,10 @@ Usage:
 
 Environment:
   GOFLOW_URL      Goflow server URL, default http://127.0.0.1:8080
-  GOFLOW_API_KEY  Optional API key for secured instances`)
+  GOFLOW_API_KEY  Optional API key for secured instances
+
+PowerShell tip:
+  Prefer --set or --input payload.json. Inline --json quoting can be fragile on Windows PowerShell.`)
 }
 
 func addClientFlags(fs *flag.FlagSet) clientOptions {

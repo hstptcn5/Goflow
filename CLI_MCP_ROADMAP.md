@@ -4,6 +4,8 @@ This document describes a proposed expansion of Goflow into a CLI-controllable a
 
 The direction is feasible, but it should be delivered in small preview releases. CLI and MCP should not create a second runtime path; they should call the same REST/application services used by the Web UI, webhooks, and cron.
 
+Current implementation progress is tracked in `ROADMAP_PROGRESS.md`.
+
 ## Product Goal
 
 After this expansion, Goflow should support four usage interfaces:

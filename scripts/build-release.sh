@@ -34,7 +34,7 @@ go test ./...
 go vet ./...
 GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$stage/goflow$ext" main.go static_embed.go
 
-cp README.md NODES.md PLUGINS.md BACKUP.md ROADMAP.md CLI_MCP_ROADMAP.md CHANGELOG.md COMMERCIAL.md TRADEMARK.md LICENSE VERSION "$stage/"
+cp README.md NODES.md PLUGINS.md BACKUP.md ROADMAP.md CLI_MCP_ROADMAP.md ROADMAP_PROGRESS.md CHANGELOG.md COMMERCIAL.md TRADEMARK.md LICENSE VERSION "$stage/"
 cp -R plugins "$stage/"
 cp -R templates "$stage/"
 
