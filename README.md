@@ -336,6 +336,28 @@ GOFLOW_API_KEY=your-api-key
 
 The stdio transport writes MCP protocol messages to stdout. Diagnostic logs should go to stderr.
 
+MCP smoke test:
+
+```bash
+node scripts/mcp-smoke-test.mjs --url http://127.0.0.1:8080
+```
+
+If the Goflow server is not running yet, test only the MCP stdio handshake and tool registration:
+
+```bash
+node scripts/mcp-smoke-test.mjs --tools-only
+```
+
+To also run a workflow through MCP, pass a workflow ID, slug, or exact name:
+
+```bash
+node scripts/mcp-smoke-test.mjs \
+  --url http://127.0.0.1:8080 \
+  --workflow prepare-daily-report \
+  --input '{"date":"2026-07-25"}' \
+  --idempotency-key mcp-smoke-2026-07-25
+```
+
 #### Option B: Running with API Key Authentication (Secure Mode)
 In this mode, Goflow requires clients and the Web UI to authenticate. The browser will prompt for the API key on your first API request:
 - On Windows PowerShell:

@@ -14,13 +14,12 @@ timeline
       Execution API : Async returns execution_id, idempotency, trigger source/principal
       Hardening : Secret redaction in execution logs/events
       CLI Alpha Start : status, workflow list/describe/run, execution get/watch
+      MCP stdio Alpha : Static MCP tools over REST client and smoke test script
 
     section Current
-      CLI Alpha Validation : Test workflow run/watch from CLI on real workflows
-      CLI Polish : Better output, docs, Windows/Linux packaging checks
+      Workflow Interfaces : MCP allowlist API/UI and dynamic workflow tool mapping
 
     section Next
-      MCP stdio Alpha : Static MCP tools over REST client
       Dynamic MCP Tools : Expose selected workflows as AI tools
       Concurrency Hardening : MCP inflight limits, node concurrency, sub-workflow slot fix
       Cancellation : Cancel endpoint, CLI cancel, MCP cancel
@@ -33,7 +32,7 @@ timeline
 | :--- | :--- | :--- |
 | `v0.2.0-foundation-preview` | Migration, execution metadata, async execution ID, idempotency | Mostly complete and tested manually |
 | `v0.3.0-cli-alpha` | CLI status/list/describe/run/get/watch | Initial implementation complete; needs more real-workflow testing |
-| `v0.4.0-mcp-stdio-alpha` | MCP stdio static tools | Not started |
+| `v0.4.0-mcp-stdio-alpha` | MCP stdio static tools | Initial implementation complete; smoke script added |
 | `v0.5.0-mcp-dynamic-preview` | Workflow MCP exposure, dynamic tools, input schema validation | Not started |
 | Hardening | Concurrency, cancellation, scoped token, audit | Secret redaction complete; other items pending |
 | Streamable HTTP MCP | `/mcp` HTTP transport | Deferred |
@@ -50,6 +49,7 @@ timeline
 [x] CLI status/list/describe/run/get/watch initial implementation
 [x] TriggerService service layer
 [x] MCP stdio static tools
+[x] MCP client smoke test script
 [ ] Workflow MCP allowlist UI/API
 [ ] Global/per-client MCP concurrency
 ```
@@ -68,24 +68,23 @@ gantt
     Secret redaction               :done, f3, 2026-07-25, 1d
     CLI alpha implementation       :done, cli1, 2026-07-25, 1d
     TriggerService extraction      :done, svc1, 2026-07-26, 1d
+    MCP stdio static tools         :done, mcp1, 2026-07-26, 1d
+    MCP smoke test script          :done, mcp2, 2026-07-26, 1d
 
     section Now
-    CLI alpha real testing         :active, cli2, 2026-07-26, 2d
-    CLI docs and release note      :cli3, after cli2, 1d
+    Workflow MCP allowlist API/UI  :active, mcp3, 2026-07-27, 4d
 
     section Next
-    MCP client smoke tests         :mcp2, after cli3, 2d
+    Dynamic MCP workflow tools     :mcp4, after mcp3, 5d
 
     section Later
-    Dynamic MCP workflow tools     :mcp3, after mcp2, 5d
-    Interfaces UI                  :ui1, after mcp3, 4d
-    Concurrency hardening          :hard1, after ui1, 4d
+    Concurrency hardening          :hard1, after mcp4, 4d
     Cancellation API               :hard2, after hard1, 4d
 ```
 
 ## Next Priorities
 
-1. Test `goflow workflow run --wait` against real workflows.
-2. Add CLI import/export if workflow-as-code becomes the immediate focus.
-3. Smoke test `goflow mcp stdio` from an MCP client.
-4. Add workflow MCP allowlist API/UI before dynamic tools.
+1. Run `node scripts/mcp-smoke-test.mjs --workflow <workflow>` against a real workflow before release.
+2. Add workflow MCP allowlist API/UI before dynamic tools.
+3. Add dynamic MCP workflow tools for explicitly exposed workflows.
+4. Add per-client MCP concurrency limits.
