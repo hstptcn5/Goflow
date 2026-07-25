@@ -210,6 +210,7 @@ d:/build2026/Goflow/
 * **Plugin Guide**: See [PLUGINS.md](PLUGINS.md) for the plugin stdin/stdout contract, security notes, and sample plugin ideas.
 * **Backup and Restore Guide**: See [BACKUP.md](BACKUP.md) for protecting the SQLite database, credential master key, environment variables, and workflow exports.
 * **Roadmap**: See [ROADMAP.md](ROADMAP.md) for the current product direction and commercial/community boundary.
+* **CLI and MCP Roadmap**: See [CLI_MCP_ROADMAP.md](CLI_MCP_ROADMAP.md) for the proposed CLI and MCP expansion plan.
 * **Release Guide**: See [RELEASE.md](RELEASE.md) and [CHANGELOG.md](CHANGELOG.md) for packaging and release notes.
 * **Commercial and Trademark Guidance**: See [COMMERCIAL.md](COMMERCIAL.md) and [TRADEMARK.md](TRADEMARK.md) for the open-core direction and branding boundaries.
 * **Ready-to-use Templates**: Find pre-configured workflows in the [templates/](templates/) directory. You can easily import them using the "Import" button in the Web UI:

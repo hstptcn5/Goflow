@@ -74,6 +74,9 @@ func TestExecuteWorkflowConcurrencyLimit(t *testing.T) {
 		NodesJSON: string(nodesJSON),
 		EdgesJSON: "[]",
 	}
+	if err := wfStore.Create(wf); err != nil {
+		t.Fatalf("failed to create workflow in DB: %v", err)
+	}
 
 	if err := eng.ExecuteWorkflowAsync(wf, nil); err != nil {
 		t.Fatalf("first async execution should start: %v", err)

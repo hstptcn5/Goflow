@@ -47,6 +47,7 @@ Thumbs.db
 *.out
 *.test
 coverage.txt
+.gocache/
 release/
 
 # Exported Workflow JSON Test Files

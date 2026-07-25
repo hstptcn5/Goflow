@@ -31,7 +31,7 @@ go test ./...
 go vet ./...
 go build -trimpath -ldflags="-s -w" -o (Join-Path $stage "goflow.exe") main.go static_embed.go
 
-Copy-Item README.md, NODES.md, PLUGINS.md, BACKUP.md, ROADMAP.md, CHANGELOG.md, COMMERCIAL.md, TRADEMARK.md, LICENSE, VERSION -Destination $stage
+Copy-Item README.md, NODES.md, PLUGINS.md, BACKUP.md, ROADMAP.md, CLI_MCP_ROADMAP.md, CHANGELOG.md, COMMERCIAL.md, TRADEMARK.md, LICENSE, VERSION -Destination $stage
 Copy-Item plugins -Destination $stage -Recurse
 Copy-Item templates -Destination $stage -Recurse
 

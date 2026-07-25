@@ -68,6 +68,7 @@ func NewRouter(
 		r.Delete("/workflows/{id}", wfHandler.DeleteWorkflow)
 		r.Put("/workflows/{id}/toggle", wfHandler.ToggleActive)
 		r.Post("/workflows/{id}/trigger", wfHandler.TriggerWorkflow)
+		r.Post("/workflows/{id}/executions", wfHandler.CreateExecution)
 
 		r.Get("/executions/{id}", execHandler.GetExecution)
 		r.Get("/workflows/{workflowId}/executions", execHandler.ListWorkflowExecutions)

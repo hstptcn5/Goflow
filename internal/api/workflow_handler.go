@@ -139,13 +139,18 @@ func (h *WorkflowHandler) TriggerWorkflow(w http.ResponseWriter, r *http.Request
 		_ = json.NewDecoder(r.Body).Decode(&payload)
 	}
 
-	// Thực thi async hoặc sync dựa trên query param `async=true`
 	if r.URL.Query().Get("async") == "true" {
-		if err := h.engine.ExecuteWorkflowAsync(wf, payload); err != nil {
+		exec, deduplicated, err := h.engine.StartWorkflowAsync(wf, payload, engine.TriggerOptions{
+			Source:         "api",
+			Principal:      requestPrincipal(r),
+			RequestID:      r.Header.Get("X-Request-ID"),
+			IdempotencyKey: r.Header.Get("Idempotency-Key"),
+		})
+		if err != nil {
 			writeExecutionError(w, err)
 			return
 		}
-		renderJSON(w, http.StatusAccepted, map[string]string{"message": "Workflow triggered in background"})
+		renderJSON(w, http.StatusAccepted, executionAcceptedResponse(exec, deduplicated))
 		return
 	}
 
@@ -156,6 +161,47 @@ func (h *WorkflowHandler) TriggerWorkflow(w http.ResponseWriter, r *http.Request
 	}
 
 	renderJSON(w, http.StatusOK, exec)
+}
+
+func (h *WorkflowHandler) CreateExecution(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	wf, err := h.wfStore.GetByID(id)
+	if err != nil {
+		http.Error(w, "Workflow not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Input          interface{} `json:"input"`
+		Mode           string      `json:"mode"`
+		IdempotencyKey string      `json:"idempotency_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Mode == "" {
+		req.Mode = "async"
+	}
+	if req.Mode != "async" {
+		http.Error(w, "Only async mode is supported by this endpoint", http.StatusBadRequest)
+		return
+	}
+	if req.IdempotencyKey == "" {
+		req.IdempotencyKey = r.Header.Get("Idempotency-Key")
+	}
+
+	exec, deduplicated, err := h.engine.StartWorkflowAsync(wf, req.Input, engine.TriggerOptions{
+		Source:         "api",
+		Principal:      requestPrincipal(r),
+		RequestID:      r.Header.Get("X-Request-ID"),
+		IdempotencyKey: req.IdempotencyKey,
+	})
+	if err != nil {
+		writeExecutionError(w, err)
+		return
+	}
+	renderJSON(w, http.StatusAccepted, executionAcceptedResponse(exec, deduplicated))
 }
 
 func (h *WorkflowHandler) TriggerWebhook(w http.ResponseWriter, r *http.Request) {
@@ -227,11 +273,17 @@ func (h *WorkflowHandler) TriggerWebhook(w http.ResponseWriter, r *http.Request)
 	}
 
 	if r.URL.Query().Get("async") == "true" {
-		if err := h.engine.ExecuteWorkflowAsync(wf, payload); err != nil {
+		exec, deduplicated, err := h.engine.StartWorkflowAsync(wf, payload, engine.TriggerOptions{
+			Source:         "webhook",
+			Principal:      r.RemoteAddr,
+			RequestID:      r.Header.Get("X-Request-ID"),
+			IdempotencyKey: r.Header.Get("Idempotency-Key"),
+		})
+		if err != nil {
 			writeExecutionError(w, err)
 			return
 		}
-		renderJSON(w, http.StatusAccepted, map[string]string{"message": "Workflow triggered in background"})
+		renderJSON(w, http.StatusAccepted, executionAcceptedResponse(exec, deduplicated))
 		return
 	}
 
@@ -241,6 +293,22 @@ func (h *WorkflowHandler) TriggerWebhook(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	renderJSON(w, http.StatusOK, exec)
+}
+
+func executionAcceptedResponse(exec *storage.Execution, deduplicated bool) map[string]interface{} {
+	return map[string]interface{}{
+		"execution_id": exec.ID,
+		"workflow_id":  exec.WorkflowID,
+		"status":       exec.Status,
+		"deduplicated": deduplicated,
+	}
+}
+
+func requestPrincipal(r *http.Request) string {
+	if value := r.Header.Get("X-Goflow-Principal"); value != "" {
+		return value
+	}
+	return r.RemoteAddr
 }
 
 func writeExecutionError(w http.ResponseWriter, err error) {

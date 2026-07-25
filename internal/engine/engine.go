@@ -18,6 +18,13 @@ import (
 
 var ErrConcurrencyLimit = errors.New("execution concurrency limit reached")
 
+type TriggerOptions struct {
+	Source         string
+	Principal      string
+	RequestID      string
+	IdempotencyKey string
+}
+
 type NodeLog struct {
 	NodeID     string      `json:"node_id"`
 	Status     string      `json:"status"` // 'RUNNING', 'SUCCESS', 'FAILED'
@@ -75,20 +82,39 @@ func (e *Engine) ExecuteWorkflow(wf *storage.Workflow, triggerPayload interface{
 	}
 	defer release()
 
-	return e.executeWorkflow(wf, triggerPayload)
+	return e.executeWorkflow(wf, triggerPayload, nil)
 }
 
 func (e *Engine) ExecuteWorkflowAsync(wf *storage.Workflow, triggerPayload interface{}) error {
+	_, _, err := e.StartWorkflowAsync(wf, triggerPayload, TriggerOptions{})
+	return err
+}
+
+func (e *Engine) StartWorkflowAsync(wf *storage.Workflow, triggerPayload interface{}, opts TriggerOptions) (*storage.Execution, bool, error) {
+	if opts.IdempotencyKey != "" {
+		if existing, err := e.executionStore.GetByIdempotencyKey(wf.ID, opts.IdempotencyKey); err == nil {
+			return existing, true, nil
+		}
+	}
+
 	release, err := e.acquireExecutionSlot()
 	if err != nil {
-		return err
+		return nil, false, err
+	}
+
+	execRecord, err := e.createExecutionRecord(wf, triggerPayload, opts)
+	if err != nil {
+		release()
+		return nil, false, err
 	}
 
 	go func() {
 		defer release()
-		_, _ = e.executeWorkflow(wf, triggerPayload)
+		if _, err := e.executeWorkflow(wf, triggerPayload, execRecord); err != nil {
+			_ = e.executionStore.UpdateStatusWithError(execRecord.ID, "FAILED", 0, execRecord.LogsJSON, err.Error())
+		}
 	}()
-	return nil
+	return execRecord, false, nil
 }
 
 func (e *Engine) acquireExecutionSlot() (func(), error) {
@@ -103,7 +129,34 @@ func (e *Engine) acquireExecutionSlot() (func(), error) {
 	}
 }
 
-func (e *Engine) executeWorkflow(wf *storage.Workflow, triggerPayload interface{}) (*storage.Execution, error) {
+func (e *Engine) createExecutionRecord(wf *storage.Workflow, triggerPayload interface{}, opts TriggerOptions) (*storage.Execution, error) {
+	executionID := uuid.New().String()
+	inputJSON := ""
+	if triggerPayload != nil {
+		if data, err := json.Marshal(triggerPayload); err == nil {
+			inputJSON = string(data)
+		}
+	}
+	execRecord := &storage.Execution{
+		ID:               executionID,
+		WorkflowID:       wf.ID,
+		Status:           "RUNNING",
+		StartedAt:        time.Now(),
+		LogsJSON:         "[]",
+		TriggerSource:    opts.Source,
+		TriggerPrincipal: opts.Principal,
+		RequestID:        opts.RequestID,
+		IdempotencyKey:   opts.IdempotencyKey,
+		InputJSON:        inputJSON,
+	}
+
+	if err := e.executionStore.Create(execRecord); err != nil {
+		return nil, fmt.Errorf("failed to record execution in DB: %w", err)
+	}
+	return execRecord, nil
+}
+
+func (e *Engine) executeWorkflow(wf *storage.Workflow, triggerPayload interface{}, execRecord *storage.Execution) (*storage.Execution, error) {
 	var nodeList []nodes.Node
 	if err := json.Unmarshal([]byte(wf.NodesJSON), &nodeList); err != nil {
 		return nil, fmt.Errorf("invalid workflow nodes_json: %w", err)
@@ -123,20 +176,16 @@ func (e *Engine) executeWorkflow(wf *storage.Workflow, triggerPayload interface{
 		return nil, fmt.Errorf("failed to build DAG plan: %w", err)
 	}
 
-	executionID := uuid.New().String()
-	execRecord := &storage.Execution{
-		ID:         executionID,
-		WorkflowID: wf.ID,
-		Status:     "RUNNING",
-		StartedAt:  time.Now(),
-		LogsJSON:   "[]",
+	if execRecord == nil {
+		var err error
+		execRecord, err = e.createExecutionRecord(wf, triggerPayload, TriggerOptions{})
+		if err != nil {
+			return nil, err
+		}
 	}
+	executionID := execRecord.ID
 
-	if err := e.executionStore.Create(execRecord); err != nil {
-		return nil, fmt.Errorf("failed to record execution in DB: %w", err)
-	}
-
-	ctx := nodes.NewExecutionContext(wf.ID, executionID)
+	ctx := nodes.NewExecutionContext(wf.ID, execRecord.ID)
 	ctx.RefreshCredential = func(credID string) (string, error) {
 		cred, err := e.credStore.GetByID(credID)
 		if err != nil {
@@ -336,7 +385,7 @@ schedulerLoop:
 						Status:     "FAILED",
 						DurationMs: durationMs,
 						Attempts:   1,
-						Error:      errStr,
+						Error:      redactSensitiveString(errStr),
 					})
 					nodeStates[nodeID] = StateFailed
 					hasFailed = true
@@ -364,7 +413,7 @@ schedulerLoop:
 						NodeID:      nodeID,
 						Status:      "FAILED",
 						Timestamp:   time.Now(),
-						Error:       errStr,
+						Error:       redactSensitiveString(errStr),
 						DurationMs:  durationMs,
 					})
 					return
@@ -415,12 +464,13 @@ schedulerLoop:
 
 				if lastErr != nil {
 					log.Printf("[Engine] Node %s (%s) FAILED after %d attempts: %v", nodeID, nodeObj.Name, attemptsUsed, lastErr)
+					redactedErr := redactError(lastErr)
 					nodeLogs = append(nodeLogs, NodeLog{
 						NodeID:     nodeID,
 						Status:     "FAILED",
 						DurationMs: durationMs,
 						Attempts:   attemptsUsed,
-						Error:      lastErr.Error(),
+						Error:      redactedErr,
 					})
 					nodeStates[nodeID] = StateFailed
 					hasFailed = true
@@ -443,17 +493,18 @@ schedulerLoop:
 						NodeID:      nodeID,
 						Status:      "FAILED",
 						Timestamp:   time.Now(),
-						Error:       lastErr.Error(),
+						Error:       redactedErr,
 						DurationMs:  durationMs,
 					})
 				} else {
 					ctx.SetOutput(nodeID, output)
+					redactedOutput := redactSensitive(output)
 					nodeLogs = append(nodeLogs, NodeLog{
 						NodeID:     nodeID,
 						Status:     "SUCCESS",
 						DurationMs: durationMs,
 						Attempts:   attemptsUsed,
-						Output:     output,
+						Output:     redactedOutput,
 					})
 					nodeStates[nodeID] = StateSuccess
 
@@ -498,7 +549,7 @@ schedulerLoop:
 						NodeID:      nodeID,
 						Status:      "SUCCESS",
 						Timestamp:   time.Now(),
-						Payload:     output,
+						Payload:     redactedOutput,
 						DurationMs:  durationMs,
 					})
 				}
@@ -510,16 +561,24 @@ schedulerLoop:
 
 	totalDuration := time.Since(startTime).Milliseconds()
 	finalStatus := "SUCCESS"
+	errorMessage := ""
 	if hasFailed {
 		finalStatus = "FAILED"
+		for _, item := range nodeLogs {
+			if item.Error != "" {
+				errorMessage = item.Error
+				break
+			}
+		}
 	}
 
 	logsJSONBytes, _ := json.Marshal(nodeLogs)
-	_ = e.executionStore.UpdateStatus(executionID, finalStatus, totalDuration, string(logsJSONBytes))
+	_ = e.executionStore.UpdateStatusWithError(executionID, finalStatus, totalDuration, string(logsJSONBytes), errorMessage)
 
 	execRecord.Status = finalStatus
 	execRecord.DurationMs = totalDuration
 	execRecord.LogsJSON = string(logsJSONBytes)
+	execRecord.ErrorMessage = errorMessage
 
 	return execRecord, nil
 }

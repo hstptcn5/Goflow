@@ -43,6 +43,7 @@ This guide describes how to prepare a Goflow preview release.
    - `PLUGINS.md`
    - `BACKUP.md`
    - `ROADMAP.md`
+   - `CLI_MCP_ROADMAP.md`
    - `CHANGELOG.md`
    - `COMMERCIAL.md`
    - `TRADEMARK.md`

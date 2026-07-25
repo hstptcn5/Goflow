@@ -66,6 +66,54 @@ func TestExecutionStoreCleanup(t *testing.T) {
 	}
 }
 
+func TestMigrationsAddWorkflowAndExecutionMetadata(t *testing.T) {
+	db := newTestDB(t)
+
+	workflowColumns := mustTableColumns(t, db, "workflows")
+	for _, col := range []string{"slug", "input_schema_json", "output_schema_json", "expose_cli", "expose_mcp", "mcp_tool_name", "risk_level", "requires_approval"} {
+		if !workflowColumns[col] {
+			t.Fatalf("expected workflows.%s column", col)
+		}
+	}
+
+	executionColumns := mustTableColumns(t, db, "executions")
+	for _, col := range []string{"trigger_source", "trigger_principal", "request_id", "idempotency_key", "input_json", "error_message", "cancelled_at"} {
+		if !executionColumns[col] {
+			t.Fatalf("expected executions.%s column", col)
+		}
+	}
+}
+
+func TestExecutionStoreIdempotencyLookup(t *testing.T) {
+	db := newTestDB(t)
+	insertWorkflowForTest(t, db, "wf-1")
+	store := NewExecutionStore(db)
+
+	exec := &Execution{
+		ID:             "exec-idem",
+		WorkflowID:     "wf-1",
+		Status:         "RUNNING",
+		LogsJSON:       "[]",
+		IdempotencyKey: "daily-2026-07-25",
+		TriggerSource:  "api",
+		InputJSON:      `{"date":"2026-07-25"}`,
+	}
+	if err := store.Create(exec); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	got, err := store.GetByIdempotencyKey("wf-1", "daily-2026-07-25")
+	if err != nil {
+		t.Fatalf("GetByIdempotencyKey failed: %v", err)
+	}
+	if got.ID != exec.ID {
+		t.Fatalf("expected %s, got %s", exec.ID, got.ID)
+	}
+	if got.TriggerSource != "api" || got.InputJSON == "" {
+		t.Fatalf("metadata was not persisted: %+v", got)
+	}
+}
+
 func newTestDB(t *testing.T) *DB {
 	t.Helper()
 	db, err := NewDB(filepath.Join(t.TempDir(), "goflow.db"))
@@ -96,4 +144,27 @@ func insertWorkflowForTest(t *testing.T, db *DB, id string) {
 	if err != nil {
 		t.Fatalf("insert workflow failed: %v", err)
 	}
+}
+
+func mustTableColumns(t *testing.T, db *DB, table string) map[string]bool {
+	t.Helper()
+	rows, err := db.WriteDB.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		t.Fatalf("table_info failed: %v", err)
+	}
+	defer rows.Close()
+
+	cols := make(map[string]bool)
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull int
+		var defaultValue interface{}
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultValue, &pk); err != nil {
+			t.Fatalf("scan table_info failed: %v", err)
+		}
+		cols[name] = true
+	}
+	return cols
 }
