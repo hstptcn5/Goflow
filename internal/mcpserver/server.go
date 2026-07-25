@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"goflow/internal/client"
@@ -12,17 +13,23 @@ import (
 )
 
 type Options struct {
-	BaseURL string
-	APIKey  string
+	BaseURL     string
+	APIKey      string
+	MaxInflight int
 }
 
 type Server struct {
-	client *client.Client
+	client      *client.Client
+	runInflight chan struct{}
 }
 
 func New(opts Options) *Server {
+	if opts.MaxInflight <= 0 {
+		opts.MaxInflight = 2
+	}
 	return &Server{
-		client: client.New(opts.BaseURL, opts.APIKey),
+		client:      client.New(opts.BaseURL, opts.APIKey),
+		runInflight: make(chan struct{}, opts.MaxInflight),
 	}
 }
 
@@ -123,6 +130,12 @@ type runWorkflowOutput struct {
 }
 
 func (s *Server) runWorkflow(ctx context.Context, req *mcp.CallToolRequest, input runWorkflowInput) (*mcp.CallToolResult, runWorkflowOutput, error) {
+	release, err := s.acquireRunSlot(ctx)
+	if err != nil {
+		return nil, runWorkflowOutput{}, err
+	}
+	defer release()
+
 	workflow, err := s.resolveAllowedWorkflow(input.Workflow)
 	if err != nil {
 		return nil, runWorkflowOutput{}, err
@@ -195,6 +208,17 @@ func (s *Server) resolveAllowedWorkflow(ref string) (*client.Workflow, error) {
 	return workflow, nil
 }
 
+func (s *Server) acquireRunSlot(ctx context.Context) (func(), error) {
+	select {
+	case s.runInflight <- struct{}{}:
+		return func() { <-s.runInflight }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		return nil, fmt.Errorf("MCP per-client inflight limit reached")
+	}
+}
+
 func readVersion() string {
 	data, err := os.ReadFile("VERSION")
 	if err != nil {
@@ -209,8 +233,9 @@ func readVersion() string {
 
 func OptionsFromEnv() Options {
 	return Options{
-		BaseURL: envDefault("GOFLOW_URL", "http://127.0.0.1:8080"),
-		APIKey:  os.Getenv("GOFLOW_API_KEY"),
+		BaseURL:     envDefault("GOFLOW_URL", "http://127.0.0.1:8080"),
+		APIKey:      os.Getenv("GOFLOW_API_KEY"),
+		MaxInflight: envInt("GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT", 2),
 	}
 }
 
@@ -225,5 +250,20 @@ func ValidateOptions(opts Options) error {
 	if strings.TrimSpace(opts.BaseURL) == "" {
 		return fmt.Errorf("GOFLOW_URL is required")
 	}
+	if opts.MaxInflight < 0 {
+		return fmt.Errorf("GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT cannot be negative")
+	}
 	return nil
+}
+
+func envInt(name string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return fallback
+	}
+	return value
 }

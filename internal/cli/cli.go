@@ -99,7 +99,9 @@ func (r Runner) mcp(args []string) int {
 		if err := fs.Parse(args[1:]); err != nil {
 			return ExitInvalidInput
 		}
-		opts := mcpserver.Options{BaseURL: *clientOpts.url, APIKey: *clientOpts.apiKey}
+		opts := mcpserver.OptionsFromEnv()
+		opts.BaseURL = *clientOpts.url
+		opts.APIKey = *clientOpts.apiKey
 		if err := mcpserver.ValidateOptions(opts); err != nil {
 			fmt.Fprintln(r.Stderr, err)
 			return ExitInvalidInput

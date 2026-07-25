@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"goflow/internal/client"
@@ -43,6 +44,28 @@ func TestResolveAllowedWorkflowRejectsApprovalWorkflow(t *testing.T) {
 
 	if _, err := server.resolveAllowedWorkflow("approval"); err == nil {
 		t.Fatalf("expected approval workflow to be rejected")
+	}
+}
+
+func TestRunWorkflowRejectsWhenPerClientInflightLimitReached(t *testing.T) {
+	server := New(Options{BaseURL: "http://127.0.0.1:1", MaxInflight: 1})
+	server.runInflight <- struct{}{}
+
+	_, _, err := server.runWorkflow(context.Background(), nil, runWorkflowInput{Workflow: "anything"})
+	if err == nil {
+		t.Fatalf("expected inflight limit error")
+	}
+	if !strings.Contains(err.Error(), "inflight limit") {
+		t.Fatalf("expected inflight limit error, got %v", err)
+	}
+}
+
+func TestOptionsFromEnvReadsMCPInflightLimit(t *testing.T) {
+	t.Setenv("GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT", "7")
+
+	opts := OptionsFromEnv()
+	if opts.MaxInflight != 7 {
+		t.Fatalf("expected max inflight 7, got %d", opts.MaxInflight)
 	}
 }
 

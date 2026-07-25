@@ -390,6 +390,7 @@ Goflow includes conservative defaults for local/self-hosted use. Override them w
 | Variable | Default | Purpose |
 | :--- | :---: | :--- |
 | `GOFLOW_MAX_CONCURRENT_EXECUTIONS` | `10` | Maximum workflows executing at the same time. Returns HTTP 429 when full. |
+| `GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT` | `2` | Maximum concurrent MCP workflow run calls per stdio client process. |
 | `GOFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE` | `60` | Maximum webhook requests per minute per workflow/IP. Set `0` to disable. |
 | `GOFLOW_EXECUTION_RETENTION_DAYS` | `30` | Deletes execution records older than this many days. Set `0` to disable age cleanup. |
 | `GOFLOW_MAX_EXECUTIONS_PER_WORKFLOW` | `1000` | Keeps only the newest N executions per workflow. Set `0` to disable count cleanup. |

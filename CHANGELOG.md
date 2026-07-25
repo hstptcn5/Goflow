@@ -21,6 +21,7 @@ All notable changes to Goflow are tracked here.
 - MCP stdio alpha with static workflow and execution tools backed by the REST client.
 - MCP smoke test script for `tools/list`, `goflow_list_workflows`, and optional workflow execution.
 - Workflow interface API/UI for MCP allowlisting and MCP bridge filtering.
+- Per-client MCP workflow run inflight limit through `GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT`.
 - GitHub Actions CI for backend tests, frontend build, vet, and cross-platform binary builds.
 - Ready-to-import workflow templates for AI triage, uptime incident response, release smoke tests, weather alerts, GitHub monitoring, and stress tests.
 
