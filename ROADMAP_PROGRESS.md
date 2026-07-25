@@ -48,7 +48,7 @@ timeline
 [x] Workflow input/output schema fields
 [x] Secret redaction in execution logs
 [x] CLI status/list/describe/run/get/watch initial implementation
-[ ] TriggerService service layer
+[x] TriggerService service layer
 [ ] MCP stdio static tools
 [ ] Workflow MCP allowlist UI/API
 [ ] Global/per-client MCP concurrency
@@ -67,14 +67,14 @@ gantt
     Idempotency + execution ID     :done, f2, 2026-07-23, 2d
     Secret redaction               :done, f3, 2026-07-25, 1d
     CLI alpha implementation       :done, cli1, 2026-07-25, 1d
+    TriggerService extraction      :done, svc1, 2026-07-26, 1d
 
     section Now
     CLI alpha real testing         :active, cli2, 2026-07-26, 2d
     CLI docs and release note      :cli3, after cli2, 1d
 
     section Next
-    TriggerService extraction      :svc1, after cli3, 2d
-    MCP stdio static tools         :mcp1, after svc1, 4d
+    MCP stdio static tools         :mcp1, after cli3, 4d
     MCP client smoke tests         :mcp2, after mcp1, 2d
 
     section Later
@@ -88,5 +88,5 @@ gantt
 
 1. Test `goflow workflow run --wait` against real workflows.
 2. Add CLI import/export if workflow-as-code becomes the immediate focus.
-3. Extract `TriggerService` before MCP work.
-4. Implement MCP stdio static tools.
+3. Implement MCP stdio static tools.
+4. Add workflow MCP allowlist API/UI before dynamic tools.

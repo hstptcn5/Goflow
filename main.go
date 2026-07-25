@@ -13,6 +13,7 @@ import (
 
 	"goflow/config"
 	"goflow/internal/api"
+	"goflow/internal/application"
 	"goflow/internal/cli"
 	"goflow/internal/crypto"
 	"goflow/internal/engine"
@@ -97,6 +98,7 @@ func main() {
 	// 4. Initialize EventBus and DAG Execution Engine
 	eventBus := engine.NewEventBus()
 	eng := engine.NewEngine(registry, execStore, credStore, eventBus, wfStore, cfg.MaxConcurrentExecutions)
+	triggerService := application.NewTriggerService(wfStore, eng)
 
 	// 5. Initialize Cron Scheduler for Timed Triggers
 	cScheduler := cron.New()
@@ -198,7 +200,13 @@ func main() {
 							"triggered_at": time.Now().Format(time.RFC3339),
 							"schedule":     cronExprCopy,
 						}
-						_, err = eng.ExecuteWorkflow(latestWf, payload)
+						_, err = triggerService.Trigger(context.Background(), application.TriggerRequest{
+							WorkflowID: latestWf.ID,
+							Input:      payload,
+							Mode:       application.ModeSync,
+							Source:     application.SourceCron,
+							Principal:  "cron",
+						})
 						if err != nil {
 							log.Printf("[Cron] Error executing workflow %s: %v", wfIDCopy, err)
 						}

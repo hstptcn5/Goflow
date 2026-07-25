@@ -3,7 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"errors"
-	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -253,9 +253,7 @@ func TestSubWorkflowExecution(t *testing.T) {
 	actionExec := &mockAction{executed: executedMap}
 	_ = registry.Register(actionExec)
 
-	dbFile := "test_sub_wf.db"
-	_ = os.Remove(dbFile)
-	defer os.Remove(dbFile)
+	dbFile := filepath.Join(t.TempDir(), "test_sub_wf.db")
 
 	db, err := storage.NewDB(dbFile)
 	if err != nil {

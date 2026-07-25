@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"goflow/internal/application"
 	"goflow/internal/engine"
 	"goflow/internal/nodes"
 	"goflow/internal/storage"
@@ -18,14 +19,14 @@ import (
 
 type WorkflowHandler struct {
 	wfStore            *storage.WorkflowStore
-	engine             *engine.Engine
+	triggerService     *application.TriggerService
 	webhookRateLimiter *fixedWindowRateLimiter
 }
 
-func NewWorkflowHandler(ws *storage.WorkflowStore, eng *engine.Engine, webhookRateLimitPerMinute int) *WorkflowHandler {
+func NewWorkflowHandler(ws *storage.WorkflowStore, triggerService *application.TriggerService, webhookRateLimitPerMinute int) *WorkflowHandler {
 	return &WorkflowHandler{
 		wfStore:            ws,
-		engine:             eng,
+		triggerService:     triggerService,
 		webhookRateLimiter: newFixedWindowRateLimiter(webhookRateLimitPerMinute, time.Minute),
 	}
 }
@@ -128,19 +129,16 @@ func (h *WorkflowHandler) TriggerWorkflow(w http.ResponseWriter, r *http.Request
 	if id == "" {
 		id = chi.URLParam(r, "workflowId")
 	}
-	wf, err := h.wfStore.GetByID(id)
-	if err != nil {
-		http.Error(w, "Workflow not found", http.StatusNotFound)
-		return
-	}
-
 	var payload interface{}
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		_ = json.NewDecoder(r.Body).Decode(&payload)
 	}
 
 	if r.URL.Query().Get("async") == "true" {
-		exec, deduplicated, err := h.engine.StartWorkflowAsync(wf, payload, engine.TriggerOptions{
+		result, err := h.triggerService.Trigger(r.Context(), application.TriggerRequest{
+			WorkflowID:     id,
+			Input:          payload,
+			Mode:           application.ModeAsync,
 			Source:         "api",
 			Principal:      requestPrincipal(r),
 			RequestID:      r.Header.Get("X-Request-ID"),
@@ -150,27 +148,28 @@ func (h *WorkflowHandler) TriggerWorkflow(w http.ResponseWriter, r *http.Request
 			writeExecutionError(w, err)
 			return
 		}
-		renderJSON(w, http.StatusAccepted, executionAcceptedResponse(exec, deduplicated))
+		renderJSON(w, http.StatusAccepted, executionAcceptedResponse(result))
 		return
 	}
 
-	exec, err := h.engine.ExecuteWorkflow(wf, payload)
+	result, err := h.triggerService.Trigger(r.Context(), application.TriggerRequest{
+		WorkflowID: id,
+		Input:      payload,
+		Mode:       application.ModeSync,
+		Source:     application.SourceAPI,
+		Principal:  requestPrincipal(r),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	})
 	if err != nil {
 		writeExecutionError(w, err)
 		return
 	}
 
-	renderJSON(w, http.StatusOK, exec)
+	renderJSON(w, http.StatusOK, result.Execution)
 }
 
 func (h *WorkflowHandler) CreateExecution(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	wf, err := h.wfStore.GetByID(id)
-	if err != nil {
-		http.Error(w, "Workflow not found", http.StatusNotFound)
-		return
-	}
-
 	var req struct {
 		Input          interface{} `json:"input"`
 		Mode           string      `json:"mode"`
@@ -191,8 +190,11 @@ func (h *WorkflowHandler) CreateExecution(w http.ResponseWriter, r *http.Request
 		req.IdempotencyKey = r.Header.Get("Idempotency-Key")
 	}
 
-	exec, deduplicated, err := h.engine.StartWorkflowAsync(wf, req.Input, engine.TriggerOptions{
-		Source:         "api",
+	result, err := h.triggerService.Trigger(r.Context(), application.TriggerRequest{
+		WorkflowID:     id,
+		Input:          req.Input,
+		Mode:           application.ModeAsync,
+		Source:         application.SourceAPI,
 		Principal:      requestPrincipal(r),
 		RequestID:      r.Header.Get("X-Request-ID"),
 		IdempotencyKey: req.IdempotencyKey,
@@ -201,7 +203,7 @@ func (h *WorkflowHandler) CreateExecution(w http.ResponseWriter, r *http.Request
 		writeExecutionError(w, err)
 		return
 	}
-	renderJSON(w, http.StatusAccepted, executionAcceptedResponse(exec, deduplicated))
+	renderJSON(w, http.StatusAccepted, executionAcceptedResponse(result))
 }
 
 func (h *WorkflowHandler) TriggerWebhook(w http.ResponseWriter, r *http.Request) {
@@ -273,8 +275,11 @@ func (h *WorkflowHandler) TriggerWebhook(w http.ResponseWriter, r *http.Request)
 	}
 
 	if r.URL.Query().Get("async") == "true" {
-		exec, deduplicated, err := h.engine.StartWorkflowAsync(wf, payload, engine.TriggerOptions{
-			Source:         "webhook",
+		result, err := h.triggerService.Trigger(r.Context(), application.TriggerRequest{
+			WorkflowID:     id,
+			Input:          payload,
+			Mode:           application.ModeAsync,
+			Source:         application.SourceWebhook,
 			Principal:      r.RemoteAddr,
 			RequestID:      r.Header.Get("X-Request-ID"),
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
@@ -283,24 +288,31 @@ func (h *WorkflowHandler) TriggerWebhook(w http.ResponseWriter, r *http.Request)
 			writeExecutionError(w, err)
 			return
 		}
-		renderJSON(w, http.StatusAccepted, executionAcceptedResponse(exec, deduplicated))
+		renderJSON(w, http.StatusAccepted, executionAcceptedResponse(result))
 		return
 	}
 
-	exec, err := h.engine.ExecuteWorkflow(wf, payload)
+	result, err := h.triggerService.Trigger(r.Context(), application.TriggerRequest{
+		WorkflowID: id,
+		Input:      payload,
+		Mode:       application.ModeSync,
+		Source:     application.SourceWebhook,
+		Principal:  r.RemoteAddr,
+		RequestID:  r.Header.Get("X-Request-ID"),
+	})
 	if err != nil {
 		writeExecutionError(w, err)
 		return
 	}
-	renderJSON(w, http.StatusOK, exec)
+	renderJSON(w, http.StatusOK, result.Execution)
 }
 
-func executionAcceptedResponse(exec *storage.Execution, deduplicated bool) map[string]interface{} {
+func executionAcceptedResponse(result *application.TriggerResult) map[string]interface{} {
 	return map[string]interface{}{
-		"execution_id": exec.ID,
-		"workflow_id":  exec.WorkflowID,
-		"status":       exec.Status,
-		"deduplicated": deduplicated,
+		"execution_id": result.Execution.ID,
+		"workflow_id":  result.Execution.WorkflowID,
+		"status":       result.Execution.Status,
+		"deduplicated": result.Deduplicated,
 	}
 }
 
@@ -314,6 +326,10 @@ func requestPrincipal(r *http.Request) string {
 func writeExecutionError(w http.ResponseWriter, err error) {
 	if errors.Is(err, engine.ErrConcurrencyLimit) {
 		http.Error(w, err.Error(), http.StatusTooManyRequests)
+		return
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "workflow not found") {
+		http.Error(w, "Workflow not found", http.StatusNotFound)
 		return
 	}
 	http.Error(w, err.Error(), http.StatusInternalServerError)

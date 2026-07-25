@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"goflow/internal/application"
 	"goflow/internal/engine"
 	"goflow/internal/nodes"
 	"goflow/internal/storage"
@@ -47,7 +48,8 @@ func NewRouter(
 		MaxAge:           300,
 	}))
 
-	wfHandler := NewWorkflowHandler(wfStore, eng, webhookRateLimitPerMinute)
+	triggerService := application.NewTriggerService(wfStore, eng)
+	wfHandler := NewWorkflowHandler(wfStore, triggerService, webhookRateLimitPerMinute)
 	execHandler := NewExecutionHandler(execStore)
 	credHandler := NewCredentialHandler(credStore)
 	nodeHandler := NewNodeHandler(registry)

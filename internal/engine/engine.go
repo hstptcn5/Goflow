@@ -76,13 +76,17 @@ const (
 )
 
 func (e *Engine) ExecuteWorkflow(wf *storage.Workflow, triggerPayload interface{}) (*storage.Execution, error) {
+	return e.ExecuteWorkflowWithOptions(wf, triggerPayload, TriggerOptions{})
+}
+
+func (e *Engine) ExecuteWorkflowWithOptions(wf *storage.Workflow, triggerPayload interface{}, opts TriggerOptions) (*storage.Execution, error) {
 	release, err := e.acquireExecutionSlot()
 	if err != nil {
 		return nil, err
 	}
 	defer release()
 
-	return e.executeWorkflow(wf, triggerPayload, nil)
+	return e.executeWorkflow(wf, triggerPayload, nil, opts)
 }
 
 func (e *Engine) ExecuteWorkflowAsync(wf *storage.Workflow, triggerPayload interface{}) error {
@@ -110,7 +114,7 @@ func (e *Engine) StartWorkflowAsync(wf *storage.Workflow, triggerPayload interfa
 
 	go func() {
 		defer release()
-		if _, err := e.executeWorkflow(wf, triggerPayload, execRecord); err != nil {
+		if _, err := e.executeWorkflow(wf, triggerPayload, execRecord, TriggerOptions{}); err != nil {
 			_ = e.executionStore.UpdateStatusWithError(execRecord.ID, "FAILED", 0, execRecord.LogsJSON, err.Error())
 		}
 	}()
@@ -156,7 +160,7 @@ func (e *Engine) createExecutionRecord(wf *storage.Workflow, triggerPayload inte
 	return execRecord, nil
 }
 
-func (e *Engine) executeWorkflow(wf *storage.Workflow, triggerPayload interface{}, execRecord *storage.Execution) (*storage.Execution, error) {
+func (e *Engine) executeWorkflow(wf *storage.Workflow, triggerPayload interface{}, execRecord *storage.Execution, opts TriggerOptions) (*storage.Execution, error) {
 	var nodeList []nodes.Node
 	if err := json.Unmarshal([]byte(wf.NodesJSON), &nodeList); err != nil {
 		return nil, fmt.Errorf("invalid workflow nodes_json: %w", err)
@@ -178,7 +182,7 @@ func (e *Engine) executeWorkflow(wf *storage.Workflow, triggerPayload interface{
 
 	if execRecord == nil {
 		var err error
-		execRecord, err = e.createExecutionRecord(wf, triggerPayload, TriggerOptions{})
+		execRecord, err = e.createExecutionRecord(wf, triggerPayload, opts)
 		if err != nil {
 			return nil, err
 		}
