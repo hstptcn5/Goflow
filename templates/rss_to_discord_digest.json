@@ -27,7 +27,7 @@
       "name": "Summarize Feed",
       "position": { "x": 640, "y": 180 },
       "params": {
-        "model": "deepseek-chat",
+        "model": "deepseek-v4-flash",
         "system_message": "You summarize RSS or XML feeds into short operational digests.",
         "prompt": "Summarize this feed in 5 bullets: {{fetch_feed.data}}",
         "temperature": "0.2",
@@ -54,4 +54,3 @@
     { "id": "e3", "source": "summarize_feed", "target": "post_discord" }
   ]
 }
-

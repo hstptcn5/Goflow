@@ -36,10 +36,10 @@ func resolveAIProvider(cred *storage.Credential, apiKey string) (string, string,
 	case "openai":
 		return "https://api.openai.com/v1/chat/completions", "gpt-4o", true
 	case "deepseek":
-		return "https://api.deepseek.com/v1/chat/completions", "deepseek-chat", true
+		return "https://api.deepseek.com/v1/chat/completions", "deepseek-v4-flash", true
 	case "api_key":
 		if strings.Contains(lowerName, "deepseek") {
-			return "https://api.deepseek.com/v1/chat/completions", "deepseek-chat", true
+			return "https://api.deepseek.com/v1/chat/completions", "deepseek-v4-flash", true
 		}
 		if strings.Contains(lowerName, "openai") || strings.Contains(lowerName, "gpt") || strings.HasPrefix(apiKey, "sk-") {
 			return "https://api.openai.com/v1/chat/completions", "gpt-4o", true
@@ -515,7 +515,7 @@ Return ONLY a valid JSON object containing the updated parameter key-value pairs
 	}
 
 	// 5. Send Request to LLM
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 60 * time.Second}
 	httpReq, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(apiReqJSON))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -15,7 +15,7 @@
       "name": "Draft Postmortem",
       "position": { "x": 360, "y": 180 },
       "params": {
-        "model": "deepseek-chat",
+        "model": "deepseek-v4-flash",
         "system_message": "You write concise incident postmortem drafts with impact, timeline, root cause, and action items.",
         "prompt": "Create a postmortem from this incident payload: {{incident_webhook.body}}",
         "temperature": "0.2",
@@ -55,4 +55,3 @@
     { "id": "e3", "source": "save_notion", "target": "email_stakeholders" }
   ]
 }
-

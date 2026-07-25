@@ -371,7 +371,7 @@ Use later / Dung ve sau:
 
 Params are similar to OpenAI:
 
-- `model`: `deepseek-chat` or `deepseek-reasoner`.
+- `model`: `deepseek-v4-flash` or `deepseek-v4-pro`.
 - `prompt`
 - `system_message`
 - `api_key` or `credential_id`
@@ -381,7 +381,7 @@ Output:
 ```json
 {
   "ai_response": "Generated answer",
-  "model_used": "deepseek-chat",
+  "model_used": "deepseek-v4-flash",
   "raw_result": {}
 }
 ```

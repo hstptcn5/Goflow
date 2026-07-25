@@ -11,7 +11,12 @@ async function customFetch(url, options = {}) {
   }
 
   // 2. Perform request
-  let res = await fetch(url, options);
+  let res;
+  try {
+    res = await fetch(url, options);
+  } catch (err) {
+    throw new Error(`Network request failed. Check that Goflow is still running and reachable, then try again. Details: ${err.message}`);
+  }
 
   // 3. Handle 401 Unauthorized by prompting the user
   if (res.status === 401) {
@@ -23,7 +28,11 @@ async function customFetch(url, options = {}) {
         options.headers = {};
       }
       options.headers['Authorization'] = `Bearer ${userInput.trim()}`;
-      res = await fetch(url, options);
+      try {
+        res = await fetch(url, options);
+      } catch (err) {
+        throw new Error(`Network request failed after entering API key. Check that Goflow is still running and reachable, then try again. Details: ${err.message}`);
+      }
     }
   }
 

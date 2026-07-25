@@ -204,7 +204,7 @@ export const nodeHelpMap = {
   deepseekAI: {
     title: "DeepSeek AI",
     desc: "Calls DeepSeek chat reasoning endpoints for cost-efficient intelligence.",
-    inputs: "- API Key\n- Model: deepseek-chat, deepseek-reasoner\n- Prompt & optional System Message",
+    inputs: "- API Key\n- Model: deepseek-v4-flash, deepseek-v4-pro\n- Prompt & optional System Message",
     output: `{
   "choices": [
     { "message": { "content": "AI reasoning..." } }

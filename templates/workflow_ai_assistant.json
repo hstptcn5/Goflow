@@ -23,7 +23,7 @@
       "name": "DeepSeek AI Generator",
       "position": { "x": 640, "y": 160 },
       "params": {
-        "model": "deepseek-chat",
+        "model": "deepseek-v4-flash",
         "prompt": "Explain why lightweight software architectures are fast and efficient in 2 sentences.",
         "system_message": "You are a software architecture expert.",
         "api_key": "YOUR_DEEPSEEK_API_KEY_HERE"

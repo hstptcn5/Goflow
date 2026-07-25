@@ -230,7 +230,7 @@ func main() {
 		Addr:         fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
 		Handler:      router,
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 180 * time.Second,
 	}
 
 	// 7. Graceful Shutdown Handler

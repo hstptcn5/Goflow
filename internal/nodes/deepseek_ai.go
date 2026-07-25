@@ -32,7 +32,7 @@ func (e *DeepSeekAIExecutor) Execute(ctx *ExecutionContext, node *Node) (interfa
 
 	model, _ := node.Params["model"].(string)
 	if model == "" {
-		model = "deepseek-chat"
+		model = "deepseek-v4-flash"
 	}
 
 	prompt, _ := node.Params["prompt"].(string)
@@ -117,10 +117,10 @@ func (e *DeepSeekAIExecutor) GetDefinition() NodeDefinition {
 				Name:        "model",
 				Label:       "DeepSeek Model",
 				Type:        "select",
-				Default:     "deepseek-chat",
-				Options:     []string{"deepseek-chat", "deepseek-reasoner", "deepseek-coder"},
+				Default:     "deepseek-v4-flash",
+				Options:     []string{"deepseek-v4-flash", "deepseek-v4-pro"},
 				Required:    true,
-				Description: "Choose the DeepSeek model: deepseek-chat or deepseek-reasoner",
+				Description: "Choose the DeepSeek model: deepseek-v4-flash or deepseek-v4-pro",
 			},
 			{
 				Name:        "prompt",
