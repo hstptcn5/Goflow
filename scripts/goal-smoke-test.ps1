@@ -14,7 +14,8 @@ $env:GOFLOW_PORT = $Port
 $env:GOFLOW_DB_PATH = Join-Path $SmokeDir "goflow.db"
 $env:GOFLOW_MASTER_KEY_FILE = Join-Path $SmokeDir "goflow.master.key"
 $env:GOFLOW_API_KEY = $AdminKey
-$env:GOFLOW_MCP_ALLOWED_ORIGINS = $BaseUrl
+$AgentOrigin = "https://agent.example.com"
+$env:GOFLOW_MCP_ALLOWED_ORIGINS = "$BaseUrl,$AgentOrigin"
 $env:GOFLOW_MAX_CONCURRENT_EXECUTIONS = "10"
 $env:GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION = "2"
 
@@ -61,6 +62,32 @@ function New-SmokeWorkflow {
   }
 }
 
+function New-CronSmokeWorkflow {
+  $nodes = ConvertTo-Json -InputObject @(@{
+    id = "cron"
+    type = "cronTrigger"
+    name = "Cron"
+    params = @{ cron_expression = "* * * * *" }
+  }) -Compress -Depth 10
+  Invoke-GoflowApi -Method Post -Path "/api/v1/workflows" -Body @{
+    id = "wf-goal-cron"
+    name = "GOAL Cron"
+    description = "GOAL cron smoke workflow"
+    is_active = $true
+    nodes_json = $nodes
+    edges_json = "[]"
+    slug = "wf-goal-cron"
+    input_schema_json = "{}"
+    output_schema_json = "{}"
+    expose_cli = $true
+    expose_mcp = $false
+    risk_level = "low"
+    requires_approval = $false
+    max_concurrent_runs = 0
+    concurrency_policy = "global"
+  }
+}
+
 $proc = Start-Process -FilePath (Resolve-Path $Binary) -ArgumentList "serve" -WorkingDirectory (Get-Location) -PassThru -WindowStyle Hidden
 try {
   $ready = $false
@@ -81,7 +108,8 @@ try {
   $workflow = New-SmokeWorkflow -Id "wf-goal-smoke" -Name "GOAL Smoke" -Seconds 0 -ToolName "goal_smoke"
   $otherWorkflow = New-SmokeWorkflow -Id "wf-goal-other" -Name "GOAL Other" -Seconds 0 -ToolName "goal_other"
   $cancelWorkflow = New-SmokeWorkflow -Id "wf-goal-cancel" -Name "GOAL Cancel" -Seconds 5 -ToolName "goal_cancel"
-  "SMOKE workflows created: $($workflow.id), $($otherWorkflow.id), $($cancelWorkflow.id)"
+  $cronWorkflow = New-CronSmokeWorkflow
+  "SMOKE workflows created: $($workflow.id), $($otherWorkflow.id), $($cancelWorkflow.id), $($cronWorkflow.id)"
 
   & $Binary status --url $BaseUrl --api-key $AdminKey
   & $Binary workflow list --url $BaseUrl --api-key $AdminKey
@@ -102,8 +130,58 @@ try {
   }
   "SMOKE scoped token allowlist passed"
 
-  node scripts/mcp-smoke-test.mjs --binary $Binary --url $BaseUrl --api-key $scopedToken --workflow $workflow.id --input '{\"source\":\"mcp-stdio\"}'
-  node scripts/mcp-http-smoke-test.mjs --url "$BaseUrl/mcp" --api-key $scopedToken --origin $BaseUrl --workflow $workflow.id --input '{\"source\":\"mcp-http\"}'
+  $uiRun = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/workflows/$($workflow.id)/executions" -ContentType "application/json" -Headers @{
+    Authorization = "Bearer $AdminKey"
+    "X-Goflow-Trigger-Source" = "ui"
+  } -Body (@{
+    mode = "async"
+    input = @{ source = "ui-smoke" }
+  } | ConvertTo-Json -Depth 5)
+  Start-Sleep -Milliseconds 300
+  $uiExec = Invoke-GoflowApi -Method Get -Path "/api/v1/executions/$($uiRun.execution_id)"
+  if ($uiExec.trigger_source -ne "ui") {
+    throw "UI trigger source was not persisted, got=$($uiExec.trigger_source)"
+  }
+  "SMOKE UI trigger source passed"
+
+  $unknownNodes = ConvertTo-Json -InputObject @(@{
+    id = "missing"
+    type = "missingNodeType"
+    name = "Missing"
+    params = @{}
+  }) -Compress -Depth 10
+  $unknownWorkflow = Invoke-GoflowApi -Method Post -Path "/api/v1/workflows" -Body @{
+    id = "wf-goal-unknown-node"
+    name = "GOAL Unknown Node"
+    is_active = $true
+    nodes_json = $unknownNodes
+    edges_json = "[]"
+    expose_cli = $true
+    expose_mcp = $false
+    risk_level = "low"
+    concurrency_policy = "global"
+  }
+  $unknownRun = Invoke-GoflowApi -Method Post -Path "/api/v1/workflows/$($unknownWorkflow.id)/executions" -Body @{
+    mode = "async"
+    input = @{ source = "unknown-node-smoke" }
+  }
+  $unknownFailed = $false
+  for ($i = 0; $i -lt 20; $i++) {
+    Start-Sleep -Milliseconds 250
+    $exec = Invoke-GoflowApi -Method Get -Path "/api/v1/executions/$($unknownRun.execution_id)"
+    if ($exec.status -eq "FAILED") {
+      $unknownFailed = $true
+      break
+    }
+  }
+  if (-not $unknownFailed) {
+    throw "unknown node execution did not fail within timeout"
+  }
+  "SMOKE unknown node failure passed"
+
+  node scripts/mcp-smoke-test.mjs --binary $Binary --url $BaseUrl --api-key $scopedToken --workflow $workflow.id --input '{\"source\":\"mcp-stdio\",\"secret\":\"mcp-stdio-secret-value\"}' --expect-tool goflow.goal_smoke
+  node scripts/mcp-http-smoke-test.mjs --url "$BaseUrl/mcp" --api-key $scopedToken --origin $BaseUrl --workflow $workflow.id --input '{\"source\":\"mcp-http\",\"secret\":\"mcp-http-secret-value\"}' --expect-tool goflow.goal_smoke
+  node scripts/mcp-http-smoke-test.mjs --url "$BaseUrl/mcp" --api-key $scopedToken --origin $AgentOrigin --dynamic-tool goflow.goal_smoke --input '{\"source\":\"mcp-http-dynamic\",\"_goflow\":{\"idempotency_key\":\"goal-dynamic-smoke\"}}'
 
   $cancelRun = Invoke-GoflowApi -Method Post -Path "/api/v1/workflows/$($cancelWorkflow.id)/executions" -Body @{
     mode = "async"
@@ -135,6 +213,25 @@ try {
     throw "concurrent idempotency returned multiple execution ids: $($ids -join ',')"
   }
   "SMOKE concurrent idempotency passed"
+
+  $cronSeen = $false
+  for ($i = 0; $i -lt 90; $i++) {
+    Start-Sleep -Seconds 1
+    $cronExecutions = Invoke-GoflowApi -Method Get -Path "/api/v1/workflows/$($cronWorkflow.id)/executions"
+    foreach ($item in @($cronExecutions)) {
+      if ($item.trigger_source -eq "cron") {
+        $cronSeen = $true
+        break
+      }
+    }
+    if ($cronSeen) {
+      break
+    }
+  }
+  if (-not $cronSeen) {
+    throw "cron smoke did not observe trigger_source=cron within timeout"
+  }
+  "SMOKE cron trigger passed"
 
   $audit = Invoke-GoflowApi -Method Get -Path "/api/v1/audit-events?limit=5"
   if ($audit.Count -lt 1) {

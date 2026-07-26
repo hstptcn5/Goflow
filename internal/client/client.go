@@ -118,6 +118,15 @@ func (c *Client) GetWorkflow(id string) (*Workflow, error) {
 	return &workflow, nil
 }
 
+func (c *Client) GetWorkflowInterface(id string) (*Workflow, error) {
+	var workflow Workflow
+	if err := c.doJSON(http.MethodGet, "/api/v1/workflows/"+id+"/interface", nil, &workflow); err != nil {
+		return nil, err
+	}
+	workflow.ID = id
+	return &workflow, nil
+}
+
 func (c *Client) CreateWorkflow(workflow Workflow) (*Workflow, error) {
 	var created Workflow
 	if err := c.doJSON(http.MethodPost, "/api/v1/workflows", workflow, &created); err != nil {

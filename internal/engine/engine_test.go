@@ -156,6 +156,57 @@ func TestNodePanicMarksExecutionFailed(t *testing.T) {
 	}
 }
 
+func TestUnknownNodeTypeMarksExecutionFailedWithoutHanging(t *testing.T) {
+	registry := nodes.NewPluginRegistry()
+
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	execStore := storage.NewExecutionStore(db)
+	wfStore := storage.NewWorkflowStore(db)
+	eng := NewEngine(registry, execStore, storage.NewCredentialStore(db, nil), NewEventBus(), wfStore)
+
+	nodeList := []nodes.Node{{ID: "missing", Type: "missingNodeType", Name: "Missing", Params: map[string]interface{}{}}}
+	nodesJSON, _ := json.Marshal(nodeList)
+	wf := &storage.Workflow{
+		ID:        "wf-missing-node",
+		Name:      "Missing Node",
+		NodesJSON: string(nodesJSON),
+		EdgesJSON: "[]",
+	}
+	if err := wfStore.Create(wf); err != nil {
+		t.Fatalf("create workflow: %v", err)
+	}
+
+	done := make(chan *storage.Execution, 1)
+	errs := make(chan error, 1)
+	go func() {
+		exec, err := eng.ExecuteWorkflow(wf, nil)
+		if err != nil {
+			errs <- err
+			return
+		}
+		done <- exec
+	}()
+
+	select {
+	case err := <-errs:
+		t.Fatalf("execute workflow returned error: %v", err)
+	case exec := <-done:
+		if exec.Status != "FAILED" {
+			t.Fatalf("expected FAILED, got %s", exec.Status)
+		}
+		if !strings.Contains(exec.ErrorMessage, "unregistered node executor type") {
+			t.Fatalf("expected missing executor error, got %q", exec.ErrorMessage)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("execution hung for unknown node type")
+	}
+}
+
 func TestCancelAsyncWorkflow(t *testing.T) {
 	registry := nodes.NewPluginRegistry()
 	_ = registry.Register(nodes.NewDelaySleepExecutor())

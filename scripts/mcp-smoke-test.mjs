@@ -60,6 +60,7 @@ try {
   assertIncludes(toolNames, "goflow_get_execution");
   assertIncludes(toolNames, "goflow_list_executions");
   assertIncludes(toolNames, "goflow_cancel_execution");
+  assertIncludes(toolNames, "goflow_reload_tools");
   if (expectTool) {
     assertIncludes(toolNames, expectTool);
   }
@@ -103,6 +104,7 @@ try {
         arguments: { execution_id: runOutput.execution_id },
       });
       const executionOutput = readStructuredContent(execution);
+      assertNoRawInputLeak(executionOutput);
       console.log(`MCP goflow_get_execution passed (${executionOutput.execution.status})`);
     }
   }
@@ -145,6 +147,13 @@ function readStructuredContent(response) {
 function assertIncludes(items, expected) {
   if (!items.includes(expected)) {
     throw new Error(`Expected tool ${expected}, got: ${items.join(", ")}`);
+  }
+}
+
+function assertNoRawInputLeak(output) {
+  const text = JSON.stringify(output);
+  if (text.includes("input_json") || text.includes("mcp-stdio-secret-value")) {
+    throw new Error(`MCP execution output leaked raw input: ${text}`);
   }
 }
 

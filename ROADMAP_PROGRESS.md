@@ -23,7 +23,7 @@ timeline
 
     section Done
       Streamable HTTP MCP : HTTP beta endpoint, smoke test, client compatibility hardening
-      GOAL Hardening Pass : security, idempotency, limits, sub-workflow safety
+      GOAL Hardening Pass : security, idempotency, limits, validator, MCP safety
 ```
 
 ## Phase Status
@@ -36,7 +36,7 @@ timeline
 | `v0.5.0-mcp-dynamic-preview` | Workflow MCP exposure, dynamic tools, input schema validation | Dynamic workflow tools and input validation implemented |
 | Hardening | Concurrency, cancellation, scoped token, audit | Complete for P1 |
 | Streamable HTTP MCP | `/mcp` HTTP transport | P2 complete and smoke tested |
-| GOAL hardening | North Star audit items for security, idempotency, source tracking, exposure, sub-workflow safety, and smoke coverage | Completed local verification pass |
+| GOAL hardening | North Star audit items for security, idempotency, source tracking, exposure, validator, MCP safety, sub-workflow safety, and smoke coverage | Local unit and Windows smoke verification pass; release still requires final full gate and clean-machine checks |
 
 ## P0 Checklist
 
@@ -88,6 +88,13 @@ timeline
 [x] Concurrent idempotency race handling
 [x] Sub-workflow cycle/depth guards
 [x] Scoped workflow list summary filtering
+[x] Unknown node failure does not hang execution
+[x] Scoped-token dynamic MCP metadata
+[x] MCP execution DTO omits raw input_json
+[x] UI trigger source persistence
+[x] HTTP MCP rate limit and custom-origin CORS
+[x] Offline workflow validator hardening
+[x] MCP dynamic tool reload/reconnect command
 ```
 
 ## Remaining Timeline
@@ -120,7 +127,8 @@ gantt
     HTTP MCP smoke hardening       :done, http2, 2026-07-26, 1d
     HTTP MCP client compatibility  :done, http3, 2026-07-26, 1d
     Release candidate polish       :done, rc1, 2026-07-26, 1d
-    GOAL hardening verification    :done, goal1, 2026-07-26, 1d
+    GOAL local verification        :done, goal1, 2026-07-26, 1d
+    Release clean-machine checks   :active, goal2, 2026-07-26, 1d
 ```
 
 ## Next Priorities

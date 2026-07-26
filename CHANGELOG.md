@@ -7,20 +7,30 @@ All notable changes to Goflow are tracked here.
 ### Added
 
 - `scripts/goal-smoke-test.ps1` to run a reusable Windows smoke test for CLI, MCP stdio, MCP HTTP, scoped tokens, cancellation, audit, and concurrent idempotency against a temporary local instance.
+- `GOFLOW_MCP_RATE_LIMIT_PER_MINUTE` for HTTP MCP request rate limiting per token/principal.
+- `goflow_reload_tools` MCP tool to tell clients when dynamic workflow tools require reconnect/reload.
+- CLI workflow validation for duplicate node IDs, bad edge references, DAG cycles, unknown node types, missing required node parameters, and unsupported schema keywords.
 
 ### Changed
 
+- `GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION` now defaults to `4` instead of unlimited.
 - Server-side workflow execution now rejects inactive workflows and enforces CLI/MCP exposure flags for CLI and MCP trigger sources.
 - MCP dynamic workflow tools now use `_goflow.idempotency_key` as control metadata instead of consuming a business input field named `idempotency_key`.
+- MCP execution tool outputs now use a safe DTO and omit raw `input_json` by default.
+- MCP dynamic workflow tools now fetch interface metadata through the safe workflow interface endpoint, so scoped tokens can still see tool name, description, and schemas without receiving graph JSON.
 - Scoped `workflow:list` responses now return allowlisted workflow summaries only, without graph JSON or node configuration.
 - HTTP MCP per-client inflight limiting now persists across requests for the same token/principal.
+- HTTP MCP custom origins are included in global CORS handling before the MCP origin middleware validates them.
 - Workflow input schema validation now supports the documented subset: `type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const`, `minimum`, `maximum`, `minLength`, `maxLength`, `pattern`, `oneOf`, and `anyOf`; unsupported keywords fail clearly.
 - CLI workflow import now preserves full interface metadata including approval, max concurrent runs, and concurrency policy.
 
 ### Fixed
 
+- Fixed unknown node types causing async executions to hang instead of reaching `FAILED`.
+- Fixed Web UI execution requests so they persist trigger source as `ui` instead of `api`.
 - Fixed principal spoofing by ignoring caller-provided `X-Goflow-Principal` and deriving the principal from authentication context.
 - Fixed concurrent idempotency races so duplicate inserts return the existing execution instead of surfacing a unique constraint or HTTP 500.
+- Fixed idempotent duplicate requests so they return the existing execution before workflow/global concurrency limits reject them.
 - Fixed webhook execution input persistence so sensitive headers such as `Authorization`, `Cookie`, `X-Goflow-Webhook-Secret`, and API key headers are omitted.
 - Fixed sub-workflow recursion safety with cycle detection and `GOFLOW_MAX_SUBWORKFLOW_DEPTH`.
 - Fixed an engine status race where a single failing node could be marked `SUCCESS` if the scheduler observed completion before `hasFailed` was set.

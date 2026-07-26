@@ -47,7 +47,7 @@ This guide describes how to prepare a Goflow preview release.
    .\scripts\goal-smoke-test.ps1 -Binary .\goflow.exe -Port 18080 -AdminKey goal-admin-key
    ```
 
-   This uses a temporary database and validates CLI, MCP stdio, MCP Streamable HTTP, scoped token allowlist, cancellation, audit, and concurrent idempotency.
+   This uses a temporary database and validates CLI, cron trigger source, MCP stdio, MCP Streamable HTTP, scoped token allowlist, dynamic MCP metadata, custom MCP origin, safe MCP execution DTOs, UI trigger source, unknown-node failure handling, cancellation, audit, and concurrent idempotency.
 
 9. Start Goflow locally and check:
 
@@ -60,13 +60,25 @@ This guide describes how to prepare a Goflow preview release.
    - A workflow exposed through **Workflows > Interface > Expose to MCP** can pass:
 
      ```bash
-     node scripts/mcp-smoke-test.mjs --url http://127.0.0.1:8080 --workflow <workflow-id-or-slug> --input '{"source":"release-smoke"}'
+     node scripts/mcp-smoke-test.mjs --url http://127.0.0.1:8080 --workflow <workflow-id-or-slug> --input '{"source":"release-smoke","secret":"mcp-stdio-secret-value"}'
      ```
 
    - The same workflow can pass HTTP MCP smoke:
 
      ```bash
-     node scripts/mcp-http-smoke-test.mjs --url http://127.0.0.1:8080/mcp --api-key <scoped-token> --origin http://127.0.0.1:8080 --workflow <workflow-id-or-slug> --input '{"source":"release-http-mcp-smoke"}'
+     node scripts/mcp-http-smoke-test.mjs --url http://127.0.0.1:8080/mcp --api-key <scoped-token> --origin http://127.0.0.1:8080 --workflow <workflow-id-or-slug> --input '{"source":"release-http-mcp-smoke","secret":"mcp-http-secret-value"}'
+     ```
+
+   - Dynamic MCP tool exposure can pass:
+
+     ```bash
+     node scripts/mcp-http-smoke-test.mjs --url http://127.0.0.1:8080/mcp --api-key <scoped-token> --origin http://127.0.0.1:8080 --expect-tool goflow.<tool_name> --dynamic-tool goflow.<tool_name> --input '{"source":"release-dynamic","_goflow":{"idempotency_key":"release-dynamic-smoke"}}'
+     ```
+
+   - Workflow validation rejects structural problems:
+
+     ```bash
+     .\goflow.exe workflow validate .\templates\release_smoke_test.json
      ```
 
 10. Package the release with:

@@ -33,6 +33,7 @@ func NewRouter(
 	mcpBaseURL string,
 	mcpAllowedOrigins []string,
 	mcpMaxInflight int,
+	mcpRateLimitPerMinute int,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -48,6 +49,7 @@ func NewRouter(
 		"http://127.0.0.1:5173",
 		"http://127.0.0.1:8080",
 	}
+	allowedOrigins = append(allowedOrigins, mcpAllowedOrigins...)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -108,9 +110,10 @@ func NewRouter(
 	r.Post("/webhook/{workflowId}", wfHandler.TriggerWebhook)
 	r.Get("/ws", wsHandler.ServeHTTP)
 	r.With(authMiddleware(apiKey, tokenStore, auditStore, false)).Mount("/mcp", mcpserver.NewHTTPHandler(mcpserver.HTTPOptions{
-		BaseURL:        mcpBaseURL,
-		MaxInflight:    mcpMaxInflight,
-		AllowedOrigins: mcpAllowedOrigins,
+		BaseURL:            mcpBaseURL,
+		MaxInflight:        mcpMaxInflight,
+		RateLimitPerMinute: mcpRateLimitPerMinute,
+		AllowedOrigins:     mcpAllowedOrigins,
 	}))
 
 	if uiFS != nil {

@@ -20,6 +20,7 @@ const toolNames = (tools.result?.tools || []).map((tool) => tool.name);
 assertIncludes(toolNames, "goflow_list_workflows");
 assertIncludes(toolNames, "goflow_run_workflow");
 assertIncludes(toolNames, "goflow_get_execution");
+assertIncludes(toolNames, "goflow_reload_tools");
 if (expectTool) {
   assertIncludes(toolNames, expectTool);
 }
@@ -58,6 +59,7 @@ if (dynamicTool) {
   if (!executionOutput?.execution?.status) {
     throw new Error(`goflow_get_execution response has no execution status: ${JSON.stringify(execution)}`);
   }
+  assertNoRawInputLeak(executionOutput);
   console.log(`MCP HTTP goflow_get_execution passed (${executionOutput.execution.status})`);
 }
 
@@ -146,6 +148,13 @@ function assertToolSuccess(response, toolName) {
     );
   }
   throw new Error(`${toolName} failed: ${message}`);
+}
+
+function assertNoRawInputLeak(output) {
+  const text = JSON.stringify(output);
+  if (text.includes("input_json") || text.includes("mcp-http-secret-value")) {
+    throw new Error(`MCP HTTP execution output leaked raw input: ${text}`);
+  }
 }
 
 function parseArgs(argv) {

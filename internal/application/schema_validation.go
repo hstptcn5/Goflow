@@ -46,6 +46,21 @@ func validateWorkflowInput(rawSchema string, input interface{}) error {
 	return validateSchemaValue(schema, input, "$")
 }
 
+func ValidateWorkflowSchema(rawSchema, field string) error {
+	rawSchema = strings.TrimSpace(rawSchema)
+	if rawSchema == "" || rawSchema == "{}" {
+		return nil
+	}
+	if err := validateSupportedSchemaKeywords([]byte(rawSchema), field); err != nil {
+		return err
+	}
+	var schema inputSchema
+	if err := json.Unmarshal([]byte(rawSchema), &schema); err != nil {
+		return fmt.Errorf("%w: %s is invalid JSON", ErrInvalidWorkflowInput, field)
+	}
+	return nil
+}
+
 func validateSchemaValue(schema inputSchema, value interface{}, path string) error {
 	if len(schema.OneOf) > 0 {
 		matches := 0

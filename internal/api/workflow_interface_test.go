@@ -199,6 +199,20 @@ func TestRequestPrincipalIgnoresSpoofedHeader(t *testing.T) {
 	}
 }
 
+func TestRequestTriggerSourceAllowsUIAndRejectsUnknownValues(t *testing.T) {
+	uiReq := httptest.NewRequest(http.MethodPost, "/api/v1/workflows/wf/trigger", nil)
+	uiReq.Header.Set("X-Goflow-Trigger-Source", "ui")
+	if got := requestTriggerSource(uiReq); got != "ui" {
+		t.Fatalf("expected ui source, got %q", got)
+	}
+
+	spoofedReq := httptest.NewRequest(http.MethodPost, "/api/v1/workflows/wf/trigger", nil)
+	spoofedReq.Header.Set("X-Goflow-Trigger-Source", "sub_workflow")
+	if got := requestTriggerSource(spoofedReq); got != "api" {
+		t.Fatalf("expected unknown source to fall back to api, got %q", got)
+	}
+}
+
 func newTestWorkflowStore(t *testing.T) *storage.WorkflowStore {
 	t.Helper()
 	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))

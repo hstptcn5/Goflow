@@ -144,6 +144,65 @@ func TestDynamicWorkflowHandlerRunsWorkflow(t *testing.T) {
 	}
 }
 
+func TestMCPGetExecutionDoesNotExposeInputJSON(t *testing.T) {
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/v1/executions/exec-1" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(client.Execution{
+			ID:            "exec-1",
+			WorkflowID:    "wf-1",
+			Status:        "SUCCESS",
+			LogsJSON:      `[]`,
+			InputJSON:     `{"password":"secret-value"}`,
+			TriggerSource: "mcp_http",
+		})
+	}))
+	t.Cleanup(httpServer.Close)
+
+	server := New(Options{BaseURL: httpServer.URL})
+	_, output, err := server.getExecution(context.Background(), nil, executionRefInput{ExecutionID: "exec-1"})
+	if err != nil {
+		t.Fatalf("getExecution failed: %v", err)
+	}
+	data, _ := json.Marshal(output)
+	if strings.Contains(string(data), "input_json") || strings.Contains(string(data), "secret-value") {
+		t.Fatalf("MCP execution output leaked input_json: %s", data)
+	}
+	if output.Execution.Status != "SUCCESS" || output.Execution.TriggerSource != "mcp_http" {
+		t.Fatalf("safe execution lost metadata: %#v", output.Execution)
+	}
+}
+
+func TestMCPListExecutionsDoesNotExposeInputJSON(t *testing.T) {
+	workflows := []client.Workflow{{ID: "wf-1", Name: "Daily", IsActive: true, ExposeMCP: true}}
+	server := newMCPTestServerWithHandler(t, workflows, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path != "/api/v1/workflows/wf-1/executions" {
+			return false
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]client.Execution{{
+			ID:         "exec-1",
+			WorkflowID: "wf-1",
+			Status:     "SUCCESS",
+			LogsJSON:   `[]`,
+			InputJSON:  `{"api_key":"secret-value"}`,
+		}})
+		return true
+	})
+
+	_, output, err := server.listExecutions(context.Background(), nil, workflowRefInput{Workflow: "wf-1"})
+	if err != nil {
+		t.Fatalf("listExecutions failed: %v", err)
+	}
+	data, _ := json.Marshal(output)
+	if strings.Contains(string(data), "input_json") || strings.Contains(string(data), "secret-value") {
+		t.Fatalf("MCP execution list leaked input_json: %s", data)
+	}
+}
+
 func TestHTTPHandlerServesStreamableInitialize(t *testing.T) {
 	restServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -186,6 +245,32 @@ func TestHTTPHandlerRejectsDisallowedOrigin(t *testing.T) {
 	}
 }
 
+func TestHTTPHandlerRateLimitsByHashedBearerAcrossRequests(t *testing.T) {
+	handler := NewHTTPHandler(HTTPOptions{BaseURL: "http://127.0.0.1:1", RateLimitPerMinute: 1})
+	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`
+
+	for i, want := range []int{http.StatusOK, http.StatusTooManyRequests} {
+		req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("Authorization", "Bearer secret-token")
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Fatalf("request %d expected status %d, got %d: %s", i+1, want, rec.Code, rec.Body.String())
+		}
+	}
+	if principal := requestPrincipalKey(httptest.NewRequest(http.MethodPost, "/mcp", nil)); strings.Contains(principal, "secret-token") {
+		t.Fatalf("principal key leaked raw token: %q", principal)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Header.Set("Authorization", "Bearer secret-token")
+	if principal := requestPrincipalKey(req); strings.Contains(principal, "secret-token") || !strings.HasPrefix(principal, "bearer_sha256:") {
+		t.Fatalf("principal key should hash bearer token, got %q", principal)
+	}
+}
+
 func TestHTTPClientLimitersPersistAcrossRequestsForSameToken(t *testing.T) {
 	limiters := newHTTPClientLimiters(1)
 	firstReq := httptest.NewRequest(http.MethodPost, "/mcp", nil)
@@ -218,7 +303,29 @@ func TestHTTPHandlerWorksWithSDKStreamableClient(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v1/workflows":
 			_ = json.NewEncoder(w).Encode([]client.Workflow{
-				{ID: "wf-1", Name: "Daily", IsActive: true, ExposeMCP: true, Slug: "daily"},
+				{ID: "wf-1", Name: "Daily", IsActive: true, ExposeMCP: true, RiskLevel: "low"},
+				{ID: "wf-approval", Name: "Approval", IsActive: true, ExposeMCP: true, RiskLevel: "high"},
+			})
+			return
+		case "/api/v1/workflows/wf-1/interface":
+			_ = json.NewEncoder(w).Encode(client.Workflow{
+				ID:              "wf-1",
+				Slug:            "daily",
+				InputSchemaJSON: `{"type":"object","properties":{"date":{"type":"string"}}}`,
+				ExposeMCP:       true,
+				MCPToolName:     "daily_report",
+				MCPDescription:  "Prepare daily report",
+				RiskLevel:       "low",
+			})
+			return
+		case "/api/v1/workflows/wf-approval/interface":
+			_ = json.NewEncoder(w).Encode(client.Workflow{
+				ID:               "wf-approval",
+				Slug:             "approval",
+				InputSchemaJSON:  `{"type":"object"}`,
+				ExposeMCP:        true,
+				RequiresApproval: true,
+				MCPToolName:      "approval_report",
 			})
 			return
 		case "/api/v1/workflows/wf-1":
@@ -252,10 +359,13 @@ func TestHTTPHandlerWorksWithSDKStreamableClient(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names[tool.Name] = true
 	}
-	for _, want := range []string{"goflow_list_workflows", "goflow_run_workflow", "goflow.daily"} {
+	for _, want := range []string{"goflow_list_workflows", "goflow_run_workflow", "goflow.daily_report"} {
 		if !names[want] {
 			t.Fatalf("expected tool %s, got %#v", want, names)
 		}
+	}
+	if names["goflow.approval_report"] {
+		t.Fatalf("requires_approval workflow was exposed as dynamic tool: %#v", names)
 	}
 }
 
@@ -271,6 +381,10 @@ func TestSchemaOrEmptyObjectAddsObjectType(t *testing.T) {
 }
 
 func newMCPTestServer(t *testing.T, workflows []client.Workflow) *Server {
+	return newMCPTestServerWithHandler(t, workflows, nil)
+}
+
+func newMCPTestServerWithHandler(t *testing.T, workflows []client.Workflow, extra func(http.ResponseWriter, *http.Request) bool) *Server {
 	t.Helper()
 	byID := make(map[string]client.Workflow, len(workflows))
 	for _, workflow := range workflows {
@@ -278,6 +392,9 @@ func newMCPTestServer(t *testing.T, workflows []client.Workflow) *Server {
 	}
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if extra != nil && extra(w, r) {
+			return
+		}
 		switch r.URL.Path {
 		case "/api/v1/workflows":
 			_ = json.NewEncoder(w).Encode(workflows)
@@ -285,7 +402,7 @@ func newMCPTestServer(t *testing.T, workflows []client.Workflow) *Server {
 		default:
 			const prefix = "/api/v1/workflows/"
 			if len(r.URL.Path) > len(prefix) && r.URL.Path[:len(prefix)] == prefix {
-				id := r.URL.Path[len(prefix):]
+				id := strings.TrimSuffix(r.URL.Path[len(prefix):], "/interface")
 				workflow, ok := byID[id]
 				if !ok {
 					http.NotFound(w, r)

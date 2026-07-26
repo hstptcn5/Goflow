@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"goflow/internal/application"
 	"goflow/internal/client"
 	"goflow/internal/mcpserver"
+	"goflow/internal/nodes"
 )
 
 const (
@@ -330,6 +332,10 @@ func (r Runner) workflowImport(args []string) int {
 		fmt.Fprintln(r.Stderr, err)
 		return ExitInvalidInput
 	}
+	if err := validateWorkflowDefinition(workflow); err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
 	workflow.ID = ""
 	workflow.IsActive = *activate
 	c := cliClient(clientOpts)
@@ -348,7 +354,12 @@ func (r Runner) workflowValidate(args []string) int {
 	if !ok {
 		return code
 	}
-	if _, err := readWorkflowFile(path); err != nil {
+	workflow, err := readWorkflowFile(path)
+	if err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	if err := validateWorkflowDefinition(workflow); err != nil {
 		fmt.Fprintln(r.Stderr, err)
 		return ExitInvalidInput
 	}
@@ -708,6 +719,87 @@ func readWorkflowFile(path string) (client.Workflow, error) {
 		MaxConcurrentRuns: raw.MaxConcurrentRuns,
 		ConcurrencyPolicy: raw.ConcurrencyPolicy,
 	}, nil
+}
+
+func validateWorkflowDefinition(workflow client.Workflow) error {
+	if strings.TrimSpace(workflow.Name) == "" {
+		return fmt.Errorf("workflow name is required")
+	}
+	var nodeList []nodes.Node
+	if err := json.Unmarshal([]byte(workflow.NodesJSON), &nodeList); err != nil {
+		return fmt.Errorf("nodes_json or nodes must be a JSON array")
+	}
+	var edgeList []nodes.Edge
+	if err := json.Unmarshal([]byte(workflow.EdgesJSON), &edgeList); err != nil {
+		return fmt.Errorf("edges_json or edges must be a JSON array")
+	}
+	if err := application.ValidateWorkflowSchema(workflow.InputSchemaJSON, "input_schema_json"); err != nil {
+		return err
+	}
+	if err := application.ValidateWorkflowSchema(workflow.OutputSchemaJSON, "output_schema_json"); err != nil {
+		return err
+	}
+	registry := nodes.NewBuiltinRegistry()
+	ids := map[string]bool{}
+	for _, node := range nodeList {
+		if strings.TrimSpace(node.ID) == "" {
+			return fmt.Errorf("node ID is required")
+		}
+		if ids[node.ID] {
+			return fmt.Errorf("duplicate node ID %q", node.ID)
+		}
+		ids[node.ID] = true
+		executor, ok := registry.Get(node.Type)
+		if !ok {
+			return fmt.Errorf("unknown node type %q on node %q", node.Type, node.ID)
+		}
+		for _, param := range executor.GetDefinition().Params {
+			if !param.Required {
+				continue
+			}
+			value, exists := node.Params[param.Name]
+			if !exists || value == nil || strings.TrimSpace(fmt.Sprint(value)) == "" {
+				return fmt.Errorf("node %q missing required parameter %q", node.ID, param.Name)
+			}
+		}
+	}
+	indegree := map[string]int{}
+	outgoing := map[string][]string{}
+	for id := range ids {
+		indegree[id] = 0
+	}
+	for _, edge := range edgeList {
+		if !ids[edge.Source] {
+			return fmt.Errorf("edge %q references missing source node %q", edge.ID, edge.Source)
+		}
+		if !ids[edge.Target] {
+			return fmt.Errorf("edge %q references missing target node %q", edge.ID, edge.Target)
+		}
+		outgoing[edge.Source] = append(outgoing[edge.Source], edge.Target)
+		indegree[edge.Target]++
+	}
+	queue := make([]string, 0, len(indegree))
+	for id, degree := range indegree {
+		if degree == 0 {
+			queue = append(queue, id)
+		}
+	}
+	visited := 0
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		visited++
+		for _, target := range outgoing[id] {
+			indegree[target]--
+			if indegree[target] == 0 {
+				queue = append(queue, target)
+			}
+		}
+	}
+	if visited != len(nodeList) {
+		return fmt.Errorf("workflow graph contains a cycle")
+	}
+	return nil
 }
 
 func isJSONArray(raw string) bool {

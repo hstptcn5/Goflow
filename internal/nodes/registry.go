@@ -16,6 +16,37 @@ func NewPluginRegistry() *PluginRegistry {
 	}
 }
 
+func NewBuiltinRegistry() *PluginRegistry {
+	registry := NewPluginRegistry()
+	_ = registry.Register(NewWebhookTriggerExecutor())
+	_ = registry.Register(NewCronTriggerExecutor())
+	_ = registry.Register(NewHTTPRequestExecutor())
+	_ = registry.Register(NewTelegramBotExecutor())
+	_ = registry.Register(NewJSONTransformExecutor())
+	_ = registry.Register(NewConditionIFExecutor())
+	_ = registry.Register(NewEmailSMTPExecutor())
+	_ = registry.Register(NewDelaySleepExecutor())
+	_ = registry.Register(NewOpenAIGPTExecutor())
+	_ = registry.Register(NewDeepSeekAIExecutor())
+	_ = registry.Register(NewDiscordBotExecutor())
+	_ = registry.Register(NewSlackBotExecutor())
+	_ = registry.Register(NewJSCodeRunnerExecutor())
+	_ = registry.Register(NewSubWorkflowExecutor())
+	_ = registry.Register(NewPostgresQueryExecutor())
+	_ = registry.Register(NewRedisCommandExecutor())
+	_ = registry.Register(NewGoogleSheetsExecutor())
+	_ = registry.Register(NewMySQLQueryExecutor())
+	_ = registry.Register(NewMongoDBCommandExecutor())
+	_ = registry.Register(NewGoogleDriveExecutor())
+	_ = registry.Register(NewGmailRESTExecutor())
+	_ = registry.Register(NewNotionPageExecutor())
+	_ = registry.Register(NewSSHRunnerExecutor())
+	_ = registry.Register(NewGitCommandExecutor())
+	_ = registry.Register(NewGithubWebhookExecutor())
+	_ = registry.Register(NewGoflowPluginExecutor())
+	return registry
+}
+
 func (r *PluginRegistry) Register(executor NodeExecutor) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

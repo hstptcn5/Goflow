@@ -564,6 +564,10 @@ schedulerLoop:
 							readyChan <- childID
 						}
 					}
+					remainingCount--
+					if remainingCount == 0 {
+						close(doneChan)
+					}
 					stateMu.Unlock()
 
 					e.eventBus.Publish(ExecutionEvent{

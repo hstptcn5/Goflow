@@ -291,11 +291,100 @@ func TestTriggerServiceEnforcesPerWorkflowRejectConcurrency(t *testing.T) {
 	close(release)
 }
 
+func TestTriggerServiceIdempotencyWinsOverPerWorkflowConcurrencyLimit(t *testing.T) {
+	release := make(chan struct{})
+	service, _, wf := newTestTriggerServiceWithExecutor(t, &blockingAction{release: release}, "blockingAction")
+	wf.MaxConcurrentRuns = 1
+	wf.ConcurrencyPolicy = "reject"
+	if err := service.wfStore.Update(wf); err != nil {
+		t.Fatalf("update workflow: %v", err)
+	}
+
+	first, err := service.Trigger(context.Background(), TriggerRequest{
+		WorkflowID:     wf.ID,
+		Input:          map[string]interface{}{},
+		Mode:           ModeAsync,
+		Source:         SourceAPI,
+		IdempotencyKey: "idem-running",
+	})
+	if err != nil {
+		t.Fatalf("first trigger failed: %v", err)
+	}
+	second, err := service.Trigger(context.Background(), TriggerRequest{
+		WorkflowID:     wf.ID,
+		Input:          map[string]interface{}{},
+		Mode:           ModeAsync,
+		Source:         SourceAPI,
+		IdempotencyKey: "idem-running",
+	})
+	if err != nil {
+		t.Fatalf("duplicate trigger should not hit workflow concurrency limit: %v", err)
+	}
+	if !second.Deduplicated || second.Execution.ID != first.Execution.ID {
+		t.Fatalf("expected deduplicated existing execution, first=%#v second=%#v", first, second)
+	}
+	_, err = service.Trigger(context.Background(), TriggerRequest{
+		WorkflowID:     wf.ID,
+		Input:          map[string]interface{}{},
+		Mode:           ModeAsync,
+		Source:         SourceAPI,
+		IdempotencyKey: "different-key",
+	})
+	if !errors.Is(err, engine.ErrWorkflowConcurrencyLimit) {
+		t.Fatalf("expected different key to hit workflow concurrency limit, got %v", err)
+	}
+	close(release)
+}
+
+func TestTriggerServiceIdempotencyWinsOverGlobalConcurrencyLimit(t *testing.T) {
+	release := make(chan struct{})
+	service, _, wf := newTestTriggerServiceWithExecutorAndGlobalLimit(t, &blockingAction{release: release}, "blockingAction", 1)
+
+	first, err := service.Trigger(context.Background(), TriggerRequest{
+		WorkflowID:     wf.ID,
+		Input:          map[string]interface{}{},
+		Mode:           ModeAsync,
+		Source:         SourceAPI,
+		IdempotencyKey: "idem-global",
+	})
+	if err != nil {
+		t.Fatalf("first trigger failed: %v", err)
+	}
+	second, err := service.Trigger(context.Background(), TriggerRequest{
+		WorkflowID:     wf.ID,
+		Input:          map[string]interface{}{},
+		Mode:           ModeAsync,
+		Source:         SourceAPI,
+		IdempotencyKey: "idem-global",
+	})
+	if err != nil {
+		t.Fatalf("duplicate trigger should not hit global concurrency limit: %v", err)
+	}
+	if !second.Deduplicated || second.Execution.ID != first.Execution.ID {
+		t.Fatalf("expected deduplicated existing execution, first=%#v second=%#v", first, second)
+	}
+	_, err = service.Trigger(context.Background(), TriggerRequest{
+		WorkflowID:     wf.ID,
+		Input:          map[string]interface{}{},
+		Mode:           ModeAsync,
+		Source:         SourceAPI,
+		IdempotencyKey: "different-global-key",
+	})
+	if !errors.Is(err, engine.ErrConcurrencyLimit) {
+		t.Fatalf("expected different key to hit global concurrency limit, got %v", err)
+	}
+	close(release)
+}
+
 func newTestTriggerService(t *testing.T) (*TriggerService, *storage.ExecutionStore, *storage.Workflow) {
 	return newTestTriggerServiceWithExecutor(t, &testAction{}, "testAction")
 }
 
 func newTestTriggerServiceWithExecutor(t *testing.T, executor nodes.NodeExecutor, nodeType string) (*TriggerService, *storage.ExecutionStore, *storage.Workflow) {
+	return newTestTriggerServiceWithExecutorAndGlobalLimit(t, executor, nodeType, 0)
+}
+
+func newTestTriggerServiceWithExecutorAndGlobalLimit(t *testing.T, executor nodes.NodeExecutor, nodeType string, maxConcurrent int) (*TriggerService, *storage.ExecutionStore, *storage.Workflow) {
 	t.Helper()
 	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
 	if err != nil {
@@ -309,7 +398,7 @@ func newTestTriggerServiceWithExecutor(t *testing.T, executor nodes.NodeExecutor
 	}
 	wfStore := storage.NewWorkflowStore(db)
 	execStore := storage.NewExecutionStore(db)
-	eng := engine.NewEngine(registry, execStore, storage.NewCredentialStore(db, nil), engine.NewEventBus(), wfStore)
+	eng := engine.NewEngine(registry, execStore, storage.NewCredentialStore(db, nil), engine.NewEventBus(), wfStore, maxConcurrent)
 
 	nodeList := []nodes.Node{{ID: "a", Type: nodes.NodeType(nodeType), Name: "Action", Params: map[string]interface{}{}}}
 	nodesJSON, _ := json.Marshal(nodeList)

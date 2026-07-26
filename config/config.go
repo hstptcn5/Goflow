@@ -27,6 +27,7 @@ type Config struct {
 	MCPBaseURL                string
 	MCPAllowedOrigins         []string
 	MCPMaxInflightPerClient   int
+	MCPRateLimitPerMinute     int
 }
 
 func LoadConfig() *Config {
@@ -70,13 +71,14 @@ func LoadConfig() *Config {
 		FrontendDist:              "ui/dist",
 		APIKey:                    apiKey,
 		MaxConcurrentExecutions:   getEnvInt("GOFLOW_MAX_CONCURRENT_EXECUTIONS", 10),
-		MaxParallelNodesPerRun:    getEnvInt("GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION", 0),
+		MaxParallelNodesPerRun:    getEnvInt("GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION", 4),
 		WebhookRateLimitPerMinute: getEnvInt("GOFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE", 60),
 		ExecutionRetentionDays:    getEnvInt("GOFLOW_EXECUTION_RETENTION_DAYS", 30),
 		MaxExecutionsPerWorkflow:  getEnvInt("GOFLOW_MAX_EXECUTIONS_PER_WORKFLOW", 1000),
 		MCPBaseURL:                os.Getenv("GOFLOW_MCP_BASE_URL"),
 		MCPAllowedOrigins:         getEnvCSV("GOFLOW_MCP_ALLOWED_ORIGINS", defaultMCPAllowedOrigins(host, port)),
 		MCPMaxInflightPerClient:   getEnvInt("GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT", 2),
+		MCPRateLimitPerMinute:     getEnvInt("GOFLOW_MCP_RATE_LIMIT_PER_MINUTE", 30),
 	}
 }
 

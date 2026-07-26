@@ -88,6 +88,12 @@ func (s *Server) registerTools(server *mcp.Server) {
 		Title:       "Cancel Goflow execution",
 		Description: "Request cancellation for a running Goflow execution.",
 	}, s.cancelExecution)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "goflow_reload_tools",
+		Title:       "Reload Goflow MCP tools",
+		Description: "Ask the MCP client to reconnect so dynamic workflow tools are reloaded from the current Goflow server state.",
+	}, s.reloadTools)
 }
 
 func (s *Server) registerDynamicWorkflowTools(server *mcp.Server) {
@@ -102,9 +108,10 @@ func (s *Server) registerDynamicWorkflowTools(server *mcp.Server) {
 		"goflow_get_execution":    true,
 		"goflow_list_executions":  true,
 		"goflow_cancel_execution": true,
+		"goflow_reload_tools":     true,
 	}
 	for _, workflow := range workflows {
-		workflow := workflow
+		workflow := s.workflowWithInterfaceMetadata(workflow)
 		if !workflow.ExposeMCP || !workflow.IsActive || workflow.RequiresApproval {
 			continue
 		}
@@ -127,6 +134,20 @@ type listWorkflowsInput struct {
 	ActiveOnly bool `json:"active_only,omitempty" jsonschema:"deprecated; MCP always lists only active exposed workflows"`
 }
 
+type reloadToolsInput struct{}
+
+type reloadToolsOutput struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+func (s *Server) reloadTools(ctx context.Context, req *mcp.CallToolRequest, input reloadToolsInput) (*mcp.CallToolResult, reloadToolsOutput, error) {
+	return nil, reloadToolsOutput{
+		Status:  "reconnect_required",
+		Message: "Dynamic workflow tools are registered when the MCP session is created. Reconnect the MCP client after changing workflow MCP exposure, name, or schema.",
+	}, nil
+}
+
 type listWorkflowsOutput struct {
 	Workflows []client.Workflow `json:"workflows"`
 	Count     int               `json:"count"`
@@ -139,9 +160,12 @@ func (s *Server) listWorkflows(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	filtered := make([]client.Workflow, 0, len(workflows))
 	for _, workflow := range workflows {
+		workflow = s.workflowWithInterfaceMetadata(workflow)
 		if !workflow.ExposeMCP || !workflow.IsActive {
 			continue
 		}
+		workflow.NodesJSON = ""
+		workflow.EdgesJSON = ""
 		filtered = append(filtered, workflow)
 	}
 	return nil, listWorkflowsOutput{Workflows: filtered, Count: len(filtered)}, nil
@@ -250,7 +274,7 @@ type executionRefInput struct {
 }
 
 type executionOutput struct {
-	Execution client.Execution `json:"execution"`
+	Execution mcpExecution `json:"execution"`
 }
 
 func (s *Server) getExecution(ctx context.Context, req *mcp.CallToolRequest, input executionRefInput) (*mcp.CallToolResult, executionOutput, error) {
@@ -258,7 +282,7 @@ func (s *Server) getExecution(ctx context.Context, req *mcp.CallToolRequest, inp
 	if err != nil {
 		return nil, executionOutput{}, err
 	}
-	return nil, executionOutput{Execution: *exec}, nil
+	return nil, executionOutput{Execution: executionForMCP(*exec)}, nil
 }
 
 type cancelExecutionOutput struct {
@@ -274,9 +298,9 @@ func (s *Server) cancelExecution(ctx context.Context, req *mcp.CallToolRequest, 
 }
 
 type listExecutionsOutput struct {
-	Workflow   client.Workflow    `json:"workflow"`
-	Executions []client.Execution `json:"executions"`
-	Count      int                `json:"count"`
+	Workflow   client.Workflow `json:"workflow"`
+	Executions []mcpExecution  `json:"executions"`
+	Count      int             `json:"count"`
 }
 
 func (s *Server) listExecutions(ctx context.Context, req *mcp.CallToolRequest, input workflowRefInput) (*mcp.CallToolResult, listExecutionsOutput, error) {
@@ -288,7 +312,43 @@ func (s *Server) listExecutions(ctx context.Context, req *mcp.CallToolRequest, i
 	if err != nil {
 		return nil, listExecutionsOutput{}, err
 	}
-	return nil, listExecutionsOutput{Workflow: *workflow, Executions: executions, Count: len(executions)}, nil
+	safeExecutions := make([]mcpExecution, 0, len(executions))
+	for _, exec := range executions {
+		safeExecutions = append(safeExecutions, executionForMCP(exec))
+	}
+	return nil, listExecutionsOutput{Workflow: *workflow, Executions: safeExecutions, Count: len(safeExecutions)}, nil
+}
+
+type mcpExecution struct {
+	ID               string `json:"id"`
+	WorkflowID       string `json:"workflow_id"`
+	Status           string `json:"status"`
+	DurationMs       int64  `json:"duration_ms"`
+	LogsJSON         string `json:"logs_json"`
+	StartedAt        string `json:"started_at"`
+	FinishedAt       string `json:"finished_at,omitempty"`
+	TriggerSource    string `json:"trigger_source,omitempty"`
+	TriggerPrincipal string `json:"trigger_principal,omitempty"`
+	RequestID        string `json:"request_id,omitempty"`
+	IdempotencyKey   string `json:"idempotency_key,omitempty"`
+	ErrorMessage     string `json:"error_message,omitempty"`
+}
+
+func executionForMCP(exec client.Execution) mcpExecution {
+	return mcpExecution{
+		ID:               exec.ID,
+		WorkflowID:       exec.WorkflowID,
+		Status:           exec.Status,
+		DurationMs:       exec.DurationMs,
+		LogsJSON:         exec.LogsJSON,
+		StartedAt:        exec.StartedAt,
+		FinishedAt:       exec.FinishedAt,
+		TriggerSource:    exec.TriggerSource,
+		TriggerPrincipal: exec.TriggerPrincipal,
+		RequestID:        exec.RequestID,
+		IdempotencyKey:   exec.IdempotencyKey,
+		ErrorMessage:     exec.ErrorMessage,
+	}
 }
 
 func (s *Server) resolveAllowedWorkflow(ref string) (*client.Workflow, error) {
@@ -296,6 +356,7 @@ func (s *Server) resolveAllowedWorkflow(ref string) (*client.Workflow, error) {
 	if err != nil {
 		return nil, err
 	}
+	*workflow = s.workflowWithInterfaceMetadata(*workflow)
 	if !workflow.ExposeMCP {
 		return nil, fmt.Errorf("workflow is not exposed to MCP")
 	}
@@ -306,6 +367,37 @@ func (s *Server) resolveAllowedWorkflow(ref string) (*client.Workflow, error) {
 		return nil, fmt.Errorf("workflow requires approval and cannot be run through MCP alpha")
 	}
 	return workflow, nil
+}
+
+func (s *Server) workflowWithInterfaceMetadata(workflow client.Workflow) client.Workflow {
+	if workflow.ID == "" {
+		return workflow
+	}
+	iface, err := s.client.GetWorkflowInterface(workflow.ID)
+	if err != nil {
+		return workflow
+	}
+	workflow.Slug = firstNonEmpty(iface.Slug, workflow.Slug)
+	workflow.InputSchemaJSON = firstNonEmpty(iface.InputSchemaJSON, workflow.InputSchemaJSON)
+	workflow.OutputSchemaJSON = firstNonEmpty(iface.OutputSchemaJSON, workflow.OutputSchemaJSON)
+	workflow.ExposeCLI = iface.ExposeCLI
+	workflow.ExposeMCP = iface.ExposeMCP
+	workflow.MCPToolName = firstNonEmpty(iface.MCPToolName, workflow.MCPToolName)
+	workflow.MCPDescription = firstNonEmpty(iface.MCPDescription, workflow.MCPDescription)
+	workflow.RiskLevel = firstNonEmpty(iface.RiskLevel, workflow.RiskLevel)
+	workflow.RequiresApproval = iface.RequiresApproval
+	workflow.MaxConcurrentRuns = iface.MaxConcurrentRuns
+	workflow.ConcurrencyPolicy = firstNonEmpty(iface.ConcurrencyPolicy, workflow.ConcurrencyPolicy)
+	return workflow
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 var toolNameUnsafeChars = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)

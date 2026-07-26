@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"flag"
 	"io"
 	"os"
@@ -129,4 +130,101 @@ func TestReadWorkflowFileRejectsMissingName(t *testing.T) {
 	if _, err := readWorkflowFile(path); err == nil {
 		t.Fatalf("expected missing name error")
 	}
+}
+
+func TestWorkflowValidateRejectsDuplicateNodeID(t *testing.T) {
+	path := writeWorkflowFixture(t, `{
+		"name":"Invalid",
+		"nodes":[
+			{"id":"n1","type":"webhookTrigger","params":{}},
+			{"id":"n1","type":"webhookTrigger","params":{}}
+		],
+		"edges":[]
+	}`)
+	code, stderr := runValidateFixture(path)
+	if code != ExitInvalidInput || !strings.Contains(stderr, "duplicate node ID") {
+		t.Fatalf("expected duplicate node ID validation error, code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestWorkflowValidateRejectsBadEdgeReference(t *testing.T) {
+	path := writeWorkflowFixture(t, `{
+		"name":"Invalid",
+		"nodes":[{"id":"n1","type":"webhookTrigger","params":{}}],
+		"edges":[{"id":"e1","source":"n1","target":"missing"}]
+	}`)
+	code, stderr := runValidateFixture(path)
+	if code != ExitInvalidInput || !strings.Contains(stderr, "missing target node") {
+		t.Fatalf("expected bad edge validation error, code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestWorkflowValidateRejectsCycle(t *testing.T) {
+	path := writeWorkflowFixture(t, `{
+		"name":"Invalid",
+		"nodes":[
+			{"id":"a","type":"webhookTrigger","params":{}},
+			{"id":"b","type":"webhookTrigger","params":{}}
+		],
+		"edges":[
+			{"id":"e1","source":"a","target":"b"},
+			{"id":"e2","source":"b","target":"a"}
+		]
+	}`)
+	code, stderr := runValidateFixture(path)
+	if code != ExitInvalidInput || !strings.Contains(stderr, "cycle") {
+		t.Fatalf("expected cycle validation error, code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestWorkflowValidateRejectsUnknownNodeType(t *testing.T) {
+	path := writeWorkflowFixture(t, `{
+		"name":"Invalid",
+		"nodes":[{"id":"n1","type":"missingType","params":{}}],
+		"edges":[]
+	}`)
+	code, stderr := runValidateFixture(path)
+	if code != ExitInvalidInput || !strings.Contains(stderr, "unknown node type") {
+		t.Fatalf("expected unknown node type validation error, code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestWorkflowValidateRejectsMissingRequiredParam(t *testing.T) {
+	path := writeWorkflowFixture(t, `{
+		"name":"Invalid",
+		"nodes":[{"id":"sleep","type":"delaySleep","params":{}}],
+		"edges":[]
+	}`)
+	code, stderr := runValidateFixture(path)
+	if code != ExitInvalidInput || !strings.Contains(stderr, "missing required parameter") {
+		t.Fatalf("expected missing required parameter validation error, code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestWorkflowValidateRejectsUnsupportedSchemaKeyword(t *testing.T) {
+	path := writeWorkflowFixture(t, `{
+		"name":"Invalid",
+		"nodes":[],
+		"edges":[],
+		"input_schema_json":{"type":"object","format":"date-time"}
+	}`)
+	code, stderr := runValidateFixture(path)
+	if code != ExitInvalidInput || !strings.Contains(stderr, "unsupported schema keyword") {
+		t.Fatalf("expected schema keyword validation error, code=%d stderr=%q", code, stderr)
+	}
+}
+
+func writeWorkflowFixture(t *testing.T, data string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "workflow.json")
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatalf("write workflow fixture: %v", err)
+	}
+	return path
+}
+
+func runValidateFixture(path string) (int, string) {
+	var stdout, stderr bytes.Buffer
+	code := Runner{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")}.Run([]string{"workflow", "validate", path})
+	return code, stderr.String()
 }

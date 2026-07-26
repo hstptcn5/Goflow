@@ -380,6 +380,8 @@ func requestPrincipal(r *http.Request) string {
 
 func requestTriggerSource(r *http.Request) application.TriggerSource {
 	switch strings.TrimSpace(strings.ToLower(r.Header.Get("X-Goflow-Trigger-Source"))) {
+	case string(application.SourceUI):
+		return application.SourceUI
 	case string(application.SourceCLI):
 		return application.SourceCLI
 	case string(application.SourceMCPStdio):

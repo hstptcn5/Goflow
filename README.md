@@ -150,7 +150,7 @@ Goflow includes 26 built-in nodes spanning triggers, databases, communication ch
 
 ### Triggers
 1. **Webhook Trigger**: Triggers a workflow execution upon receiving an incoming HTTP Webhook request payload.
-2. **Cron Schedule Trigger**: Automatically runs workflows based on standard Cron expressions (e.g., */5 * * * * *).
+2. **Cron Schedule Trigger**: Automatically runs workflows based on standard 5-field Cron expressions (e.g., `*/5 * * * *`).
 3. **GitHub Webhook Trigger**: Activates workflows on Git push, pull requests, etc., with signature verification using HMAC SHA-256.
 
 ### Databases
@@ -348,10 +348,13 @@ Available static tools:
 - `goflow_get_execution`
 - `goflow_list_executions`
 - `goflow_cancel_execution`
+- `goflow_reload_tools`
 
-MCP workflow access is opt-in. Open **Workflows > Interface** and enable **Expose to MCP** for each workflow that an MCP client may see or run. The stdio MCP bridge only lists active workflows with MCP exposure enabled, and the alpha blocks workflows marked **Requires Approval**.
+MCP workflow access is opt-in. Open **Workflows > Interface** and enable **Expose to MCP** for each workflow that an MCP client may see or run. The stdio and HTTP MCP bridges only list active workflows with MCP exposure enabled, and they block workflows marked **Requires Approval**.
 
 When MCP stdio starts while the Goflow server is reachable, each active exposed workflow is also registered as a dynamic tool named `goflow.<mcp_tool_name>`. If `mcp_tool_name` is empty, Goflow falls back to the workflow slug or sanitized workflow name. Dynamic workflow tools start executions asynchronously and return an `execution_id` for `goflow_get_execution`.
+
+Dynamic workflow tools are registered when an MCP session is created. After changing workflow MCP exposure, tool name, or input schema, reconnect the MCP client. The static `goflow_reload_tools` tool returns a `reconnect_required` message for clients that need an explicit refresh command.
 
 For MCP clients, set the environment used by the launched process:
 
@@ -400,7 +403,7 @@ node scripts/mcp-http-smoke-test.mjs \
   --idempotency-key mcp-http-smoke-2026-07-26
 ```
 
-The target workflow must be active, must have **Expose to MCP** enabled in its Interface settings, and must not have **Requires Approval** enabled for the current MCP alpha/beta bridge. Dynamic workflow tools reserve `_goflow` for control metadata; use `_goflow.idempotency_key` for execution idempotency so a business field named `idempotency_key` can remain part of the workflow input.
+The target workflow must be active, must have **Expose to MCP** enabled in its Interface settings, and must not have **Requires Approval** enabled for the current MCP alpha/beta bridge. Dynamic workflow tools reserve `_goflow` for control metadata; use `_goflow.idempotency_key` for execution idempotency so a business field named `idempotency_key` can remain part of the workflow input. MCP execution responses intentionally omit raw `input_json`; use REST execution endpoints with appropriate authorization when raw inputs are needed for local debugging.
 
 To assert and call a dynamic workflow tool over HTTP MCP:
 
@@ -495,8 +498,9 @@ Goflow includes conservative defaults for local/self-hosted use. Override them w
 | Variable | Default | Purpose |
 | :--- | :---: | :--- |
 | `GOFLOW_MAX_CONCURRENT_EXECUTIONS` | `10` | Maximum workflows executing at the same time. Returns HTTP 429 when full. |
-| `GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION` | `0` | Maximum concurrently executing nodes inside one execution. `0` disables the per-execution node limit. |
+| `GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION` | `4` | Maximum concurrently executing nodes inside one execution. Set `0` only when you explicitly want to disable the per-execution node limit. |
 | `GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT` | `2` | Maximum concurrent MCP workflow run calls per stdio client process or HTTP token/principal. |
+| `GOFLOW_MCP_RATE_LIMIT_PER_MINUTE` | `30` | Maximum HTTP MCP requests per minute per token/principal. Set `0` to disable. |
 | `GOFLOW_MCP_BASE_URL` | derived from host/port | Internal base URL used by `/mcp` when it calls the Goflow REST API. |
 | `GOFLOW_MCP_ALLOWED_ORIGINS` | local UI origins | Comma-separated Origin allowlist for `/mcp` browser/remote clients. |
 | `GOFLOW_MAX_SUBWORKFLOW_DEPTH` | `5` | Maximum nested sub-workflow depth before execution fails with a clear error. |

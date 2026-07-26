@@ -111,7 +111,7 @@ export const api = {
   async triggerWorkflow(id, payload = {}, async = false) {
     const res = await customFetch(`${API_BASE}/workflows/${id}/trigger?async=${async}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Goflow-Trigger-Source': 'ui' },
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error('Failed to trigger workflow');
