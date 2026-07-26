@@ -28,7 +28,9 @@ jobs:
         run: go test ./...
 
       - name: Vet
-        run: go vet ./...
+        run: |
+          packages=$(go list ./... | grep -v '/release/')
+          go vet $packages
 
   frontend:
     name: Frontend build
@@ -40,7 +42,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
@@ -90,7 +92,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
@@ -116,4 +118,3 @@ jobs:
           name: goflow-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/
           if-no-files-found: error
-

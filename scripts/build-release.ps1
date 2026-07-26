@@ -22,6 +22,12 @@ if (Test-Path $stage) {
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 
+go test ./...
+if ($LASTEXITCODE -ne 0) { throw "go test failed with exit code $LASTEXITCODE" }
+$packages = go list ./... | Where-Object { $_ -notlike "*release*" }
+go vet $packages
+if ($LASTEXITCODE -ne 0) { throw "go vet failed with exit code $LASTEXITCODE" }
+
 Push-Location "ui"
 npm ci
 if ($LASTEXITCODE -ne 0) { throw "npm ci failed with exit code $LASTEXITCODE" }
@@ -29,11 +35,6 @@ npm run build
 if ($LASTEXITCODE -ne 0) { throw "npm run build failed with exit code $LASTEXITCODE" }
 Pop-Location
 
-go test ./...
-if ($LASTEXITCODE -ne 0) { throw "go test failed with exit code $LASTEXITCODE" }
-$packages = go list ./... | Where-Object { $_ -notlike "*release*" }
-go vet $packages
-if ($LASTEXITCODE -ne 0) { throw "go vet failed with exit code $LASTEXITCODE" }
 go build -trimpath -ldflags="-s -w" -o (Join-Path $stage "goflow.exe") main.go static_embed.go
 if ($LASTEXITCODE -ne 0) { throw "go build failed with exit code $LASTEXITCODE" }
 

@@ -24,15 +24,16 @@ archive="$release_root/goflow-$version-$goos-$goarch.tar.gz"
 rm -rf "$stage"
 mkdir -p "$stage" "$release_root"
 
+go test ./...
+mapfile -t packages < <(go list ./... | grep -v '/release/')
+go vet "${packages[@]}"
+
 (
   cd ui
   npm ci
   npm run build
 )
 
-go test ./...
-mapfile -t packages < <(go list ./... | grep -v '/release/')
-go vet "${packages[@]}"
 GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$stage/goflow$ext" main.go static_embed.go
 
 cp README.md NODES.md MCP_HTTP.md PLUGINS.md BACKUP.md ROADMAP.md CLI_MCP_ROADMAP.md ROADMAP_PROGRESS.md RELEASE.md CHANGELOG.md COMMERCIAL.md TRADEMARK.md LICENSE VERSION "$stage/"
