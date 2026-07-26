@@ -18,12 +18,10 @@ timeline
       v0.4.0 MCP stdio Alpha : Released
 
     section Current
-      Dynamic MCP Tools : Exposed workflows register as separate AI tools
+      P1 Hardening : Input validation, cancellation, node concurrency, workflow-as-code
 
     section Next
-      Input Schema Validation : Validate workflow run input server-side
-      Concurrency Hardening : MCP inflight limits, node concurrency, sub-workflow slot fix
-      Cancellation : Cancel endpoint, CLI cancel, MCP cancel
+      Scoped Tokens : Token scopes, workflow allowlists, audit metadata
       Streamable HTTP MCP : Remote/local HTTP MCP beta with auth and Origin validation
 ```
 
@@ -34,8 +32,8 @@ timeline
 | `v0.2.0-foundation-preview` | Migration, execution metadata, async execution ID, idempotency | Mostly complete and tested manually |
 | `v0.3.0-cli-alpha` | CLI status/list/describe/run/get/watch | Initial implementation complete; needs more real-workflow testing |
 | `v0.4.0-mcp-stdio-alpha` | MCP stdio static tools | Released |
-| `v0.5.0-mcp-dynamic-preview` | Workflow MCP exposure, dynamic tools, input schema validation | Dynamic workflow tools implemented; input validation pending |
-| Hardening | Concurrency, cancellation, scoped token, audit | P0 concurrency and secret redaction complete; cancellation/scoped tokens pending |
+| `v0.5.0-mcp-dynamic-preview` | Workflow MCP exposure, dynamic tools, input schema validation | Dynamic workflow tools and input validation implemented |
+| Hardening | Concurrency, cancellation, scoped token, audit | Cancellation and node/sub-workflow concurrency implemented; scoped tokens/audit pending |
 | Streamable HTTP MCP | `/mcp` HTTP transport | Deferred |
 
 ## P0 Checklist
@@ -53,6 +51,21 @@ timeline
 [x] MCP client smoke test script
 [x] Workflow MCP allowlist UI/API
 [x] Global/per-client MCP concurrency
+```
+
+## P1 Checklist
+
+```text
+[x] Dynamic MCP workflow tools
+[x] Server-side input schema validation
+[x] Node concurrency limit
+[x] Sub-workflow nested slot fix
+[x] Cancellation API
+[x] CLI cancel
+[x] MCP cancel
+[x] CLI import/export/validate
+[ ] Scoped token
+[ ] Audit metadata
 ```
 
 ## Remaining Timeline
@@ -74,21 +87,19 @@ gantt
     Workflow MCP allowlist API/UI  :done, mcp3, 2026-07-27, 1d
     Global/per-client concurrency  :done, hard0, 2026-07-27, 1d
     Release v0.4.0 alpha           :done, rel1, 2026-07-27, 1d
-
-    section Now
     Dynamic MCP workflow tools     :active, mcp4, 2026-07-27, 2d
+    Input schema validation        :done, mcp5, 2026-07-27, 1d
+    Cancellation API/CLI/MCP       :done, hard2, 2026-07-27, 1d
+    Node/sub-workflow hardening    :done, hard1, 2026-07-27, 1d
 
     section Next
-    Input schema validation        :mcp5, after mcp4, 2d
-
-    section Later
-    Concurrency hardening          :hard1, after mcp5, 4d
-    Cancellation API               :hard2, after hard1, 4d
+    Scoped tokens and audit        :sec1, after hard1, 5d
+    Streamable HTTP MCP            :http1, after sec1, 5d
 ```
 
 ## Next Priorities
 
-1. Test `--expect-tool` and `--dynamic-tool` against a real exposed workflow.
-2. Add server-side input schema validation for workflow runs.
-3. Add node concurrency hardening.
-4. Add cancellation API / CLI cancel / MCP cancel.
+1. Test cancellation against a real long-running workflow.
+2. Test dynamic MCP tool calls against a real exposed workflow.
+3. Add scoped tokens and audit metadata.
+4. Start Streamable HTTP MCP beta design.

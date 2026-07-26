@@ -20,6 +20,7 @@ type Config struct {
 	FrontendDist              string
 	APIKey                    string
 	MaxConcurrentExecutions   int
+	MaxParallelNodesPerRun    int
 	WebhookRateLimitPerMinute int
 	ExecutionRetentionDays    int
 	MaxExecutionsPerWorkflow  int
@@ -66,6 +67,7 @@ func LoadConfig() *Config {
 		FrontendDist:              "ui/dist",
 		APIKey:                    apiKey,
 		MaxConcurrentExecutions:   getEnvInt("GOFLOW_MAX_CONCURRENT_EXECUTIONS", 10),
+		MaxParallelNodesPerRun:    getEnvInt("GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION", 0),
 		WebhookRateLimitPerMinute: getEnvInt("GOFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE", 60),
 		ExecutionRetentionDays:    getEnvInt("GOFLOW_EXECUTION_RETENTION_DAYS", 30),
 		MaxExecutionsPerWorkflow:  getEnvInt("GOFLOW_MAX_EXECUTIONS_PER_WORKFLOW", 1000),

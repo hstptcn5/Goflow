@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -78,6 +79,24 @@ func TestTriggerServiceAsyncIdempotency(t *testing.T) {
 	}
 	if first.Execution.ID != second.Execution.ID {
 		t.Fatalf("expected same execution ID, got %s and %s", first.Execution.ID, second.Execution.ID)
+	}
+}
+
+func TestTriggerServiceRejectsInvalidInputSchema(t *testing.T) {
+	service, _, wf := newTestTriggerService(t)
+	wf.InputSchemaJSON = `{"type":"object","required":["date"],"properties":{"date":{"type":"string"}}}`
+	if err := service.wfStore.Update(wf); err != nil {
+		t.Fatalf("update workflow schema failed: %v", err)
+	}
+
+	_, err := service.Trigger(context.Background(), TriggerRequest{
+		WorkflowID: wf.ID,
+		Input:      map[string]interface{}{"date": float64(1)},
+		Mode:       ModeAsync,
+		Source:     SourceMCP,
+	})
+	if !errors.Is(err, ErrInvalidWorkflowInput) {
+		t.Fatalf("expected ErrInvalidWorkflowInput, got %v", err)
 	}
 }
 

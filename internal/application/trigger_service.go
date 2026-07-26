@@ -2,12 +2,15 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"goflow/internal/engine"
 	"goflow/internal/storage"
 )
+
+var ErrInvalidWorkflowInput = errors.New("invalid workflow input")
 
 type TriggerSource string
 
@@ -62,6 +65,9 @@ func (s *TriggerService) Trigger(ctx context.Context, req TriggerRequest) (*Trig
 
 	wf, err := s.wfStore.GetByID(req.WorkflowID)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateWorkflowInput(wf.InputSchemaJSON, req.Input); err != nil {
 		return nil, err
 	}
 

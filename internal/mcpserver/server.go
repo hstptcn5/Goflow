@@ -76,6 +76,12 @@ func (s *Server) registerTools(server *mcp.Server) {
 		Title:       "List Goflow executions",
 		Description: "List recent executions for a workflow ID, slug, or exact name.",
 	}, s.listExecutions)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "goflow_cancel_execution",
+		Title:       "Cancel Goflow execution",
+		Description: "Request cancellation for a running Goflow execution.",
+	}, s.cancelExecution)
 }
 
 func (s *Server) registerDynamicWorkflowTools(server *mcp.Server) {
@@ -84,11 +90,12 @@ func (s *Server) registerDynamicWorkflowTools(server *mcp.Server) {
 		return
 	}
 	registered := map[string]bool{
-		"goflow_list_workflows":  true,
-		"goflow_get_workflow":    true,
-		"goflow_run_workflow":    true,
-		"goflow_get_execution":   true,
-		"goflow_list_executions": true,
+		"goflow_list_workflows":   true,
+		"goflow_get_workflow":     true,
+		"goflow_run_workflow":     true,
+		"goflow_get_execution":    true,
+		"goflow_list_executions":  true,
+		"goflow_cancel_execution": true,
 	}
 	for _, workflow := range workflows {
 		workflow := workflow
@@ -244,6 +251,18 @@ func (s *Server) getExecution(ctx context.Context, req *mcp.CallToolRequest, inp
 		return nil, executionOutput{}, err
 	}
 	return nil, executionOutput{Execution: *exec}, nil
+}
+
+type cancelExecutionOutput struct {
+	Result client.ExecutionCancelResult `json:"result"`
+}
+
+func (s *Server) cancelExecution(ctx context.Context, req *mcp.CallToolRequest, input executionRefInput) (*mcp.CallToolResult, cancelExecutionOutput, error) {
+	result, err := s.client.CancelExecution(input.ExecutionID)
+	if err != nil {
+		return nil, cancelExecutionOutput{}, err
+	}
+	return nil, cancelExecutionOutput{Result: *result}, nil
 }
 
 type listExecutionsOutput struct {

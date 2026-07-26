@@ -59,6 +59,7 @@ try {
   assertIncludes(toolNames, "goflow_run_workflow");
   assertIncludes(toolNames, "goflow_get_execution");
   assertIncludes(toolNames, "goflow_list_executions");
+  assertIncludes(toolNames, "goflow_cancel_execution");
   if (expectTool) {
     assertIncludes(toolNames, expectTool);
   }

@@ -369,6 +369,10 @@ func writeExecutionError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusTooManyRequests)
 		return
 	}
+	if errors.Is(err, application.ErrInvalidWorkflowInput) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if strings.Contains(strings.ToLower(err.Error()), "workflow not found") {
 		http.Error(w, "Workflow not found", http.StatusNotFound)
 		return

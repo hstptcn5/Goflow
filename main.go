@@ -97,7 +97,7 @@ func main() {
 
 	// 4. Initialize EventBus and DAG Execution Engine
 	eventBus := engine.NewEventBus()
-	eng := engine.NewEngine(registry, execStore, credStore, eventBus, wfStore, cfg.MaxConcurrentExecutions)
+	eng := engine.NewEngine(registry, execStore, credStore, eventBus, wfStore, cfg.MaxConcurrentExecutions, cfg.MaxParallelNodesPerRun)
 	triggerService := application.NewTriggerService(wfStore, eng)
 
 	// 5. Initialize Cron Scheduler for Timed Triggers

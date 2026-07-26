@@ -48,6 +48,25 @@ func (m *slowAction) GetDefinition() nodes.NodeDefinition {
 	return nodes.NodeDefinition{Type: "slowAction"}
 }
 
+type countingAction struct {
+	current int
+	max     int
+}
+
+func (m *countingAction) Execute(ctx *nodes.ExecutionContext, node *nodes.Node) (interface{}, error) {
+	m.current++
+	if m.current > m.max {
+		m.max = m.current
+	}
+	time.Sleep(50 * time.Millisecond)
+	m.current--
+	return map[string]interface{}{"status": "done"}, nil
+}
+func (m *countingAction) Validate(node *nodes.Node) error { return nil }
+func (m *countingAction) GetDefinition() nodes.NodeDefinition {
+	return nodes.NodeDefinition{Type: "countingAction", Retryable: false}
+}
+
 func TestExecuteWorkflowConcurrencyLimit(t *testing.T) {
 	registry := nodes.NewPluginRegistry()
 	_ = registry.Register(&slowAction{})
@@ -89,6 +108,104 @@ func TestExecuteWorkflowConcurrencyLimit(t *testing.T) {
 	time.Sleep(250 * time.Millisecond)
 }
 
+func TestCancelAsyncWorkflow(t *testing.T) {
+	registry := nodes.NewPluginRegistry()
+	_ = registry.Register(nodes.NewDelaySleepExecutor())
+
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	execStore := storage.NewExecutionStore(db)
+	wfStore := storage.NewWorkflowStore(db)
+	eng := NewEngine(registry, execStore, storage.NewCredentialStore(db, nil), NewEventBus(), wfStore)
+
+	nodeList := []nodes.Node{
+		{ID: "delay", Type: nodes.TypeDelaySleep, Name: "Delay", Params: map[string]interface{}{"seconds": "5"}},
+	}
+	nodesJSON, _ := json.Marshal(nodeList)
+	wf := &storage.Workflow{
+		ID:        "wf-cancel",
+		Name:      "Cancellation",
+		NodesJSON: string(nodesJSON),
+		EdgesJSON: "[]",
+	}
+	if err := wfStore.Create(wf); err != nil {
+		t.Fatalf("failed to create workflow: %v", err)
+	}
+
+	exec, _, err := eng.StartWorkflowAsync(wf, nil, TriggerOptions{})
+	if err != nil {
+		t.Fatalf("start workflow async failed: %v", err)
+	}
+	if !eng.CancelExecution(exec.ID) {
+		t.Fatalf("expected active execution to be cancellable")
+	}
+
+	var got *storage.Execution
+	for i := 0; i < 30; i++ {
+		got, err = execStore.GetByID(exec.ID)
+		if err != nil {
+			t.Fatalf("get execution failed: %v", err)
+		}
+		if got.Status == "CANCELLED" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got.Status != "CANCELLED" {
+		t.Fatalf("expected CANCELLED, got %s", got.Status)
+	}
+	if got.CancelledAt == nil {
+		t.Fatalf("expected cancelled_at to be set")
+	}
+}
+
+func TestMaxParallelNodesPerExecution(t *testing.T) {
+	counter := &countingAction{}
+	registry := nodes.NewPluginRegistry()
+	_ = registry.Register(counter)
+
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	execStore := storage.NewExecutionStore(db)
+	wfStore := storage.NewWorkflowStore(db)
+	eng := NewEngine(registry, execStore, storage.NewCredentialStore(db, nil), NewEventBus(), wfStore, 0, 1)
+
+	nodeList := []nodes.Node{
+		{ID: "a", Type: "countingAction", Name: "A", Params: map[string]interface{}{}},
+		{ID: "b", Type: "countingAction", Name: "B", Params: map[string]interface{}{}},
+		{ID: "c", Type: "countingAction", Name: "C", Params: map[string]interface{}{}},
+	}
+	nodesJSON, _ := json.Marshal(nodeList)
+	wf := &storage.Workflow{
+		ID:        "wf-node-limit",
+		Name:      "Node limit",
+		NodesJSON: string(nodesJSON),
+		EdgesJSON: "[]",
+	}
+	if err := wfStore.Create(wf); err != nil {
+		t.Fatalf("failed to create workflow: %v", err)
+	}
+
+	exec, err := eng.ExecuteWorkflow(wf, nil)
+	if err != nil {
+		t.Fatalf("execute workflow failed: %v", err)
+	}
+	if exec.Status != "SUCCESS" {
+		t.Fatalf("expected SUCCESS, got %s", exec.Status)
+	}
+	if counter.max != 1 {
+		t.Fatalf("expected max node concurrency 1, got %d", counter.max)
+	}
+}
+
 func TestExecuteWorkflowWithSkipLogic(t *testing.T) {
 	// Setup registry and register executors
 	registry := nodes.NewPluginRegistry()
@@ -111,7 +228,7 @@ func TestExecuteWorkflowWithSkipLogic(t *testing.T) {
 	credStore := storage.NewCredentialStore(db, nil)
 	wfStore := storage.NewWorkflowStore(db)
 	eventBus := NewEventBus()
-	eng := NewEngine(registry, execStore, credStore, eventBus, wfStore)
+	eng := NewEngine(registry, execStore, credStore, eventBus, wfStore, 1)
 
 	// Define nodes:
 	// trigger_1 (val = "ALERT")
@@ -265,7 +382,7 @@ func TestSubWorkflowExecution(t *testing.T) {
 	credStore := storage.NewCredentialStore(db, nil)
 	wfStore := storage.NewWorkflowStore(db)
 	eventBus := NewEventBus()
-	eng := NewEngine(registry, execStore, credStore, eventBus, wfStore)
+	eng := NewEngine(registry, execStore, credStore, eventBus, wfStore, 1)
 
 	// 1. Create Sub-workflow
 	subNodeList := []nodes.Node{

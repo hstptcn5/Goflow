@@ -3,6 +3,8 @@ package cli
 import (
 	"flag"
 	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -58,5 +60,30 @@ func TestParseOneRefAllowsFlagsBeforeReference(t *testing.T) {
 	}
 	if *output != "json" {
 		t.Fatalf("expected output json, got %s", *output)
+	}
+}
+
+func TestReadWorkflowFileAcceptsUIExportShape(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workflow.json")
+	data := `{"name":"Imported","description":"From UI","nodes":[],"edges":[]}`
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatalf("write workflow file: %v", err)
+	}
+	workflow, err := readWorkflowFile(path)
+	if err != nil {
+		t.Fatalf("readWorkflowFile failed: %v", err)
+	}
+	if workflow.Name != "Imported" || workflow.NodesJSON != "[]" || workflow.EdgesJSON != "[]" {
+		t.Fatalf("unexpected workflow: %#v", workflow)
+	}
+}
+
+func TestReadWorkflowFileRejectsMissingName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workflow.json")
+	if err := os.WriteFile(path, []byte(`{"nodes":[],"edges":[]}`), 0600); err != nil {
+		t.Fatalf("write workflow file: %v", err)
+	}
+	if _, err := readWorkflowFile(path); err == nil {
+		t.Fatalf("expected missing name error")
 	}
 }

@@ -1,6 +1,7 @@
 package nodes
 
 import (
+	"context"
 	"strconv"
 	"time"
 )
@@ -18,7 +19,11 @@ func (e *DelaySleepExecutor) Execute(ctx *ExecutionContext, node *Node) (interfa
 		seconds = 1
 	}
 
-	time.Sleep(time.Duration(seconds) * time.Second)
+	select {
+	case <-time.After(time.Duration(seconds) * time.Second):
+	case <-ctx.Context.Done():
+		return nil, context.Cause(ctx.Context)
+	}
 
 	return map[string]interface{}{
 		"delayed_seconds": seconds,

@@ -68,12 +68,16 @@ func (s *ExecutionStore) UpdateStatus(id string, status string, durationMs int64
 
 func (s *ExecutionStore) UpdateStatusWithError(id string, status string, durationMs int64, logsJSON string, errorMessage string) error {
 	now := time.Now()
+	cancelledAt := interface{}(nil)
+	if status == "CANCELLED" {
+		cancelledAt = now
+	}
 	query := `
 		UPDATE executions
-		SET status = ?, duration_ms = ?, logs_json = ?, finished_at = ?, error_message = ?
+		SET status = ?, duration_ms = ?, logs_json = ?, finished_at = ?, error_message = ?, cancelled_at = COALESCE(cancelled_at, ?)
 		WHERE id = ?
 	`
-	_, err := s.db.WriteDB.Exec(query, status, durationMs, logsJSON, now, nullableString(errorMessage), id)
+	_, err := s.db.WriteDB.Exec(query, status, durationMs, logsJSON, now, nullableString(errorMessage), cancelledAt, id)
 	return err
 }
 

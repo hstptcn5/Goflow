@@ -74,8 +74,12 @@ Usage:
   goflow workflow list [--active] [--output table|json]
   goflow workflow describe <workflow-id|slug|name> [--output table|json]
   goflow workflow run <workflow-id|slug|name> [--json JSON | --input file | --stdin | --set key=value] [--idempotency-key key] [--wait] [--timeout 60s] [--output table|json]
+  goflow workflow export <workflow-id|slug|name> [--output file]
+  goflow workflow import <file> [--activate]
+  goflow workflow validate <file>
   goflow execution get <execution-id> [--output table|json]
   goflow execution watch <execution-id> [--timeout 60s] [--interval 1s] [--output table|json]
+  goflow execution cancel <execution-id> [--output table|json]
   goflow mcp stdio
 
 Environment:
@@ -173,10 +177,88 @@ func (r Runner) workflow(args []string) int {
 		return r.workflowDescribe(args[1:])
 	case "run":
 		return r.workflowRun(args[1:])
+	case "export":
+		return r.workflowExport(args[1:])
+	case "import":
+		return r.workflowImport(args[1:])
+	case "validate":
+		return r.workflowValidate(args[1:])
 	default:
 		fmt.Fprintf(r.Stderr, "unknown workflow subcommand: %s\n", args[0])
 		return ExitInvalidInput
 	}
+}
+
+func (r Runner) workflowExport(args []string) int {
+	fs := flag.NewFlagSet("workflow export", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	outputPath := fs.String("output", "", "Write workflow JSON to file instead of stdout")
+	clientOpts := addClientFlags(fs)
+	ref, ok, code := parseOneRef(fs, args, "workflow reference", r.Stderr)
+	if !ok {
+		return code
+	}
+	c := cliClient(clientOpts)
+	workflow, err := c.ResolveWorkflow(ref)
+	if err != nil {
+		return r.apiError(err)
+	}
+	data, err := json.MarshalIndent(workflow, "", "  ")
+	if err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	data = append(data, '\n')
+	if *outputPath != "" {
+		if err := os.WriteFile(*outputPath, data, 0600); err != nil {
+			fmt.Fprintln(r.Stderr, err)
+			return ExitInvalidInput
+		}
+		fmt.Fprintf(r.Stdout, "Exported workflow %s to %s\n", workflow.ID, *outputPath)
+		return ExitOK
+	}
+	_, _ = r.Stdout.Write(data)
+	return ExitOK
+}
+
+func (r Runner) workflowImport(args []string) int {
+	fs := flag.NewFlagSet("workflow import", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	activate := fs.Bool("activate", false, "Import workflow as active")
+	clientOpts := addClientFlags(fs)
+	path, ok, code := parseOneRef(fs, args, "workflow file", r.Stderr)
+	if !ok {
+		return code
+	}
+	workflow, err := readWorkflowFile(path)
+	if err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	workflow.ID = ""
+	workflow.IsActive = *activate
+	c := cliClient(clientOpts)
+	created, err := c.CreateWorkflow(workflow)
+	if err != nil {
+		return r.apiError(err)
+	}
+	fmt.Fprintf(r.Stdout, "Imported workflow\nID: %s\nName: %s\nActive: %t\n", created.ID, created.Name, created.IsActive)
+	return ExitOK
+}
+
+func (r Runner) workflowValidate(args []string) int {
+	fs := flag.NewFlagSet("workflow validate", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	path, ok, code := parseOneRef(fs, args, "workflow file", r.Stderr)
+	if !ok {
+		return code
+	}
+	if _, err := readWorkflowFile(path); err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	fmt.Fprintln(r.Stdout, "Workflow file is valid")
+	return ExitOK
 }
 
 func (r Runner) workflowList(args []string) int {
@@ -293,10 +375,33 @@ func (r Runner) execution(args []string) int {
 		return r.executionGet(args[1:])
 	case "watch":
 		return r.executionWatch(args[1:])
+	case "cancel":
+		return r.executionCancel(args[1:])
 	default:
 		fmt.Fprintf(r.Stderr, "unknown execution subcommand: %s\n", args[0])
 		return ExitInvalidInput
 	}
+}
+
+func (r Runner) executionCancel(args []string) int {
+	fs := flag.NewFlagSet("execution cancel", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	output := fs.String("output", "table", "Output format: table or json")
+	clientOpts := addClientFlags(fs)
+	ref, ok, code := parseOneRef(fs, args, "execution ID", r.Stderr)
+	if !ok {
+		return code
+	}
+	c := cliClient(clientOpts)
+	result, err := c.CancelExecution(ref)
+	if err != nil {
+		return r.apiError(err)
+	}
+	if *output == "json" {
+		return writeJSON(r.Stdout, result)
+	}
+	fmt.Fprintf(r.Stdout, "Cancellation requested\nExecution ID: %s\nStatus: %s\nMessage: %s\n", result.ID, result.Status, result.Message)
+	return ExitOK
 }
 
 func (r Runner) executionGet(args []string) int {
@@ -435,6 +540,78 @@ func parseJSONObject(data []byte) (map[string]interface{}, error) {
 		out = map[string]interface{}{}
 	}
 	return out, nil
+}
+
+func readWorkflowFile(path string) (client.Workflow, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return client.Workflow{}, err
+	}
+	var raw struct {
+		ID               string          `json:"id"`
+		Name             string          `json:"name"`
+		Description      string          `json:"description"`
+		IsActive         bool            `json:"is_active"`
+		NodesJSON        string          `json:"nodes_json"`
+		EdgesJSON        string          `json:"edges_json"`
+		Nodes            json.RawMessage `json:"nodes"`
+		Edges            json.RawMessage `json:"edges"`
+		Slug             string          `json:"slug"`
+		InputSchemaJSON  string          `json:"input_schema_json"`
+		OutputSchemaJSON string          `json:"output_schema_json"`
+		ExposeCLI        bool            `json:"expose_cli"`
+		ExposeMCP        bool            `json:"expose_mcp"`
+		MCPToolName      string          `json:"mcp_tool_name"`
+		MCPDescription   string          `json:"mcp_description"`
+		RiskLevel        string          `json:"risk_level"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return client.Workflow{}, fmt.Errorf("workflow file must be JSON: %w", err)
+	}
+	if strings.TrimSpace(raw.Name) == "" {
+		return client.Workflow{}, fmt.Errorf("workflow name is required")
+	}
+	nodesJSON := raw.NodesJSON
+	if nodesJSON == "" && len(raw.Nodes) > 0 {
+		nodesJSON = string(raw.Nodes)
+	}
+	edgesJSON := raw.EdgesJSON
+	if edgesJSON == "" && len(raw.Edges) > 0 {
+		edgesJSON = string(raw.Edges)
+	}
+	if nodesJSON == "" {
+		nodesJSON = "[]"
+	}
+	if edgesJSON == "" {
+		edgesJSON = "[]"
+	}
+	if !isJSONArray(nodesJSON) {
+		return client.Workflow{}, fmt.Errorf("nodes_json or nodes must be a JSON array")
+	}
+	if !isJSONArray(edgesJSON) {
+		return client.Workflow{}, fmt.Errorf("edges_json or edges must be a JSON array")
+	}
+	return client.Workflow{
+		ID:               raw.ID,
+		Name:             raw.Name,
+		Description:      raw.Description,
+		IsActive:         raw.IsActive,
+		NodesJSON:        nodesJSON,
+		EdgesJSON:        edgesJSON,
+		Slug:             raw.Slug,
+		InputSchemaJSON:  raw.InputSchemaJSON,
+		OutputSchemaJSON: raw.OutputSchemaJSON,
+		ExposeCLI:        raw.ExposeCLI,
+		ExposeMCP:        raw.ExposeMCP,
+		MCPToolName:      raw.MCPToolName,
+		MCPDescription:   raw.MCPDescription,
+		RiskLevel:        raw.RiskLevel,
+	}, nil
+}
+
+func isJSONArray(raw string) bool {
+	var decoded []interface{}
+	return json.Unmarshal([]byte(raw), &decoded) == nil
 }
 
 func printExecution(w io.Writer, exec *client.Execution) {

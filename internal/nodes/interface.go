@@ -1,6 +1,9 @@
 package nodes
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 // NodeType identifies a supported node executor type.
 type NodeType string
@@ -55,6 +58,7 @@ type Edge struct {
 
 // ExecutionContext carries workflow state, node outputs, and decrypted credentials.
 type ExecutionContext struct {
+	Context     context.Context
 	WorkflowID  string
 	ExecutionID string
 	Outputs     map[string]interface{}
@@ -69,7 +73,15 @@ type ExecutionContext struct {
 }
 
 func NewExecutionContext(workflowID, executionID string) *ExecutionContext {
+	return NewExecutionContextWithContext(context.Background(), workflowID, executionID)
+}
+
+func NewExecutionContextWithContext(parent context.Context, workflowID, executionID string) *ExecutionContext {
+	if parent == nil {
+		parent = context.Background()
+	}
 	return &ExecutionContext{
+		Context:     parent,
 		WorkflowID:  workflowID,
 		ExecutionID: executionID,
 		Outputs:     make(map[string]interface{}),

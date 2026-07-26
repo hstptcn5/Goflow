@@ -8,6 +8,11 @@ All notable changes to Goflow are tracked here.
 
 - Dynamic MCP workflow tools for active workflows explicitly exposed through the Interface settings.
 - MCP smoke test options for asserting and calling dynamic workflow tools.
+- Server-side workflow input schema validation for all trigger paths.
+- Execution cancellation API, CLI command, and MCP tool.
+- Per-execution node concurrency limit through `GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION`.
+- Sub-workflow executions reuse the root workflow global execution slot.
+- CLI workflow export, import, and validate commands.
 
 ## 0.4.0-mcp-stdio-alpha - 2026-07-26
 

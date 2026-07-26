@@ -21,6 +21,8 @@ type Workflow struct {
 	Name              string `json:"name"`
 	Description       string `json:"description"`
 	IsActive          bool   `json:"is_active"`
+	NodesJSON         string `json:"nodes_json,omitempty"`
+	EdgesJSON         string `json:"edges_json,omitempty"`
 	Slug              string `json:"slug,omitempty"`
 	InputSchemaJSON   string `json:"input_schema_json"`
 	OutputSchemaJSON  string `json:"output_schema_json"`
@@ -57,6 +59,12 @@ type ExecutionAccepted struct {
 	Deduplicated bool   `json:"deduplicated"`
 }
 
+type ExecutionCancelResult struct {
+	ID      string `json:"id"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
 func New(baseURL, apiKey string) *Client {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
@@ -86,6 +94,22 @@ func (c *Client) GetWorkflow(id string) (*Workflow, error) {
 		return nil, err
 	}
 	return &workflow, nil
+}
+
+func (c *Client) CreateWorkflow(workflow Workflow) (*Workflow, error) {
+	var created Workflow
+	if err := c.doJSON(http.MethodPost, "/api/v1/workflows", workflow, &created); err != nil {
+		return nil, err
+	}
+	return &created, nil
+}
+
+func (c *Client) UpdateWorkflow(id string, workflow Workflow) (*Workflow, error) {
+	var updated Workflow
+	if err := c.doJSON(http.MethodPut, "/api/v1/workflows/"+id, workflow, &updated); err != nil {
+		return nil, err
+	}
+	return &updated, nil
 }
 
 func (c *Client) ResolveWorkflow(ref string) (*Workflow, error) {
@@ -141,6 +165,14 @@ func (c *Client) ListExecutions(workflowID string) ([]Execution, error) {
 		executions = []Execution{}
 	}
 	return executions, nil
+}
+
+func (c *Client) CancelExecution(id string) (*ExecutionCancelResult, error) {
+	var result ExecutionCancelResult
+	if err := c.doJSON(http.MethodPost, "/api/v1/executions/"+id+"/cancel", map[string]interface{}{}, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 func (c *Client) doJSON(method, path string, in interface{}, out interface{}) error {

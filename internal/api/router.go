@@ -50,7 +50,7 @@ func NewRouter(
 
 	triggerService := application.NewTriggerService(wfStore, eng)
 	wfHandler := NewWorkflowHandler(wfStore, triggerService, webhookRateLimitPerMinute)
-	execHandler := NewExecutionHandler(execStore)
+	execHandler := NewExecutionHandler(execStore, eng)
 	credHandler := NewCredentialHandler(credStore)
 	nodeHandler := NewNodeHandler(registry)
 	oauth2Handler := NewOAuth2Handler(credStore)
@@ -75,6 +75,7 @@ func NewRouter(
 		r.Post("/workflows/{id}/executions", wfHandler.CreateExecution)
 
 		r.Get("/executions/{id}", execHandler.GetExecution)
+		r.Post("/executions/{id}/cancel", execHandler.CancelExecution)
 		r.Get("/workflows/{workflowId}/executions", execHandler.ListWorkflowExecutions)
 
 		r.Get("/credentials", credHandler.ListCredentials)

@@ -37,7 +37,7 @@ func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 		reqBody = bytes.NewBufferString(bodyStr)
 	}
 
-	req, err := http.NewRequest(method, urlStr, reqBody)
+	req, err := http.NewRequestWithContext(ctx.Context, method, urlStr, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

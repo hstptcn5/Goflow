@@ -41,6 +41,9 @@ type Engine struct {
 	eventBus       *EventBus
 	wfStore        *storage.WorkflowStore
 	executionSlots chan struct{}
+	maxNodeSlots   int
+	activeMu       sync.Mutex
+	activeCancels  map[string]context.CancelFunc
 }
 
 func NewEngine(
@@ -55,6 +58,10 @@ func NewEngine(
 	if len(maxConcurrent) > 0 && maxConcurrent[0] > 0 {
 		slots = make(chan struct{}, maxConcurrent[0])
 	}
+	maxNodeSlots := 0
+	if len(maxConcurrent) > 1 && maxConcurrent[1] > 0 {
+		maxNodeSlots = maxConcurrent[1]
+	}
 	return &Engine{
 		registry:       r,
 		executionStore: es,
@@ -62,6 +69,8 @@ func NewEngine(
 		eventBus:       eb,
 		wfStore:        ws,
 		executionSlots: slots,
+		maxNodeSlots:   maxNodeSlots,
+		activeCancels:  make(map[string]context.CancelFunc),
 	}
 }
 
@@ -86,7 +95,7 @@ func (e *Engine) ExecuteWorkflowWithOptions(wf *storage.Workflow, triggerPayload
 	}
 	defer release()
 
-	return e.executeWorkflow(wf, triggerPayload, nil, opts)
+	return e.executeWorkflow(context.Background(), wf, triggerPayload, nil, opts)
 }
 
 func (e *Engine) ExecuteWorkflowAsync(wf *storage.Workflow, triggerPayload interface{}) error {
@@ -112,13 +121,38 @@ func (e *Engine) StartWorkflowAsync(wf *storage.Workflow, triggerPayload interfa
 		return nil, false, err
 	}
 
+	runCtx, cancel := context.WithCancel(context.Background())
+	e.registerExecutionCancel(execRecord.ID, cancel)
 	go func() {
 		defer release()
-		if _, err := e.executeWorkflow(wf, triggerPayload, execRecord, TriggerOptions{}); err != nil {
+		defer e.unregisterExecutionCancel(execRecord.ID)
+		if _, err := e.executeWorkflow(runCtx, wf, triggerPayload, execRecord, TriggerOptions{}); err != nil {
 			_ = e.executionStore.UpdateStatusWithError(execRecord.ID, "FAILED", 0, execRecord.LogsJSON, err.Error())
 		}
 	}()
 	return execRecord, false, nil
+}
+
+func (e *Engine) CancelExecution(id string) bool {
+	e.activeMu.Lock()
+	cancel, ok := e.activeCancels[id]
+	e.activeMu.Unlock()
+	if ok {
+		cancel()
+	}
+	return ok
+}
+
+func (e *Engine) registerExecutionCancel(id string, cancel context.CancelFunc) {
+	e.activeMu.Lock()
+	defer e.activeMu.Unlock()
+	e.activeCancels[id] = cancel
+}
+
+func (e *Engine) unregisterExecutionCancel(id string) {
+	e.activeMu.Lock()
+	defer e.activeMu.Unlock()
+	delete(e.activeCancels, id)
 }
 
 func (e *Engine) acquireExecutionSlot() (func(), error) {
@@ -160,7 +194,10 @@ func (e *Engine) createExecutionRecord(wf *storage.Workflow, triggerPayload inte
 	return execRecord, nil
 }
 
-func (e *Engine) executeWorkflow(wf *storage.Workflow, triggerPayload interface{}, execRecord *storage.Execution, opts TriggerOptions) (*storage.Execution, error) {
+func (e *Engine) executeWorkflow(runCtx context.Context, wf *storage.Workflow, triggerPayload interface{}, execRecord *storage.Execution, opts TriggerOptions) (*storage.Execution, error) {
+	if runCtx == nil {
+		runCtx = context.Background()
+	}
 	var nodeList []nodes.Node
 	if err := json.Unmarshal([]byte(wf.NodesJSON), &nodeList); err != nil {
 		return nil, fmt.Errorf("invalid workflow nodes_json: %w", err)
@@ -189,7 +226,7 @@ func (e *Engine) executeWorkflow(wf *storage.Workflow, triggerPayload interface{
 	}
 	executionID := execRecord.ID
 
-	ctx := nodes.NewExecutionContext(wf.ID, execRecord.ID)
+	ctx := nodes.NewExecutionContextWithContext(runCtx, wf.ID, execRecord.ID)
 	ctx.RefreshCredential = func(credID string) (string, error) {
 		cred, err := e.credStore.GetByID(credID)
 		if err != nil {
@@ -255,7 +292,10 @@ func (e *Engine) executeWorkflow(wf *storage.Workflow, triggerPayload interface{
 			return nil, fmt.Errorf("sub-workflow %s not found: %w", subWfID, err)
 		}
 
-		execRecord, err := e.ExecuteWorkflow(subWf, payload)
+		execRecord, err := e.executeWorkflow(runCtx, subWf, payload, nil, TriggerOptions{
+			Source:    "sub_workflow",
+			Principal: execRecord.ID,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("sub-workflow execution failed: %w", err)
 		}
@@ -296,6 +336,7 @@ func (e *Engine) executeWorkflow(wf *storage.Workflow, triggerPayload interface{
 	nodeLogs := make([]NodeLog, 0, len(nodeList))
 	var stateMu sync.Mutex
 	hasFailed := false
+	nodeSlots := e.newNodeSlots()
 
 	// Initialize execution states, dynamic in-degrees, and incoming path flags
 	nodeStates := make(map[string]NodeState)
@@ -444,15 +485,29 @@ schedulerLoop:
 				attemptsUsed := 0
 
 				for attempt := 1; attempt <= maxRetries; attempt++ {
+					if err := runCtx.Err(); err != nil {
+						lastErr = err
+						break
+					}
+					releaseNodeSlot, err := acquireNodeSlot(runCtx, nodeSlots)
+					if err != nil {
+						lastErr = err
+						break
+					}
 					attemptsUsed = attempt
 					output, lastErr = executor.Execute(ctx, evaluatedNode)
+					releaseNodeSlot()
 					if lastErr == nil {
 						break
 					}
 
 					if attempt < maxRetries {
 						log.Printf("[Engine] Node %s (%s) attempt %d failed: %v. Retrying in 500ms...", nodeID, nodeObj.Name, attempt, lastErr)
-						time.Sleep(500 * time.Millisecond)
+						select {
+						case <-time.After(500 * time.Millisecond):
+						case <-runCtx.Done():
+							lastErr = runCtx.Err()
+						}
 					}
 				}
 
@@ -566,7 +621,10 @@ schedulerLoop:
 	totalDuration := time.Since(startTime).Milliseconds()
 	finalStatus := "SUCCESS"
 	errorMessage := ""
-	if hasFailed {
+	if runCtx.Err() != nil {
+		finalStatus = "CANCELLED"
+		errorMessage = runCtx.Err().Error()
+	} else if hasFailed {
 		finalStatus = "FAILED"
 		for _, item := range nodeLogs {
 			if item.Error != "" {
@@ -585,4 +643,23 @@ schedulerLoop:
 	execRecord.ErrorMessage = errorMessage
 
 	return execRecord, nil
+}
+
+func (e *Engine) newNodeSlots() chan struct{} {
+	if e.maxNodeSlots <= 0 {
+		return nil
+	}
+	return make(chan struct{}, e.maxNodeSlots)
+}
+
+func acquireNodeSlot(ctx context.Context, slots chan struct{}) (func(), error) {
+	if slots == nil {
+		return func() {}, nil
+	}
+	select {
+	case slots <- struct{}{}:
+		return func() { <-slots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }

@@ -275,11 +275,15 @@ The same `goflow` binary also includes an early CLI. The CLI calls the running G
 ```bash
 goflow status
 goflow workflow list
-goflow workflow describe <workflow-id-or-slug>
-goflow workflow run <workflow-id-or-slug> --json '{"source":"cli"}' --wait
-goflow execution get <execution-id>
-goflow execution watch <execution-id>
-goflow mcp stdio
+  goflow workflow describe <workflow-id-or-slug>
+  goflow workflow run <workflow-id-or-slug> --json '{"source":"cli"}' --wait
+  goflow workflow export <workflow-id-or-slug> --output workflow.json
+  goflow workflow import workflow.json --activate
+  goflow workflow validate workflow.json
+  goflow execution get <execution-id>
+  goflow execution watch <execution-id>
+  goflow execution cancel <execution-id>
+  goflow mcp stdio
 ```
 
 On Windows PowerShell, prefer `--set` or `--input` because inline JSON quoting can be fragile:
@@ -326,6 +330,7 @@ Available static tools:
 - `goflow_run_workflow`
 - `goflow_get_execution`
 - `goflow_list_executions`
+- `goflow_cancel_execution`
 
 MCP workflow access is opt-in. Open **Workflows > Interface** and enable **Expose to MCP** for each workflow that an MCP client may see or run. The stdio MCP bridge only lists active workflows with MCP exposure enabled, and the alpha blocks workflows marked **Requires Approval**.
 
@@ -402,6 +407,7 @@ Goflow includes conservative defaults for local/self-hosted use. Override them w
 | Variable | Default | Purpose |
 | :--- | :---: | :--- |
 | `GOFLOW_MAX_CONCURRENT_EXECUTIONS` | `10` | Maximum workflows executing at the same time. Returns HTTP 429 when full. |
+| `GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION` | `0` | Maximum concurrently executing nodes inside one execution. `0` disables the per-execution node limit. |
 | `GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT` | `2` | Maximum concurrent MCP workflow run calls per stdio client process. |
 | `GOFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE` | `60` | Maximum webhook requests per minute per workflow/IP. Set `0` to disable. |
 | `GOFLOW_EXECUTION_RETENTION_DAYS` | `30` | Deletes execution records older than this many days. Set `0` to disable age cleanup. |
@@ -417,8 +423,13 @@ On startup, any execution left in `RUNNING` from a previous crash or shutdown is
 - `POST /api/v1/workflows`: Create a new workflow.
 - `GET /api/v1/workflows/{id}`: Fetch workflow detail.
 - `PUT /api/v1/workflows/{id}`: Update workflow nodes and edges JSON.
+- `GET /api/v1/workflows/{id}/interface`: Fetch CLI/MCP interface metadata.
+- `PUT /api/v1/workflows/{id}/interface`: Update CLI/MCP interface metadata.
 - `DELETE /api/v1/workflows/{id}`: Delete a workflow.
 - `POST /api/v1/workflows/{id}/trigger`: Trigger manual workflow execution.
+- `POST /api/v1/workflows/{id}/executions`: Start an async workflow execution with idempotency support.
+- `GET /api/v1/executions/{id}`: Fetch execution details.
+- `POST /api/v1/executions/{id}/cancel`: Request cancellation for a running execution.
 - `GET /api/v1/workflows/{workflowId}/executions`: Fetch execution history timeline logs.
 - `POST /api/v1/credentials`: Save a new encrypted credential secret (AES-256-GCM).
 - `GET /api/v1/oauth2/authorize`: Initiates OAuth2 authorization code flow redirect.
