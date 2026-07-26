@@ -6,6 +6,12 @@ All notable changes to Goflow are tracked here.
 
 ### Added
 
+- Nothing yet.
+
+## 0.5.0-http-mcp-beta - 2026-07-26
+
+### Added
+
 - Dynamic MCP workflow tools for active workflows explicitly exposed through the Interface settings.
 - MCP smoke test options for asserting and calling dynamic workflow tools.
 - Server-side workflow input schema validation for all trigger paths.
@@ -19,6 +25,8 @@ All notable changes to Goflow are tracked here.
 - Streamable HTTP MCP beta endpoint at `/mcp` with Bearer auth, origin allowlist, and HTTP smoke test script.
 - HTTP MCP smoke test can call static and dynamic workflow tools.
 - HTTP MCP compatibility test covers the official SDK streamable client transport.
+- HTTP MCP setup and troubleshooting guide, release candidate checklist, and packaged smoke test scripts.
+- Workflow Interface UI now shows MCP readiness and can copy an HTTP MCP smoke command.
 
 ## 0.4.0-mcp-stdio-alpha - 2026-07-26
 

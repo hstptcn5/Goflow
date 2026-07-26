@@ -211,6 +211,7 @@ d:/build2026/Goflow/
 * **Backup and Restore Guide**: See [BACKUP.md](BACKUP.md) for protecting the SQLite database, credential master key, environment variables, and workflow exports.
 * **Roadmap**: See [ROADMAP.md](ROADMAP.md) for the current product direction and commercial/community boundary.
 * **CLI and MCP Roadmap**: See [CLI_MCP_ROADMAP.md](CLI_MCP_ROADMAP.md) for the proposed CLI and MCP expansion plan.
+* **HTTP MCP Setup**: See [MCP_HTTP.md](MCP_HTTP.md) for Streamable HTTP MCP setup, smoke tests, reverse proxy notes, and troubleshooting.
 * **Roadmap Progress**: See [ROADMAP_PROGRESS.md](ROADMAP_PROGRESS.md) for the current implementation timeline and checklist.
 * **Release Guide**: See [RELEASE.md](RELEASE.md) and [CHANGELOG.md](CHANGELOG.md) for packaging and release notes.
 * **Commercial and Trademark Guidance**: See [COMMERCIAL.md](COMMERCIAL.md) and [TRADEMARK.md](TRADEMARK.md) for the open-core direction and branding boundaries.

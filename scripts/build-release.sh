@@ -31,12 +31,15 @@ mkdir -p "$stage" "$release_root"
 )
 
 go test ./...
-go vet ./...
+mapfile -t packages < <(go list ./... | grep -v '/release/')
+go vet "${packages[@]}"
 GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$stage/goflow$ext" main.go static_embed.go
 
-cp README.md NODES.md PLUGINS.md BACKUP.md ROADMAP.md CLI_MCP_ROADMAP.md ROADMAP_PROGRESS.md CHANGELOG.md COMMERCIAL.md TRADEMARK.md LICENSE VERSION "$stage/"
+cp README.md NODES.md MCP_HTTP.md PLUGINS.md BACKUP.md ROADMAP.md CLI_MCP_ROADMAP.md ROADMAP_PROGRESS.md RELEASE.md CHANGELOG.md COMMERCIAL.md TRADEMARK.md LICENSE VERSION "$stage/"
 cp -R plugins "$stage/"
 cp -R templates "$stage/"
+mkdir -p "$stage/scripts"
+cp scripts/mcp-smoke-test.mjs scripts/mcp-http-smoke-test.mjs "$stage/scripts/"
 
 tar -czf "$archive" -C "$release_root" "$(basename "$stage")"
 sha256sum "$archive" > "$archive.sha256"

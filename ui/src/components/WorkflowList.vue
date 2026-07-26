@@ -209,6 +209,37 @@ async function saveInterface() {
     savingInterface.value = false;
   }
 }
+
+function workflowById(id) {
+  return workflowStore.workflows.find((wf) => wf.id === id) || null;
+}
+
+function mcpReadiness(wf) {
+  const blockers = [];
+  if (!wf?.is_active) blockers.push('Workflow is inactive');
+  if (!interfaceForm.value.expose_mcp) blockers.push('Expose to MCP is off');
+  if (interfaceForm.value.requires_approval) blockers.push('Requires Approval blocks MCP alpha/beta runs');
+  return {
+    ready: blockers.length === 0,
+    blockers,
+  };
+}
+
+function copyMcpHttpSmokeCommand(wf) {
+  if (!wf) return;
+  const command = [
+    'node scripts/mcp-http-smoke-test.mjs `',
+    '  --url http://127.0.0.1:8080/mcp `',
+    '  --api-key $scopedToken `',
+    '  --origin http://127.0.0.1:8080 `',
+    `  --workflow ${wf.id} \``,
+    '  --input \'{\\"source\\":\\"mcp-http-smoke\\"}\'',
+  ].join('\n');
+  navigator.clipboard?.writeText(command).then(
+    () => alert('HTTP MCP smoke command copied'),
+    () => alert(command)
+  );
+}
 </script>
 
 <template>
@@ -311,6 +342,33 @@ async function saveInterface() {
               </span>
 
               <div v-if="interfaceEditingId === wf.id" class="interface-panel" @click.stop>
+                <div
+                  class="mcp-readiness"
+                  :class="mcpReadiness(workflowById(wf.id) || wf).ready ? 'ready' : 'blocked'"
+                >
+                  <div class="mcp-readiness-main">
+                    <strong>
+                      MCP {{ mcpReadiness(workflowById(wf.id) || wf).ready ? 'ready' : 'blocked' }}
+                    </strong>
+                    <span>
+                      HTTP MCP requires Active, Expose to MCP, and no approval gate.
+                    </span>
+                  </div>
+                  <ul v-if="!mcpReadiness(workflowById(wf.id) || wf).ready" class="mcp-blockers">
+                    <li v-for="blocker in mcpReadiness(workflowById(wf.id) || wf).blockers" :key="blocker">
+                      {{ blocker }}
+                    </li>
+                  </ul>
+                  <button
+                    class="btn btn-secondary btn-xs"
+                    type="button"
+                    :disabled="!mcpReadiness(workflowById(wf.id) || wf).ready"
+                    @click="copyMcpHttpSmokeCommand(workflowById(wf.id) || wf)"
+                  >
+                    Copy HTTP MCP Smoke Command
+                  </button>
+                </div>
+
                 <div class="interface-grid">
                   <label>
                     Slug
@@ -586,6 +644,45 @@ async function saveInterface() {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.45);
+}
+
+.mcp-readiness {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.mcp-readiness.ready {
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.mcp-readiness.blocked {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.mcp-readiness-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.mcp-readiness-main strong {
+  color: var(--text-primary);
+  font-size: 0.78rem;
+}
+
+.mcp-blockers {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.7rem;
+  color: var(--accent-red);
 }
 
 .interface-grid {

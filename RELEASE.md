@@ -33,24 +33,39 @@ This guide describes how to prepare a Goflow preview release.
    node scripts/mcp-smoke-test.mjs --tools-only
    ```
 
-7. Start Goflow locally and check:
+7. Check script syntax:
+
+   ```bash
+   node --check scripts/mcp-smoke-test.mjs
+   node --check scripts/mcp-http-smoke-test.mjs
+   ```
+
+8. Start Goflow locally and check:
 
    - UI loads at `http://127.0.0.1:8080`.
    - `NODES.md` opens from the Docs button.
    - Workflow templates can be imported or loaded.
    - A simple workflow can run.
    - Credentials can be created and selected.
+   - Scoped token creation and audit event listing work.
    - A workflow exposed through **Workflows > Interface > Expose to MCP** can pass:
 
      ```bash
      node scripts/mcp-smoke-test.mjs --url http://127.0.0.1:8080 --workflow <workflow-id-or-slug> --input '{"source":"release-smoke"}'
      ```
 
-8. Package the release with:
+   - The same workflow can pass HTTP MCP smoke:
+
+     ```bash
+     node scripts/mcp-http-smoke-test.mjs --url http://127.0.0.1:8080/mcp --api-key <scoped-token> --origin http://127.0.0.1:8080 --workflow <workflow-id-or-slug> --input '{"source":"release-http-mcp-smoke"}'
+     ```
+
+9. Package the release with:
 
    - Binary: `goflow.exe` or `goflow`.
    - `README.md`
    - `NODES.md`
+   - `MCP_HTTP.md`
    - `PLUGINS.md`
    - `BACKUP.md`
    - `ROADMAP.md`
@@ -59,6 +74,8 @@ This guide describes how to prepare a Goflow preview release.
    - `CHANGELOG.md`
    - `COMMERCIAL.md`
    - `TRADEMARK.md`
+   - `scripts/mcp-smoke-test.mjs`
+   - `scripts/mcp-http-smoke-test.mjs`
    - `templates/`
 
 ## Windows Packaging

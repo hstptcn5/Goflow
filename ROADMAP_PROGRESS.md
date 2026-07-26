@@ -78,6 +78,9 @@ timeline
 [x] HTTP MCP workflow and dynamic tool smoke test support
 [x] Production deployment notes for reverse proxies/TLS
 [x] Real-client compatibility testing
+[x] Release candidate checklist
+[x] HTTP MCP setup/troubleshooting guide
+[x] Workflow Interface MCP readiness UI
 ```
 
 ## Remaining Timeline
@@ -109,11 +112,11 @@ gantt
     Streamable HTTP MCP foundation :done, http1, 2026-07-26, 1d
     HTTP MCP smoke hardening       :done, http2, 2026-07-26, 1d
     HTTP MCP client compatibility  :done, http3, 2026-07-26, 1d
+    Release candidate polish       :done, rc1, 2026-07-26, 1d
 ```
 
 ## Next Priorities
 
-1. Test cancellation against a real long-running workflow.
-2. Test dynamic MCP tool calls against a real exposed workflow.
-3. Package and test a preview release candidate.
-4. Continue with product-facing polish: HTTP MCP setup docs, examples, and UI affordances.
+1. Package a preview release candidate.
+2. Run the release checklist against the packaged archive.
+3. Publish the release after smoke tests pass on a clean machine.

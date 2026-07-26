@@ -31,14 +31,17 @@ Pop-Location
 
 go test ./...
 if ($LASTEXITCODE -ne 0) { throw "go test failed with exit code $LASTEXITCODE" }
-go vet ./...
+$packages = go list ./... | Where-Object { $_ -notlike "*release*" }
+go vet $packages
 if ($LASTEXITCODE -ne 0) { throw "go vet failed with exit code $LASTEXITCODE" }
 go build -trimpath -ldflags="-s -w" -o (Join-Path $stage "goflow.exe") main.go static_embed.go
 if ($LASTEXITCODE -ne 0) { throw "go build failed with exit code $LASTEXITCODE" }
 
-Copy-Item README.md, NODES.md, PLUGINS.md, BACKUP.md, ROADMAP.md, CLI_MCP_ROADMAP.md, ROADMAP_PROGRESS.md, CHANGELOG.md, COMMERCIAL.md, TRADEMARK.md, LICENSE, VERSION -Destination $stage
+Copy-Item README.md, NODES.md, MCP_HTTP.md, PLUGINS.md, BACKUP.md, ROADMAP.md, CLI_MCP_ROADMAP.md, ROADMAP_PROGRESS.md, RELEASE.md, CHANGELOG.md, COMMERCIAL.md, TRADEMARK.md, LICENSE, VERSION -Destination $stage
 Copy-Item plugins -Destination $stage -Recurse
 Copy-Item templates -Destination $stage -Recurse
+New-Item -ItemType Directory -Force -Path (Join-Path $stage "scripts") | Out-Null
+Copy-Item scripts/mcp-smoke-test.mjs, scripts/mcp-http-smoke-test.mjs -Destination (Join-Path $stage "scripts")
 
 if (Test-Path $archive) {
   Remove-Item -LiteralPath $archive -Force
