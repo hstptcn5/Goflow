@@ -12,11 +12,12 @@ export async function mountWithApp(component, options = {}) {
   app.use(router);
   await router.push(options.route || '/workflows');
   await router.isReady();
-  app.mount(root);
+  const vm = app.mount(root);
   await nextFrame();
   return {
     root,
     app,
+    vm,
     pinia,
     unmount: () => app.unmount(),
   };

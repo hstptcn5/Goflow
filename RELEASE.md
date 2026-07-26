@@ -51,6 +51,8 @@ This guide describes how to prepare a Goflow preview release.
 
    This uses a temporary database and validates CLI, cron trigger source, MCP stdio, MCP Streamable HTTP, scoped token allowlist, dynamic MCP metadata, custom MCP origin, safe MCP execution DTOs, UI trigger source, unknown-node failure handling, cancellation, audit, and concurrent idempotency.
 
+   The frontend E2E gate also validates the UX Milestone 1 and 2 browser flows: routed app shell, workflow creation, Add step picker, quick-add, validation summary, undo/redo, duplicate, auto-layout, keyboard shortcuts, visual screenshot smoke, and 10/50/100-node performance smoke.
+
 9. Start Goflow locally and check:
 
    - UI loads at `http://127.0.0.1:8080`.

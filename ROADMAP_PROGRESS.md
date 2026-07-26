@@ -25,6 +25,7 @@ timeline
       Streamable HTTP MCP : HTTP beta endpoint, smoke test, client compatibility hardening
       GOAL Hardening Pass : security, idempotency, limits, validator, MCP safety
       UX Milestone 1 : app shell, routed pages, save state, frontend test foundation
+      UX Milestone 2 : node picker, quick-add, validation, undo/redo, auto-layout
 ```
 
 ## Phase Status
@@ -39,6 +40,7 @@ timeline
 | Streamable HTTP MCP | `/mcp` HTTP transport | P2 complete and smoke tested |
 | GOAL hardening | North Star audit items for security, idempotency, source tracking, exposure, validator, MCP safety, sub-workflow safety, and smoke coverage | Local unit and Windows smoke verification pass; release still requires final full gate and clean-machine checks |
 | UX Milestone 1 | UX audit, app shell, durable Workflows/Editor/Executions/Credentials pages, design tokens, save state, frontend test foundation | Implemented and covered by frontend unit tests, Playwright smoke, and embedded route fallback test |
+| UX Milestone 2 | Editor usability: searchable picker, quick-add, node cards, validation, undo/redo, duplicate/copy/paste, auto-layout, shortcuts | Implemented and covered by component tests, E2E editor/keyboard/visual smoke, and performance smoke |
 
 ## P0 Checklist
 
@@ -118,6 +120,31 @@ timeline
 [x] Embedded SPA route refresh fallback
 ```
 
+## UX Milestone 2 Checklist
+
+```text
+[x] Searchable node picker with keyboard support
+[x] Recent and favorite node lists
+[x] Add step path independent of fixed palette
+[x] Quick-add from node output
+[x] Optional legacy node palette
+[x] Node card operation summary and config state
+[x] Neutral non-animated idle edges
+[x] IF true/false handle labels
+[x] Frontend graph validation summary and badges
+[x] Dirty state coverage for editor actions
+[x] Undo/redo
+[x] Duplicate, copy, paste, keyboard delete
+[x] Explicit auto-layout
+[x] Empty canvas onboarding
+[x] Keyboard shortcuts
+[x] Accessibility labels and state text
+[x] Component tests
+[x] E2E editor and keyboard smoke
+[x] Visual screenshot smoke
+[x] Performance smoke for 10, 50, and 100-node graphs
+```
+
 ## Remaining Timeline
 
 ```mermaid
@@ -150,6 +177,7 @@ gantt
     Release candidate polish       :done, rc1, 2026-07-26, 1d
     GOAL local verification        :done, goal1, 2026-07-26, 1d
     UX Milestone 1 foundation      :done, ux1, 2026-07-26, 1d
+    UX Milestone 2 editor usability:done, ux2, 2026-07-26, 1d
     Release clean-machine checks   :active, goal2, 2026-07-26, 1d
 ```
 
@@ -157,4 +185,4 @@ gantt
 
 1. Rebuild release artifacts from the current commit.
 2. Run the release checklist against the packaged archive on a clean Windows machine.
-3. Continue UX Milestone 2: node picker search, quick-add, undo/redo, auto-layout, validation badges, and template flow.
+3. Continue UX Milestone 3: inspector structure, JSON tree, data picker hardening, expression mode, and resolved preview.

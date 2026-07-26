@@ -12,7 +12,9 @@ test('Milestone 1 workflow create edit save run navigation smoke', async ({ page
   await expect(page).toHaveURL(/\/workflows\/.+/);
   await expect(page.getByText('Saved')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Add Delay Step' }).click();
+  await page.getByRole('button', { name: 'Add first step' }).click();
+  await page.getByLabel('Search nodes').fill('Delay');
+  await page.getByRole('option', { name: /Delay \/ Sleep/ }).first().click();
   await expect(page.getByText('Unsaved changes')).toBeVisible();
 
   await page.getByRole('button', { name: 'Save' }).click();

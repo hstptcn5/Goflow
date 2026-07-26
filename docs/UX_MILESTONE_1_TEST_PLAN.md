@@ -74,3 +74,4 @@ Then verify:
 - Retry/replay/debug bundle.
 - Vue Flow replacement decision.
 
+See `docs/UX_MILESTONE_2_PERFORMANCE.md` and `UX_GOAL_PROGRESS.md` for the editor usability milestone that follows this foundation.

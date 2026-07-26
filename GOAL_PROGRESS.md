@@ -37,6 +37,7 @@ Status values: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `MANUAL_VERIFICA
 - Passed: `cd ui && npm run test` with 5 files and 8 tests passing
 - Passed: `cd ui && npm run test:e2e` with 1 Playwright smoke passing
 - Passed: embedded route refresh smoke for `/workflows`, `/workflows/test-refresh`, `/executions`, `/credentials`, and `/NODES.md`
+- Passed after UX Milestone 2: `go test ./...`, `go vet ./...`, `go build ./...`, `cd ui && npm ci`, `npm run build`, `npm run test` with 7 files and 16 tests, `npm run test:e2e` with 5 browser tests, embedded binary UX smoke, and `scripts/goal-smoke-test.ps1`.
 
 ## Remaining Blockers
 

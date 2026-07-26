@@ -314,6 +314,16 @@ summary:focus-visible {
   background: var(--color-warning);
 }
 
+.status-action {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  cursor: pointer;
+  font: inherit;
+  padding: 4px 8px;
+}
+
 .shell-content {
   min-height: 0;
   flex: 1;

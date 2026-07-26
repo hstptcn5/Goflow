@@ -55,6 +55,14 @@ const shellTitle = computed(() => {
         <div class="shell-status">
           <span class="status-dot" :class="{ disconnected: wsClient.status.value !== 'connected' }"></span>
           <span>{{ wsClient.status.value === 'connected' ? 'Live updates connected' : 'Live updates disconnected' }}</span>
+          <button
+            v-if="wsClient.status.value !== 'connected'"
+            type="button"
+            class="status-action"
+            @click="wsClient.connect()"
+          >
+            Reconnect
+          </button>
         </div>
       </header>
 

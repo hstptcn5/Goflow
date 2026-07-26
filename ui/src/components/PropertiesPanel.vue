@@ -165,6 +165,7 @@ async function runAIHelper() {
             type="text"
             :value="selectedNode.name || nodeDef?.name"
             class="form-input"
+            aria-label="Node Name"
             @input="handleNameChange($event.target.value)"
           />
         </div>
@@ -182,6 +183,7 @@ async function runAIHelper() {
               type="text"
               :value="selectedNode.params?.[param.name] ?? param.default ?? ''"
               class="form-input"
+              :aria-label="param.label"
               @input="handleParamChange(param.name, $event.target.value)"
             />
 
@@ -190,6 +192,7 @@ async function runAIHelper() {
               type="password"
               :value="selectedNode.params?.[param.name] ?? param.default ?? ''"
               class="form-input"
+              :aria-label="param.label"
               @input="handleParamChange(param.name, $event.target.value)"
             />
 
@@ -197,6 +200,7 @@ async function runAIHelper() {
               v-else-if="param.type === 'select'"
               :value="selectedNode.params?.[param.name] ?? param.default ?? ''"
               class="form-select"
+              :aria-label="param.label"
               @change="handleParamChange(param.name, $event.target.value)"
             >
               <option v-for="opt in param.options" :key="opt" :value="opt">{{ opt }}</option>
@@ -207,6 +211,7 @@ async function runAIHelper() {
               :value="selectedNode.params?.[param.name] ?? param.default ?? ''"
               class="form-textarea"
               rows="4"
+              :aria-label="param.label"
               @input="handleParamChange(param.name, $event.target.value)"
             ></textarea>
 
@@ -214,6 +219,7 @@ async function runAIHelper() {
               v-else-if="param.type === 'credential'"
               :value="selectedNode.params?.[param.name] ?? ''"
               class="form-select"
+              :aria-label="param.label"
               @change="handleParamChange(param.name, $event.target.value)"
             >
               <option value="">-- Select Credential Secret --</option>
@@ -227,6 +233,7 @@ async function runAIHelper() {
               type="text"
               :value="selectedNode.params?.[param.name] ?? param.default ?? ''"
               class="form-input"
+              :aria-label="param.label"
               @input="handleParamChange(param.name, $event.target.value)"
             />
           </div>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import { VueFlow, useVueFlow, Handle, Position } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
@@ -10,10 +10,21 @@ import { useExecutionStore } from '@/stores/executionStore';
 import { api } from '@/services/api';
 
 import NodePalette from './NodePalette.vue';
+import NodePicker from './NodePicker.vue';
 import PropertiesPanel from './PropertiesPanel.vue';
 import AIAssistantDrawer from './AIAssistantDrawer.vue';
 import TemplateGallery from './TemplateGallery.vue';
 import { getNodeIconSVG, getNavIconSVG } from './NodeIcons';
+import {
+  autoLayoutGraph,
+  cloneGraph,
+  createWorkflowEdge,
+  createWorkflowNode,
+  getDefaultParams,
+  summarizeNodeOperation,
+  validateWorkflowGraph,
+  validationStateForNode,
+} from '@/utils/workflowEditor';
 
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
@@ -24,8 +35,18 @@ const executionStore = useExecutionStore();
 const router = useRouter();
 const showAIDrawer = ref(false);
 const showTemplateGallery = ref(false);
+const showNodePicker = ref(false);
+const showPalette = ref(false);
 const runError = ref('');
 const triggering = ref(false);
+const validationAttempted = ref(false);
+const pickerContext = ref({ sourceNodeId: null, position: { x: 260, y: 180 } });
+const undoStack = ref([]);
+const redoStack = ref([]);
+const clipboardNode = ref(null);
+const selectedEdgeId = ref(null);
+const dragStartSnapshot = ref(null);
+const historyLimit = 60;
 
 function getNodeIcon(type) {
   const icons = {
@@ -90,10 +111,40 @@ const selectedNode = computed(() => {
   return found ? found.data : null;
 });
 
+const validationIssues = computed(() => validateWorkflowGraph(nodes.value, edges.value, workflowStore.nodeDefinitions));
+const validationIssuesByNode = computed(() => {
+  return validationIssues.value.reduce((acc, issue) => {
+    if (!issue.nodeId) return acc;
+    acc[issue.nodeId] = acc[issue.nodeId] || [];
+    acc[issue.nodeId].push(issue);
+    return acc;
+  }, {});
+});
+
+const canUndo = computed(() => undoStack.value.length > 0);
+const canRedo = computed(() => redoStack.value.length > 0);
+
+function nodeDefForType(type) {
+  return workflowStore.nodeDefinitions.find((def) => def.type === type);
+}
+
+function nodeValidationState(id) {
+  return validationStateForNode(id, validationIssues.value);
+}
+
+function nodeOperationSummary(data) {
+  return summarizeNodeOperation({ data }, nodeDefForType(data?.type));
+}
+
 const { onConnect } = useVueFlow();
 
 onMounted(() => {
   loadCurrentWorkflow();
+  window.addEventListener('keydown', handleEditorShortcut);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleEditorShortcut);
 });
 
 watch(
@@ -136,12 +187,19 @@ function loadCurrentWorkflow() {
       animated: false,
       style: { stroke: 'var(--color-border-strong)', strokeWidth: 2 },
     }));
+    selectedNodeId.value = null;
+    selectedEdgeId.value = null;
+    resetHistory();
   } catch (err) {
     console.error('Failed to parse nodes/edges JSON', err);
   }
 }
 
 onConnect((connection) => {
+  if (edges.value.some((edge) => edge.source === connection.source && edge.target === connection.target && (edge.sourceHandle || null) === (connection.sourceHandle || null))) {
+    return;
+  }
+  pushHistory();
   const edgeId = `edge_${connection.source}-${connection.target}_${Date.now()}`;
   const newEdge = {
     id: edgeId,
@@ -153,7 +211,7 @@ onConnect((connection) => {
     style: { stroke: 'var(--color-border-strong)', strokeWidth: 2 },
   };
   edges.value.push(newEdge);
-  workflowStore.markDirty();
+  markGraphDirty();
 });
 
 function onDragOver(event) {
@@ -169,88 +227,252 @@ function onDrop(event) {
   const nodeDef = JSON.parse(rawDef);
   const nodeId = `node_${Date.now()}`;
 
-  const defaultParams = {};
-  if (nodeDef.params) {
-    nodeDef.params.forEach((p) => {
-      defaultParams[p.name] = p.default ?? '';
-    });
-  }
-
-  const newNode = {
-    id: nodeId,
-    type: 'custom',
-    position: {
-      x: Math.max(20, event.offsetX - 120),
-      y: Math.max(20, event.offsetY - 40),
-    },
-    label: nodeDef.name,
-    data: {
-      id: nodeId,
-      type: nodeDef.type,
-      name: nodeDef.name,
-      params: defaultParams,
-      categoryClass: getNodeCategory(nodeDef.type),
-      icon: getNodeIcon(nodeDef.type)
-    },
-  };
+  pushHistory();
+  const newNode = decorateNode(createWorkflowNode(nodeDef, {
+    x: Math.max(20, event.offsetX - 120),
+    y: Math.max(20, event.offsetY - 40),
+  }, nodeId));
 
   nodes.value.push(newNode);
   selectedNodeId.value = nodeId;
+  markGraphDirty();
+}
+
+function decorateNode(node) {
+  return {
+    ...node,
+    label: node.data?.name || node.label,
+    data: {
+      ...node.data,
+      categoryClass: getNodeCategory(node.data?.type),
+      icon: getNodeIcon(node.data?.type),
+    },
+  };
+}
+
+function markGraphDirty() {
+  runError.value = '';
+  validationAttempted.value = validationAttempted.value && validationIssues.value.length > 0;
   workflowStore.markDirty();
 }
 
-function addDelayStep() {
-  const nodeId = `node_${Date.now()}`;
-  nodes.value.push({
-    id: nodeId,
-    type: 'custom',
-    position: { x: 260 + nodes.value.length * 220, y: 180 },
-    label: 'Delay / Sleep',
-    data: {
-      id: nodeId,
-      type: 'delaySleep',
-      name: 'Delay / Sleep',
-      params: { seconds: '1' },
-      categoryClass: getNodeCategory('delaySleep'),
-      icon: getNodeIcon('delaySleep'),
-    },
-  });
-  selectedNodeId.value = nodeId;
+function resetHistory() {
+  undoStack.value = [];
+  redoStack.value = [];
+}
+
+function pushHistory() {
+  undoStack.value.push(cloneGraph(nodes.value, edges.value));
+  if (undoStack.value.length > historyLimit) undoStack.value.shift();
+  redoStack.value = [];
+}
+
+function restoreSnapshot(snapshot) {
+  nodes.value = snapshot.nodes.map(decorateNode);
+  edges.value = snapshot.edges.map((edge) => ({ ...edge, animated: false, style: edge.style || { stroke: 'var(--color-border-strong)', strokeWidth: 2 } }));
+  selectedNodeId.value = null;
+  selectedEdgeId.value = null;
   workflowStore.markDirty();
+}
+
+function undo() {
+  if (!canUndo.value) return;
+  redoStack.value.push(cloneGraph(nodes.value, edges.value));
+  restoreSnapshot(undoStack.value.pop());
+}
+
+function redo() {
+  if (!canRedo.value) return;
+  undoStack.value.push(cloneGraph(nodes.value, edges.value));
+  restoreSnapshot(redoStack.value.pop());
+}
+
+function openNodePicker(context = {}) {
+  pickerContext.value = {
+    sourceNodeId: context.sourceNodeId || null,
+    position: context.position || nextNodePosition(context.sourceNodeId),
+  };
+  showNodePicker.value = true;
+}
+
+function closeNodePicker() {
+  showNodePicker.value = false;
+}
+
+function nextNodePosition(sourceNodeId) {
+  const source = sourceNodeId ? nodes.value.find((node) => node.id === sourceNodeId) : null;
+  if (source) {
+    return { x: source.position.x + 260, y: source.position.y };
+  }
+  return { x: 180 + (nodes.value.length % 4) * 220, y: 140 + Math.floor(nodes.value.length / 4) * 150 };
+}
+
+function addNodeFromPicker(nodeDef) {
+  pushHistory();
+  const nodeId = `node_${Date.now()}`;
+  const newNode = decorateNode(createWorkflowNode(nodeDef, pickerContext.value.position, nodeId));
+  nodes.value.push(newNode);
+
+  if (pickerContext.value.sourceNodeId) {
+    const duplicate = edges.value.some((edge) => edge.source === pickerContext.value.sourceNodeId && edge.target === nodeId);
+    if (!duplicate) {
+      edges.value.push(createWorkflowEdge(pickerContext.value.sourceNodeId, nodeId));
+    }
+  }
+
+  selectedNodeId.value = nodeId;
+  selectedEdgeId.value = null;
+  closeNodePicker();
+  markGraphDirty();
 }
 
 function onNodeClick(event) {
   if (event && event.node) {
     selectedNodeId.value = event.node.id;
+    selectedEdgeId.value = null;
   }
 }
 
 function onPaneClick() {
   selectedNodeId.value = null;
+  selectedEdgeId.value = null;
+}
+
+function onPaneDoubleClick(event) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  openNodePicker({
+    position: {
+      x: Math.max(20, event.clientX - rect.left - 120),
+      y: Math.max(20, event.clientY - rect.top - 40),
+    },
+  });
+}
+
+function onEdgeClick(event) {
+  selectedEdgeId.value = event?.edge?.id || null;
+  selectedNodeId.value = null;
+}
+
+function onNodeDragStart() {
+  dragStartSnapshot.value = cloneGraph(nodes.value, edges.value);
+}
+
+function onNodeDragStop() {
+  if (dragStartSnapshot.value) {
+    undoStack.value.push(dragStartSnapshot.value);
+    if (undoStack.value.length > historyLimit) undoStack.value.shift();
+    redoStack.value = [];
+    dragStartSnapshot.value = null;
+  }
+  markGraphDirty();
 }
 
 function handleUpdateNodeParams(nodeId, newParams, newName) {
   const n = nodes.value.find((item) => item.id === nodeId);
   if (n) {
+    pushHistory();
     n.data.params = newParams;
     if (newName) {
       n.data.name = newName;
       n.label = newName;
     }
-    workflowStore.markDirty();
+    markGraphDirty();
   }
 }
 
 function handleDeleteNode(nodeId) {
+  pushHistory();
   nodes.value = nodes.value.filter((n) => n.id !== nodeId);
   edges.value = edges.value.filter((e) => e.source !== nodeId && e.target !== nodeId);
   if (selectedNodeId.value === nodeId) {
     selectedNodeId.value = null;
   }
-  workflowStore.markDirty();
+  markGraphDirty();
+}
+
+function deleteSelection() {
+  if (selectedNodeId.value) {
+    handleDeleteNode(selectedNodeId.value);
+    return;
+  }
+  if (selectedEdgeId.value) {
+    pushHistory();
+    edges.value = edges.value.filter((edge) => edge.id !== selectedEdgeId.value);
+    selectedEdgeId.value = null;
+    markGraphDirty();
+  }
+}
+
+function duplicateSelectedNode() {
+  const source = nodes.value.find((node) => node.id === selectedNodeId.value);
+  if (!source) return;
+  pushHistory();
+  const nodeId = `node_${Date.now()}`;
+  const duplicate = decorateNode({
+    ...cloneGraph([source], []).nodes[0],
+    id: nodeId,
+    position: { x: source.position.x + 36, y: source.position.y + 36 },
+    data: {
+      ...source.data,
+      id: nodeId,
+      name: `${source.data.name || source.label || 'Node'} copy`,
+      params: { ...(source.data.params || {}) },
+    },
+  });
+  nodes.value.push(duplicate);
+  selectedNodeId.value = nodeId;
+  markGraphDirty();
+}
+
+function copySelectedNode() {
+  const source = nodes.value.find((node) => node.id === selectedNodeId.value);
+  if (!source) return;
+  clipboardNode.value = cloneGraph([source], []).nodes[0];
+}
+
+function pasteNode() {
+  if (!clipboardNode.value) return;
+  pushHistory();
+  const nodeId = `node_${Date.now()}`;
+  const pasted = decorateNode({
+    ...clipboardNode.value,
+    id: nodeId,
+    position: { x: clipboardNode.value.position.x + 44, y: clipboardNode.value.position.y + 44 },
+    data: {
+      ...clipboardNode.value.data,
+      id: nodeId,
+      params: { ...(clipboardNode.value.data?.params || {}) },
+    },
+  });
+  nodes.value.push(pasted);
+  selectedNodeId.value = nodeId;
+  markGraphDirty();
+}
+
+function autoLayout() {
+  pushHistory();
+  nodes.value = autoLayoutGraph(nodes.value, edges.value).map(decorateNode);
+  markGraphDirty();
+}
+
+function focusValidationIssue(issue) {
+  if (!issue?.nodeId) return;
+  selectedNodeId.value = issue.nodeId;
+}
+
+function validateBeforeAction() {
+  validationAttempted.value = true;
+  if (validationIssues.value.length === 0) return true;
+  const firstNodeIssue = validationIssues.value.find((issue) => issue.nodeId);
+  focusValidationIssue(firstNodeIssue);
+  return false;
 }
 
 async function saveCanvas() {
+  if (!validateBeforeAction()) {
+    workflowStore.markDirty();
+    return;
+  }
   const serializableNodes = nodes.value.map((n) => ({
     id: n.id,
     type: n.data.type,
@@ -272,6 +494,10 @@ async function saveCanvas() {
 
 async function runWorkflow() {
   if (!workflowStore.currentWorkflow) return;
+  if (!validateBeforeAction()) {
+    runError.value = 'Fix workflow validation issues before testing.';
+    return;
+  }
   triggering.value = true;
   runError.value = '';
   executionStore.resetNodeStatuses();
@@ -292,12 +518,7 @@ function handleLoadAIWorkflow(aiWorkflow) {
 
   const mappedAINodes = (aiWorkflow.nodes || []).map((n) => {
     const nodeDef = workflowStore.nodeDefinitions.find((d) => d.type === n.type);
-    const defaultParams = {};
-    if (nodeDef && nodeDef.params) {
-      nodeDef.params.forEach((p) => {
-        defaultParams[p.name] = p.default ?? '';
-      });
-    }
+    const defaultParams = getDefaultParams(nodeDef);
     return {
       id: n.id,
       type: 'custom',
@@ -355,9 +576,10 @@ function handleLoadAIWorkflow(aiWorkflow) {
     style: { stroke: 'var(--color-border-strong)', strokeWidth: 2 },
   }));
 
+  pushHistory();
   nodes.value = finalNodes;
   edges.value = mappedAIEdges;
-  workflowStore.markDirty();
+  markGraphDirty();
   showAIDrawer.value = false;
 
   // Select the first new/updated node
@@ -406,7 +628,86 @@ function exportCanvas() {
   URL.revokeObjectURL(url);
 }
 
-defineExpose({ saveCanvas, exportCanvas });
+defineExpose({
+  addNodeFromPicker,
+  autoLayout,
+  canRedo,
+  canUndo,
+  closeNodePicker,
+  duplicateSelectedNode,
+  edges,
+  nodes,
+  openNodePicker,
+  redo,
+  runWorkflow,
+  saveCanvas,
+  selectedNodeId,
+  undo,
+  validationIssues,
+});
+
+function isTypingTarget(target) {
+  const tag = target?.tagName?.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable;
+}
+
+function handleEditorShortcut(event) {
+  if (isTypingTarget(event.target)) return;
+  const mod = event.ctrlKey || event.metaKey;
+  if (event.key === 'Escape') {
+    if (showNodePicker.value) closeNodePicker();
+    else selectedNodeId.value = null;
+    return;
+  }
+  if ((event.key === 'a' || event.key === 'A') && !mod) {
+    event.preventDefault();
+    openNodePicker();
+    return;
+  }
+  if (mod && event.key.toLowerCase() === 'k') {
+    event.preventDefault();
+    openNodePicker();
+    return;
+  }
+  if (mod && event.key.toLowerCase() === 's') {
+    event.preventDefault();
+    saveCanvas();
+    return;
+  }
+  if (mod && event.key.toLowerCase() === 'z' && event.shiftKey) {
+    event.preventDefault();
+    redo();
+    return;
+  }
+  if (mod && event.key.toLowerCase() === 'z') {
+    event.preventDefault();
+    undo();
+    return;
+  }
+  if (mod && event.key.toLowerCase() === 'y') {
+    event.preventDefault();
+    redo();
+    return;
+  }
+  if (mod && event.key.toLowerCase() === 'd') {
+    event.preventDefault();
+    duplicateSelectedNode();
+    return;
+  }
+  if (mod && event.key.toLowerCase() === 'c') {
+    copySelectedNode();
+    return;
+  }
+  if (mod && event.key.toLowerCase() === 'v') {
+    event.preventDefault();
+    pasteNode();
+    return;
+  }
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    event.preventDefault();
+    deleteSelection();
+  }
+}
 </script>
 
 <template>
@@ -439,6 +740,10 @@ defineExpose({ saveCanvas, exportCanvas });
       <details class="more-actions">
         <summary class="btn btn-secondary">More actions</summary>
         <div class="more-menu">
+          <button type="button" @click="showPalette = !showPalette">{{ showPalette ? 'Hide node library' : 'Show node library' }}</button>
+          <button type="button" :disabled="!canUndo" @click="undo">Undo</button>
+          <button type="button" :disabled="!canRedo" @click="redo">Redo</button>
+          <button type="button" @click="autoLayout">Auto-layout</button>
           <button type="button" @click="exportCanvas">Export</button>
           <RouterLink to="/workflows">Workflow settings</RouterLink>
           <RouterLink to="/workflows">Interface settings</RouterLink>
@@ -454,11 +759,30 @@ defineExpose({ saveCanvas, exportCanvas });
       {{ runError }}
     </div>
 
-    <NodePalette />
+    <div v-if="validationAttempted && validationIssues.length" class="validation-summary" role="alert" aria-live="polite">
+      <strong>{{ validationIssues.length }} issue{{ validationIssues.length === 1 ? '' : 's' }} need attention</strong>
+      <button
+        v-for="issue in validationIssues.slice(0, 4)"
+        :key="`${issue.type}-${issue.nodeId || issue.edgeId || issue.message}`"
+        type="button"
+        @click="focusValidationIssue(issue)"
+      >
+        {{ issue.message }}
+      </button>
+    </div>
 
-    <div class="canvas-area" @dragover="onDragOver" @drop="onDrop">
+    <NodePalette v-if="showPalette" />
+
+    <div class="canvas-area" @dragover="onDragOver" @drop="onDrop" @dblclick="onPaneDoubleClick">
       <!-- Floating Canvas Toolbar -->
       <div class="canvas-toolbar">
+        <button class="btn-toolbar primary-toolbar" type="button" @click="openNodePicker()">
+          Add step
+        </button>
+        <button class="btn-toolbar" type="button" :disabled="!canUndo" @click="undo">Undo</button>
+        <button class="btn-toolbar" type="button" :disabled="!canRedo" @click="redo">Redo</button>
+        <button class="btn-toolbar" type="button" :disabled="!selectedNodeId" @click="duplicateSelectedNode">Duplicate</button>
+        <button class="btn-toolbar" type="button" @click="autoLayout">Auto-layout</button>
         <button class="btn-toolbar" @click="showTemplateGallery = true">
           Templates
         </button>
@@ -469,12 +793,12 @@ defineExpose({ saveCanvas, exportCanvas });
 
       <div v-if="nodes.length === 0" class="canvas-empty-state">
         <div class="empty-kicker">No nodes yet</div>
-        <h2>Start from a template or ask AI to draft the workflow.</h2>
-        <p>Templates give you a working node layout first. Replace placeholder credentials, URLs, chat IDs, and secrets before running.</p>
+        <h2>Add a first step or start from a template.</h2>
+        <p>Use Add first step to search nodes without relying on the side palette.</p>
         <div class="empty-actions">
+          <button class="btn btn-primary" @click="openNodePicker()">Add first step</button>
           <button class="btn btn-primary" @click="showTemplateGallery = true">Browse Templates</button>
-          <button class="btn btn-secondary" @click="addDelayStep">Add Delay Step</button>
-          <button class="btn btn-secondary" @click="showAIDrawer = true">Open AI Assistant</button>
+          <button class="btn btn-secondary" @click="showAIDrawer = true">Use AI assistant</button>
         </div>
       </div>
 
@@ -483,26 +807,53 @@ defineExpose({ saveCanvas, exportCanvas });
         v-model:edges="edges"
         :fit-view-on-init="true"
         @node-click="onNodeClick"
+        @edge-click="onEdgeClick"
         @pane-click="onPaneClick"
+        @node-drag-start="onNodeDragStart"
+        @node-drag-stop="onNodeDragStop"
         class="goflow-canvas"
       >
         <!-- Custom Node Design Template -->
         <template #node-custom="{ id, data, selected }">
-          <div v-if="data" class="custom-node-card" :class="[data.categoryClass, getNodeStatusClass(id), { selected: selected }]">
+          <div
+            v-if="data"
+            class="custom-node-card"
+            :class="[data.categoryClass, getNodeStatusClass(id), { selected: selected }, { invalid: validationIssuesByNode[id]?.length }]"
+            :aria-label="`${data.name || data.type}. ${nodeValidationState(id)}`"
+          >
             <div class="node-accent-bar"></div>
             <div class="node-header">
               <span class="node-icon" v-html="getNodeIconSVG(data.type)"></span>
-              <span class="node-type-label">{{ data.type || 'unknown' }}</span>
+              <span class="node-type-label">{{ nodeDefForType(data.type)?.category || 'Unknown' }}</span>
             </div>
             <div class="node-body-title">
               {{ data.name || data.type || 'Unnamed Node' }}
             </div>
+            <div class="node-operation-summary">{{ nodeOperationSummary(data) }}</div>
+            <div class="node-state-row">
+              <span class="node-config-state" :class="{ invalid: validationIssuesByNode[id]?.length }">
+                {{ nodeValidationState(id) }}
+              </span>
+              <span v-if="executionStore.nodeStatuses[id]" class="node-execution-state">
+                {{ executionStore.nodeStatuses[id] }}
+              </span>
+            </div>
+            <button
+              class="quick-add-button"
+              type="button"
+              :aria-label="`Add step after ${data.name || data.type}`"
+              @click.stop="openNodePicker({ sourceNodeId: id })"
+            >
+              +
+            </button>
             
             <!-- Conditional Node Handles -->
             <template v-if="data.type === 'conditionIf'">
               <Handle type="target" :position="Position.Top" />
               <Handle type="source" id="true" :position="Position.Bottom" style="left: 30%; background: #10b981; border-color: #ffffff;" />
+              <span class="handle-label handle-label-true">true</span>
               <Handle type="source" id="false" :position="Position.Bottom" style="left: 70%; background: #ef4444; border-color: #ffffff;" />
+              <span class="handle-label handle-label-false">false</span>
             </template>
             <!-- Standard Node Handles -->
             <template v-else>
@@ -539,6 +890,12 @@ defineExpose({ saveCanvas, exportCanvas });
       action-label="Load Template"
       @close="showTemplateGallery = false"
       @select="handleLoadTemplate"
+    />
+
+    <NodePicker
+      :visible="showNodePicker"
+      @close="closeNodePicker"
+      @select="addNodeFromPicker"
     />
   </div>
 </template>
@@ -683,17 +1040,18 @@ defineExpose({ saveCanvas, exportCanvas });
 .goflow-canvas {
   width: 100%;
   height: 100%;
-  background-color: #ebf3fc !important; /* Soft premium light blue */
+  background-color: #f8fafc !important;
 }
 
 /* Custom Premium Nodes Styling */
 .custom-node-card {
   background: #ffffff;
   border: 1.5px solid #cbd5e1;
-  border-radius: 12px;
-  padding: 10px 14px;
-  min-width: 170px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  padding: 11px 14px;
+  min-width: 190px;
+  max-width: 240px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.07);
   display: flex;
   flex-direction: column;
   position: relative;
@@ -706,8 +1064,12 @@ defineExpose({ saveCanvas, exportCanvas });
 }
 
 .custom-node-card.selected {
-  border-color: #7c3aed !important;
-  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.25), 0 6px 18px rgba(124, 58, 237, 0.15) !important;
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2), 0 6px 18px rgba(15, 23, 42, 0.12) !important;
+}
+
+.custom-node-card.invalid {
+  border-color: var(--color-danger) !important;
 }
 
 .node-accent-bar {
@@ -721,24 +1083,12 @@ defineExpose({ saveCanvas, exportCanvas });
   background: #64748b;
 }
 
-/* Accent Colors by Category */
-.category-trigger .node-accent-bar { background: #f97316; }
-.category-trigger { border-left: 1px solid #ffedd5; }
-
-.category-logic .node-accent-bar { background: #3b82f6; }
-.category-logic { border-left: 1px solid #dbeafe; }
-
-.category-saas .node-accent-bar { background: #10b981; }
-.category-saas { border-left: 1px solid #d1fae5; }
-
-.category-db .node-accent-bar { background: #6366f1; }
-.category-db { border-left: 1px solid #e0e7ff; }
-
-.category-ai .node-accent-bar { background: #a855f7; }
-.category-ai { border-left: 1px solid #f3e8ff; }
-
+.category-trigger .node-accent-bar,
+.category-logic .node-accent-bar,
+.category-saas .node-accent-bar,
+.category-db .node-accent-bar,
+.category-ai .node-accent-bar,
 .category-dev .node-accent-bar { background: #64748b; }
-.category-dev { border-left: 1px solid #f1f5f9; }
 
 .node-header {
   display: flex;
@@ -763,11 +1113,79 @@ defineExpose({ saveCanvas, exportCanvas });
 }
 
 .node-body-title {
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: 0.92rem;
+  font-weight: 750;
   color: #0f172a;
   word-break: break-word;
   text-align: left;
+}
+
+.node-operation-summary {
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.35;
+}
+
+.node-state-row {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.node-config-state,
+.node-execution-state {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-success-surface);
+  color: var(--color-success);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.node-config-state.invalid {
+  background: var(--color-danger-surface);
+  color: var(--color-danger);
+}
+
+.node-execution-state {
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+}
+
+.quick-add-button {
+  position: absolute;
+  right: -15px;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  transform: translateY(-50%);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-primary);
+  cursor: pointer;
+  font-weight: 800;
+  box-shadow: var(--shadow-md);
+}
+
+.handle-label {
+  position: absolute;
+  bottom: -25px;
+  font-size: 0.68rem;
+  font-weight: 750;
+  color: var(--color-text-secondary);
+}
+
+.handle-label-true {
+  left: calc(30% - 12px);
+}
+
+.handle-label-false {
+  left: calc(70% - 14px);
 }
 
 /* Execution Status Border Styles */
@@ -804,6 +1222,7 @@ defineExpose({ saveCanvas, exportCanvas });
   z-index: 100;
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
   pointer-events: auto;
 }
 
@@ -828,6 +1247,53 @@ defineExpose({ saveCanvas, exportCanvas });
   color: #2563eb;
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(37, 99, 235, 0.12);
+}
+
+.btn-toolbar:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.primary-toolbar {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.validation-summary {
+  position: absolute;
+  top: calc(var(--workflow-topbar-height) + var(--space-3));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 120;
+  width: min(720px, calc(100% - 56px));
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-3);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-surface);
+  color: var(--color-danger);
+  box-shadow: var(--shadow-md);
+}
+
+.validation-summary button {
+  border: 1px solid var(--color-danger-border);
+  background: var(--color-surface);
+  color: var(--color-danger);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-xs);
+}
+
+:deep(.vue-flow__handle) {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #ffffff;
 }
 
 .canvas-empty-state {
