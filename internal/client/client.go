@@ -65,6 +65,22 @@ type ExecutionCancelResult struct {
 	Message string `json:"message"`
 }
 
+type AccessToken struct {
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	Scopes           []string `json:"scopes"`
+	AllowedWorkflows []string `json:"allowed_workflows"`
+	CreatedAt        string   `json:"created_at"`
+	LastUsedAt       string   `json:"last_used_at,omitempty"`
+	Token            string   `json:"token,omitempty"`
+}
+
+type CreateTokenRequest struct {
+	Name             string   `json:"name"`
+	Scopes           []string `json:"scopes"`
+	AllowedWorkflows []string `json:"allowed_workflows"`
+}
+
 func New(baseURL, apiKey string) *Client {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
@@ -173,6 +189,29 @@ func (c *Client) CancelExecution(id string) (*ExecutionCancelResult, error) {
 		return nil, err
 	}
 	return &result, nil
+}
+
+func (c *Client) ListTokens() ([]AccessToken, error) {
+	var tokens []AccessToken
+	if err := c.doJSON(http.MethodGet, "/api/v1/tokens", nil, &tokens); err != nil {
+		return nil, err
+	}
+	if tokens == nil {
+		tokens = []AccessToken{}
+	}
+	return tokens, nil
+}
+
+func (c *Client) CreateToken(req CreateTokenRequest) (*AccessToken, error) {
+	var token AccessToken
+	if err := c.doJSON(http.MethodPost, "/api/v1/tokens", req, &token); err != nil {
+		return nil, err
+	}
+	return &token, nil
+}
+
+func (c *Client) DeleteToken(id string) error {
+	return c.doJSON(http.MethodDelete, "/api/v1/tokens/"+id, nil, nil)
 }
 
 func (c *Client) doJSON(method, path string, in interface{}, out interface{}) error {

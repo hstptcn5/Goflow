@@ -17,11 +17,11 @@ timeline
       P0 Complete : CLI alpha, MCP stdio, allowlist, global/per-client concurrency
       v0.4.0 MCP stdio Alpha : Released
 
-    section Current
+    section P1 Complete
       P1 Hardening : Input validation, cancellation, node concurrency, workflow-as-code
+      Scoped Tokens : Token scopes, workflow allowlists, audit metadata
 
     section Next
-      Scoped Tokens : Token scopes, workflow allowlists, audit metadata
       Streamable HTTP MCP : Remote/local HTTP MCP beta with auth and Origin validation
 ```
 
@@ -33,7 +33,7 @@ timeline
 | `v0.3.0-cli-alpha` | CLI status/list/describe/run/get/watch | Initial implementation complete; needs more real-workflow testing |
 | `v0.4.0-mcp-stdio-alpha` | MCP stdio static tools | Released |
 | `v0.5.0-mcp-dynamic-preview` | Workflow MCP exposure, dynamic tools, input schema validation | Dynamic workflow tools and input validation implemented |
-| Hardening | Concurrency, cancellation, scoped token, audit | Cancellation and node/sub-workflow concurrency implemented; scoped tokens/audit pending |
+| Hardening | Concurrency, cancellation, scoped token, audit | Complete for P1 |
 | Streamable HTTP MCP | `/mcp` HTTP transport | Deferred |
 
 ## P0 Checklist
@@ -64,8 +64,8 @@ timeline
 [x] CLI cancel
 [x] MCP cancel
 [x] CLI import/export/validate
-[ ] Scoped token
-[ ] Audit metadata
+[x] Scoped token
+[x] Audit metadata
 ```
 
 ## Remaining Timeline
@@ -84,16 +84,16 @@ gantt
     TriggerService extraction      :done, svc1, 2026-07-26, 1d
     MCP stdio static tools         :done, mcp1, 2026-07-26, 1d
     MCP smoke test script          :done, mcp2, 2026-07-26, 1d
-    Workflow MCP allowlist API/UI  :done, mcp3, 2026-07-27, 1d
-    Global/per-client concurrency  :done, hard0, 2026-07-27, 1d
-    Release v0.4.0 alpha           :done, rel1, 2026-07-27, 1d
-    Dynamic MCP workflow tools     :active, mcp4, 2026-07-27, 2d
-    Input schema validation        :done, mcp5, 2026-07-27, 1d
-    Cancellation API/CLI/MCP       :done, hard2, 2026-07-27, 1d
-    Node/sub-workflow hardening    :done, hard1, 2026-07-27, 1d
+    Workflow MCP allowlist API/UI  :done, mcp3, 2026-07-26, 1d
+    Global/per-client concurrency  :done, hard0, 2026-07-26, 1d
+    Release v0.4.0 alpha           :done, rel1, 2026-07-26, 1d
+    Dynamic MCP workflow tools     :done, mcp4, 2026-07-26, 1d
+    Input schema validation        :done, mcp5, 2026-07-26, 1d
+    Cancellation API/CLI/MCP       :done, hard2, 2026-07-26, 1d
+    Node/sub-workflow hardening    :done, hard1, 2026-07-26, 1d
+    Scoped tokens and audit        :done, sec1, 2026-07-26, 1d
 
     section Next
-    Scoped tokens and audit        :sec1, after hard1, 5d
     Streamable HTTP MCP            :http1, after sec1, 5d
 ```
 
@@ -101,5 +101,5 @@ gantt
 
 1. Test cancellation against a real long-running workflow.
 2. Test dynamic MCP tool calls against a real exposed workflow.
-3. Add scoped tokens and audit metadata.
+3. Test scoped tokens against CLI/MCP using a workflow allowlist.
 4. Start Streamable HTTP MCP beta design.

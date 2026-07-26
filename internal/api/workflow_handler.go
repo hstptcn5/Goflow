@@ -361,6 +361,9 @@ func requestPrincipal(r *http.Request) string {
 	if value := r.Header.Get("X-Goflow-Principal"); value != "" {
 		return value
 	}
+	if auth, ok := AuthFromContext(r.Context()); ok && auth.Subject != "" {
+		return auth.Subject
+	}
 	return r.RemoteAddr
 }
 

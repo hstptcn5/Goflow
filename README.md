@@ -283,6 +283,9 @@ goflow workflow list
   goflow execution get <execution-id>
   goflow execution watch <execution-id>
   goflow execution cancel <execution-id>
+  goflow token list
+  goflow token create mcp-runner --scope workflow:list --scope workflow:run --scope execution:read --workflow <workflow-id>
+  goflow token delete <token-id>
   goflow mcp stdio
 ```
 
@@ -308,11 +311,21 @@ Or use a JSON file:
 .\goflow.exe workflow run <workflow-id-or-slug> --input payload.json --wait
 ```
 
-Use `GOFLOW_URL` and `GOFLOW_API_KEY` for remote or protected instances:
+Use `GOFLOW_URL` and `GOFLOW_API_KEY` for remote or protected instances. `GOFLOW_API_KEY` can be the admin API key or a scoped token:
 
 ```bash
 GOFLOW_URL=http://127.0.0.1:8080
 GOFLOW_API_KEY=your-api-key
+```
+
+Scoped tokens are created with the admin API key and are returned only once:
+
+```bash
+goflow token create mcp-runner \
+  --scope workflow:list \
+  --scope workflow:run \
+  --scope execution:read \
+  --workflow <workflow-id>
 ```
 
 ### 6. MCP stdio Alpha
@@ -342,6 +355,17 @@ For MCP clients, set the environment used by the launched process:
 GOFLOW_URL=http://127.0.0.1:8080
 GOFLOW_API_KEY=your-api-key
 ```
+
+For MCP or automation clients, prefer a scoped token instead of the admin API key. Common scopes are:
+
+- `workflow:list`: list workflows.
+- `workflow:read`: read workflow metadata and node definitions.
+- `workflow:run`: start workflow executions.
+- `execution:read`: read execution status and logs.
+- `execution:cancel`: cancel running executions.
+- `workflow:write`: create or update workflows.
+
+Use `--workflow <workflow-id>` while creating a token to restrict it to specific workflows. Omit `--workflow` to allow all workflows for the granted scopes.
 
 The stdio transport writes MCP protocol messages to stdout. Diagnostic logs should go to stderr.
 
@@ -394,7 +418,11 @@ In this mode, Goflow requires clients and the Web UI to authenticate. The browse
   GOFLOW_HOST=0.0.0.0 GOFLOW_API_KEY=your_secret_password ./goflow
   ```
 - API authentication:
-  Include `Authorization: Bearer your_secret_password` in the headers. Query-string tokens are not accepted.
+  Include `Authorization: Bearer your_secret_password` in the headers. Query-string tokens are not accepted. The admin API key has full access. Scoped tokens can be used as Bearer tokens for limited automation access.
+- Scoped tokens:
+  Use `goflow token create/list/delete` or the `/api/v1/tokens` endpoints. Token management requires the admin API key.
+- Audit events:
+  Authenticated API requests and token management actions are recorded in `audit_events`. Admins can read recent events with `GET /api/v1/audit-events?limit=100`.
 - WebSocket authentication:
   The bundled Web UI forwards the saved API key through the WebSocket subprotocol during `/ws` connection setup.
 - Webhook secret:
@@ -432,6 +460,10 @@ On startup, any execution left in `RUNNING` from a previous crash or shutdown is
 - `POST /api/v1/executions/{id}/cancel`: Request cancellation for a running execution.
 - `GET /api/v1/workflows/{workflowId}/executions`: Fetch execution history timeline logs.
 - `POST /api/v1/credentials`: Save a new encrypted credential secret (AES-256-GCM).
+- `GET /api/v1/tokens`: List scoped token metadata. Admin API key required.
+- `POST /api/v1/tokens`: Create a scoped token. The raw token is returned once. Admin API key required.
+- `DELETE /api/v1/tokens/{id}`: Delete a scoped token. Admin API key required.
+- `GET /api/v1/audit-events`: List recent audit events. Admin API key required.
 - `GET /api/v1/oauth2/authorize`: Initiates OAuth2 authorization code flow redirect.
 - `GET /api/v1/oauth2/callback`: Handle external OAuth2 provider redirection callback.
 - `GET /api/v1/nodes/definitions`: Retrieve available node metadata definitions.

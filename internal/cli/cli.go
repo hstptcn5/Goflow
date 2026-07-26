@@ -56,6 +56,8 @@ func (r Runner) Run(args []string) int {
 		return r.workflow(args[1:])
 	case "execution":
 		return r.execution(args[1:])
+	case "token":
+		return r.token(args[1:])
 	case "mcp":
 		return r.mcp(args[1:])
 	default:
@@ -80,14 +82,107 @@ Usage:
   goflow execution get <execution-id> [--output table|json]
   goflow execution watch <execution-id> [--timeout 60s] [--interval 1s] [--output table|json]
   goflow execution cancel <execution-id> [--output table|json]
+  goflow token list [--output table|json]
+  goflow token create <name> --scope scope [--scope scope] [--workflow workflow-id] [--output table|json]
+  goflow token delete <token-id>
   goflow mcp stdio
 
 Environment:
   GOFLOW_URL      Goflow server URL, default http://127.0.0.1:8080
-  GOFLOW_API_KEY  Optional API key for secured instances
+  GOFLOW_API_KEY  Optional API key or scoped token for secured instances
 
 PowerShell tip:
   Prefer --set or --input payload.json. Inline --json quoting can be fragile on Windows PowerShell.`)
+}
+
+func (r Runner) token(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(r.Stderr, "token subcommand is required")
+		return ExitInvalidInput
+	}
+	switch args[0] {
+	case "list":
+		return r.tokenList(args[1:])
+	case "create":
+		return r.tokenCreate(args[1:])
+	case "delete":
+		return r.tokenDelete(args[1:])
+	default:
+		fmt.Fprintf(r.Stderr, "unknown token subcommand: %s\n", args[0])
+		return ExitInvalidInput
+	}
+}
+
+func (r Runner) tokenList(args []string) int {
+	fs := flag.NewFlagSet("token list", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	output := fs.String("output", "table", "Output format: table or json")
+	clientOpts := addClientFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return ExitInvalidInput
+	}
+	c := cliClient(clientOpts)
+	tokens, err := c.ListTokens()
+	if err != nil {
+		return r.apiError(err)
+	}
+	if *output == "json" {
+		return writeJSON(r.Stdout, tokens)
+	}
+	fmt.Fprintf(r.Stdout, "%-38s  %-20s  %-28s  %s\n", "ID", "NAME", "SCOPES", "WORKFLOWS")
+	for _, token := range tokens {
+		fmt.Fprintf(r.Stdout, "%-38s  %-20s  %-28s  %s\n", token.ID, token.Name, strings.Join(token.Scopes, ","), strings.Join(token.AllowedWorkflows, ","))
+	}
+	return ExitOK
+}
+
+func (r Runner) tokenCreate(args []string) int {
+	fs := flag.NewFlagSet("token create", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	scopes := multiFlag{}
+	workflows := multiFlag{}
+	fs.Var(&scopes, "scope", "Token scope; can be repeated")
+	fs.Var(&workflows, "workflow", "Allowed workflow ID; can be repeated. Omit for all workflows")
+	output := fs.String("output", "table", "Output format: table or json")
+	clientOpts := addClientFlags(fs)
+	name, ok, code := parseOneRef(fs, args, "token name", r.Stderr)
+	if !ok {
+		return code
+	}
+	if len(scopes) == 0 {
+		fmt.Fprintln(r.Stderr, "at least one --scope is required")
+		return ExitInvalidInput
+	}
+	c := cliClient(clientOpts)
+	token, err := c.CreateToken(client.CreateTokenRequest{
+		Name:             name,
+		Scopes:           scopes,
+		AllowedWorkflows: workflows,
+	})
+	if err != nil {
+		return r.apiError(err)
+	}
+	if *output == "json" {
+		return writeJSON(r.Stdout, token)
+	}
+	fmt.Fprintf(r.Stdout, "Token created\nID: %s\nName: %s\nScopes: %s\nAllowed workflows: %s\nToken: %s\n", token.ID, token.Name, strings.Join(token.Scopes, ","), strings.Join(token.AllowedWorkflows, ","), token.Token)
+	return ExitOK
+}
+
+func (r Runner) tokenDelete(args []string) int {
+	fs := flag.NewFlagSet("token delete", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	clientOpts := addClientFlags(fs)
+	id, ok, code := parseOneRef(fs, args, "token ID", r.Stderr)
+	if !ok {
+		return code
+	}
+	c := cliClient(clientOpts)
+	if err := c.DeleteToken(id); err != nil {
+		return r.apiError(err)
+	}
+	fmt.Fprintf(r.Stdout, "Deleted token %s\n", id)
+	return ExitOK
 }
 
 func (r Runner) mcp(args []string) int {

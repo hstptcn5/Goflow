@@ -82,6 +82,62 @@ func TestMigrationsAddWorkflowAndExecutionMetadata(t *testing.T) {
 			t.Fatalf("expected executions.%s column", col)
 		}
 	}
+
+	tokenColumns := mustTableColumns(t, db, "access_tokens")
+	for _, col := range []string{"id", "name", "token_hash", "scopes_json", "allowed_workflows_json", "created_at", "last_used_at"} {
+		if !tokenColumns[col] {
+			t.Fatalf("expected access_tokens.%s column", col)
+		}
+	}
+
+	auditColumns := mustTableColumns(t, db, "audit_events")
+	for _, col := range []string{"id", "event_type", "subject", "scope", "workflow_id", "execution_id", "success", "message", "created_at"} {
+		if !auditColumns[col] {
+			t.Fatalf("expected audit_events.%s column", col)
+		}
+	}
+}
+
+func TestAccessTokenStoreCreateAuthenticateListDelete(t *testing.T) {
+	db := newTestDB(t)
+	store := NewAccessTokenStore(db)
+
+	token, raw, err := store.Create("ci-runner", []string{"workflow:run", "workflow:run"}, []string{"wf-1"})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if raw == "" || token.ID == "" || len(token.Scopes) != 1 || token.Scopes[0] != "workflow:run" {
+		t.Fatalf("unexpected token: token=%#v raw=%q", token, raw)
+	}
+	if token.HasScope("execution:read") {
+		t.Fatalf("token should not have execution:read")
+	}
+	if !token.AllowsWorkflow("wf-1") || token.AllowsWorkflow("wf-2") {
+		t.Fatalf("workflow allowlist failed")
+	}
+
+	authenticated, err := store.Authenticate(raw)
+	if err != nil {
+		t.Fatalf("Authenticate failed: %v", err)
+	}
+	if authenticated.ID != token.ID || authenticated.LastUsedAt == nil {
+		t.Fatalf("unexpected authenticated token: %#v", authenticated)
+	}
+	if _, err := store.Authenticate("wrong"); err == nil {
+		t.Fatalf("expected invalid token error")
+	}
+
+	list, err := store.List()
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != token.ID {
+		t.Fatalf("unexpected token list: %#v", list)
+	}
+	deleted, err := store.Delete(token.ID)
+	if err != nil || !deleted {
+		t.Fatalf("Delete failed: deleted=%t err=%v", deleted, err)
+	}
 }
 
 func TestExecutionStoreIdempotencyLookup(t *testing.T) {

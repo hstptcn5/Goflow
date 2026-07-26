@@ -71,6 +71,7 @@ var migrations = []migration{
 	{version: 1, name: "initial", up: migrationInitial},
 	{version: 2, name: "workflow_interfaces", up: migrationWorkflowInterfaces},
 	{version: 3, name: "execution_invocation", up: migrationExecutionInvocation},
+	{version: 4, name: "access_tokens_audit", up: migrationAccessTokensAudit},
 }
 
 func migrationInitial(tx *sql.Tx) error {
@@ -164,6 +165,43 @@ func migrationExecutionInvocation(tx *sql.Tx) error {
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_execution_idempotency
 			ON executions(workflow_id, idempotency_key)
 			WHERE idempotency_key IS NOT NULL;
+	`)
+	return err
+}
+
+func migrationAccessTokensAudit(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS access_tokens (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			token_hash TEXT NOT NULL UNIQUE,
+			scopes_json TEXT NOT NULL DEFAULT '[]',
+			allowed_workflows_json TEXT NOT NULL DEFAULT '[]',
+			created_at DATETIME NOT NULL,
+			last_used_at DATETIME
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_access_tokens_name
+			ON access_tokens(name);
+
+		CREATE TABLE IF NOT EXISTS audit_events (
+			id TEXT PRIMARY KEY,
+			event_type TEXT NOT NULL,
+			subject TEXT,
+			scope TEXT,
+			workflow_id TEXT,
+			execution_id TEXT,
+			success INTEGER NOT NULL DEFAULT 0,
+			message TEXT,
+			created_at DATETIME NOT NULL
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_audit_events_created_at
+			ON audit_events(created_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_audit_events_workflow
+			ON audit_events(workflow_id, created_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_audit_events_execution
+			ON audit_events(execution_id, created_at DESC);
 	`)
 	return err
 }

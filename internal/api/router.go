@@ -20,6 +20,8 @@ func NewRouter(
 	wfStore *storage.WorkflowStore,
 	execStore *storage.ExecutionStore,
 	credStore *storage.CredentialStore,
+	tokenStore *storage.AccessTokenStore,
+	auditStore *storage.AuditStore,
 	registry *nodes.PluginRegistry,
 	eng *engine.Engine,
 	eventBus *engine.EventBus,
@@ -52,13 +54,15 @@ func NewRouter(
 	wfHandler := NewWorkflowHandler(wfStore, triggerService, webhookRateLimitPerMinute)
 	execHandler := NewExecutionHandler(execStore, eng)
 	credHandler := NewCredentialHandler(credStore)
+	tokenHandler := NewTokenHandler(tokenStore, auditStore)
+	auditHandler := NewAuditHandler(auditStore)
 	nodeHandler := NewNodeHandler(registry)
 	oauth2Handler := NewOAuth2Handler(credStore)
 	wsHandler := NewWSHandler(eventBus, apiKey)
 	aiHandler := NewAIHandler(credStore, registry)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(authMiddleware(apiKey, true))
+		r.Use(authMiddleware(apiKey, tokenStore, auditStore, true))
 
 		r.Get("/oauth2/authorize", oauth2Handler.Authorize)
 		r.Get("/oauth2/callback", oauth2Handler.Callback)
@@ -81,6 +85,12 @@ func NewRouter(
 		r.Get("/credentials", credHandler.ListCredentials)
 		r.Post("/credentials", credHandler.CreateCredential)
 		r.Delete("/credentials/{id}", credHandler.DeleteCredential)
+
+		r.Get("/tokens", tokenHandler.ListTokens)
+		r.Post("/tokens", tokenHandler.CreateToken)
+		r.Delete("/tokens/{id}", tokenHandler.DeleteToken)
+
+		r.Get("/audit-events", auditHandler.ListAuditEvents)
 
 		r.Get("/nodes/definitions", nodeHandler.ListDefinitions)
 

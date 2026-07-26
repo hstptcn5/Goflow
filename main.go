@@ -54,6 +54,8 @@ func main() {
 	credStore := storage.NewCredentialStore(db, cm)
 	wfStore := storage.NewWorkflowStore(db)
 	execStore := storage.NewExecutionStore(db)
+	tokenStore := storage.NewAccessTokenStore(db)
+	auditStore := storage.NewAuditStore(db)
 	if interrupted, err := execStore.MarkRunningInterrupted(); err != nil {
 		log.Printf("[WARN] Failed to mark interrupted executions: %v", err)
 	} else if interrupted > 0 {
@@ -240,7 +242,7 @@ func main() {
 
 	// 6. Initialize REST API Router & Serve Static Embedded Web UI
 	uiFS := getEmbeddedUI()
-	router := api.NewRouter(wfStore, execStore, credStore, registry, eng, eventBus, uiFS, cfg.APIKey, cfg.WebhookRateLimitPerMinute)
+	router := api.NewRouter(wfStore, execStore, credStore, tokenStore, auditStore, registry, eng, eventBus, uiFS, cfg.APIKey, cfg.WebhookRateLimitPerMinute)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),

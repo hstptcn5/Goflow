@@ -13,6 +13,9 @@ All notable changes to Goflow are tracked here.
 - Per-execution node concurrency limit through `GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION`.
 - Sub-workflow executions reuse the root workflow global execution slot.
 - CLI workflow export, import, and validate commands.
+- Scoped API tokens with per-token scopes and optional workflow allowlists.
+- Audit event metadata for authenticated API requests and token management.
+- Admin token management endpoints and CLI commands.
 
 ## 0.4.0-mcp-stdio-alpha - 2026-07-26
 

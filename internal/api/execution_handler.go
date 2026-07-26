@@ -26,6 +26,10 @@ func (h *ExecutionHandler) GetExecution(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Execution log not found", http.StatusNotFound)
 		return
 	}
+	if !requestAllowsWorkflow(r, exec.WorkflowID) {
+		forbidden(w)
+		return
+	}
 	renderJSON(w, http.StatusOK, exec)
 }
 
@@ -49,6 +53,10 @@ func (h *ExecutionHandler) CancelExecution(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "Execution log not found", http.StatusNotFound)
 		return
 	}
+	if !requestAllowsWorkflow(r, exec.WorkflowID) {
+		forbidden(w)
+		return
+	}
 	if isExecutionTerminal(exec.Status) {
 		renderJSON(w, http.StatusOK, map[string]interface{}{
 			"id":      exec.ID,
@@ -66,6 +74,14 @@ func (h *ExecutionHandler) CancelExecution(w http.ResponseWriter, r *http.Reques
 		"status":  "CANCEL_REQUESTED",
 		"message": "cancellation requested",
 	})
+}
+
+func requestAllowsWorkflow(r *http.Request, workflowID string) bool {
+	auth, ok := AuthFromContext(r.Context())
+	if !ok || auth.Admin || auth.Token == nil {
+		return true
+	}
+	return auth.Token.AllowsWorkflow(workflowID)
 }
 
 func isExecutionTerminal(status string) bool {
