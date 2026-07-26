@@ -51,14 +51,14 @@ This guide describes how to prepare a Goflow preview release.
 
    This uses a temporary database and validates CLI, cron trigger source, MCP stdio, MCP Streamable HTTP, scoped token allowlist, dynamic MCP metadata, custom MCP origin, safe MCP execution DTOs, UI trigger source, unknown-node failure handling, cancellation, audit, and concurrent idempotency.
 
-   The frontend E2E gate also validates the UX Milestone 1 and 2 browser flows: routed app shell, workflow creation, Add step picker, quick-add, validation summary, incomplete draft save, dirty graph save-before-run, activation blocking for invalid runnable workflows, node picker focus trap, undo/redo, duplicate, auto-layout, keyboard shortcuts, visual screenshot baselines, and separated 10/50/100-node performance smoke.
+   The frontend E2E gate also validates the UX Milestone 1, 2, and 3 browser flows: routed app shell, workflow creation, Add step picker, quick-add, validation summary, incomplete draft save, dirty graph save-before-run, activation blocking for invalid runnable workflows, node picker focus trap, undo/redo, duplicate, auto-layout, keyboard shortcuts, inspector Parameters/Input/Output/Logs tabs, data mapping, expression preview, output/log inspection, visual screenshot baselines, and separated editor/inspector performance smoke.
 
    To run the Playwright UX closure tests against the compiled embedded binary instead of `go run`, build `goflow.exe` first and run:
 
    ```powershell
    cd ui
    $env:GOFLOW_E2E_BINARY = ".\goflow.exe"
-   npx playwright test tests/e2e/milestone2-closure.spec.js
+   npx playwright test tests/e2e/milestone2-closure.spec.js tests/e2e/milestone3-inspector.spec.js
    Remove-Item Env:\GOFLOW_E2E_BINARY
    ```
 
@@ -97,6 +97,8 @@ This guide describes how to prepare a Goflow preview release.
 
    - The workflow editor can save an incomplete draft, reload it, block Test/Activate until configured, and then run the saved current graph after configuration.
    - Node picker focus behavior passes in the embedded UI: search is focused on open, favorite does not add a node, Tab/Shift+Tab stay inside the dialog, Escape closes, and focus returns to the opener.
+   - The node inspector can map upstream JSON output into a parameter expression, preview the resolved value, save/reload the expression, inspect output/log tabs, and redact common secret fields from visible inspector data.
+   - Activating a dirty valid workflow saves the graph before activation.
 
 10. Package the release with:
 

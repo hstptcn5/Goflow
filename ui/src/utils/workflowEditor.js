@@ -192,6 +192,16 @@ export function validateWorkflowGraph(nodes, edges, nodeDefinitions) {
           message: `${node.data?.name || def.name} is missing ${param.label || param.name}.`,
         });
       }
+      if (typeof value === 'string' && value.includes('{{')) {
+        const expressionIssue = validateExpressionReference(value, node.id, nodes, edges);
+        if (expressionIssue) {
+          issues.push({
+            ...expressionIssue,
+            param: param.name,
+            message: `${node.data?.name || def.name} has an invalid expression in ${param.label || param.name}: ${expressionIssue.message}`,
+          });
+        }
+      }
     });
   });
 
@@ -249,6 +259,46 @@ export function validateWorkflowGraph(nodes, edges, nodeDefinitions) {
   }
 
   return issues;
+}
+
+function validateExpressionReference(value, nodeId, nodes, edges) {
+  const trimmed = String(value || '').trim();
+  const match = trimmed.match(/^\{\{\s*([^{}]+?)\s*\}\}$/);
+  if (!match) {
+    if (trimmed.startsWith('{{') && trimmed.endsWith('}}')) {
+      return { type: 'invalid_expression', nodeId, message: 'expression syntax is invalid.' };
+    }
+    return null;
+  }
+  const sourceId = match[1].trim().split('.')[0];
+  if (!sourceId) return { type: 'invalid_expression', nodeId, message: 'expression source is missing.' };
+  if (sourceId === '$trigger') return null;
+  const ids = new Set((nodes || []).map((node) => node.id));
+  if (!ids.has(sourceId)) {
+    return { type: 'invalid_expression_reference', nodeId, message: `source "${sourceId}" does not exist.` };
+  }
+  const upstream = upstreamIds(nodeId, edges);
+  if (!upstream.has(sourceId)) {
+    return { type: 'invalid_expression_reference', nodeId, message: `source "${sourceId}" is not upstream of this node.` };
+  }
+  return null;
+}
+
+function upstreamIds(nodeId, edges) {
+  const reverse = new Map();
+  (edges || []).forEach((edge) => {
+    if (!reverse.has(edge.target)) reverse.set(edge.target, []);
+    reverse.get(edge.target).push(edge.source);
+  });
+  const found = new Set();
+  const stack = [...(reverse.get(nodeId) || [])];
+  while (stack.length) {
+    const id = stack.pop();
+    if (found.has(id)) continue;
+    found.add(id);
+    stack.push(...(reverse.get(id) || []));
+  }
+  return found;
 }
 
 export function validationStateForNode(nodeId, issues) {

@@ -11,6 +11,8 @@ All notable changes to Goflow are tracked here.
 - Frontend Vitest and Playwright test foundations covering navigation, workflow save state, API auth prompt behavior, empty/error states, and a browser smoke path.
 - UX Milestone 2 editor usability foundation with searchable node picker, quick-add, validation summary, node config badges, undo/redo, duplicate/copy/paste, keyboard shortcuts, auto-layout, visual smoke, and performance smoke docs.
 - UX Milestone 2 closure coverage for save-before-run behavior, incomplete draft saves, activation blocking, node picker focus trap, stable graph fingerprints, robust graph ID generation, visual regression baselines, and separated editor performance measurements.
+- UX Milestone 3 inspector with Parameters/Input/Output/Logs tabs, inline field validation, data picker, runtime placeholder expression preview, JSON tree/table/raw views, output/log inspection, visual baselines, and inspector performance smoke.
+- `docs/ADR_EXPRESSION_AND_MAPPING_MODEL.md` documenting the existing `{{node.path}}` / `{{$trigger.path}}` expression contract, Fixed/Expression mode storage, preview behavior, compatibility, and security model.
 - `scripts/goal-smoke-test.ps1` to run a reusable Windows smoke test for CLI, MCP stdio, MCP HTTP, scoped tokens, cancellation, audit, and concurrent idempotency against a temporary local instance.
 - `GOFLOW_MCP_RATE_LIMIT_PER_MINUTE` for HTTP MCP request rate limiting per token/principal.
 - `goflow_reload_tools` MCP tool to tell clients when dynamic workflow tools require reconnect/reload.
@@ -51,6 +53,8 @@ All notable changes to Goflow are tracked here.
 - Fixed node picker semantics by removing nested interactive controls and making favorite toggles independent from node selection.
 - Fixed node picker dialog focus handling so open, Tab/Shift+Tab trap, Escape close, backdrop close, and focus restore are covered by tests.
 - Fixed saved/unsaved state after undo and redo by comparing the current graph to a saved graph fingerprint.
+- Fixed Activate behavior for dirty valid workflows so the current graph is saved before activation.
+- Fixed inspector rendering to redact common secret keys and bearer-like values from visible input/output/log/preview data.
 
 ## 0.5.0-http-mcp-beta - 2026-07-26
 

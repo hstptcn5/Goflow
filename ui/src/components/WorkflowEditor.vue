@@ -656,6 +656,14 @@ async function toggleWorkflowActive(event) {
     runError.value = 'Fix workflow validation issues before activating.';
     return;
   }
+  if (isActive && workflowStore.isDirty) {
+    const saved = await saveCanvas();
+    if (!saved) {
+      event.target.checked = false;
+      runError.value = workflowStore.saveError || 'Save failed. Workflow was not activated.';
+      return;
+    }
+  }
   await workflowStore.toggleActive(workflowStore.currentWorkflow.id, isActive);
 }
 
@@ -904,6 +912,9 @@ function handleEditorShortcut(event) {
 
     <PropertiesPanel
       :selectedNode="selectedNode"
+      :nodes="nodes"
+      :edges="edges"
+      :validationIssues="validationIssuesByNode[selectedNodeId] || []"
       @updateNodeParams="handleUpdateNodeParams"
       @deleteNode="handleDeleteNode"
       @close="selectedNodeId = null"

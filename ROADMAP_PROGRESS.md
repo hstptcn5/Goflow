@@ -26,6 +26,7 @@ timeline
       GOAL Hardening Pass : security, idempotency, limits, validator, MCP safety
       UX Milestone 1 : app shell, routed pages, save state, frontend test foundation
       UX Milestone 2 : editor usability closure, snapshots, dirty run safety
+      UX Milestone 3 : inspector tabs, data mapping, expression preview
 ```
 
 ## Phase Status
@@ -41,6 +42,7 @@ timeline
 | GOAL hardening | North Star audit items for security, idempotency, source tracking, exposure, validator, MCP safety, sub-workflow safety, and smoke coverage | Local unit and Windows smoke verification pass; release still requires final full gate and clean-machine checks |
 | UX Milestone 1 | UX audit, app shell, durable Workflows/Editor/Executions/Credentials pages, design tokens, save state, frontend test foundation | Implemented and covered by frontend unit tests, Playwright smoke, and embedded route fallback test |
 | UX Milestone 2 | Editor usability: searchable picker, quick-add, node cards, validation, undo/redo, duplicate/copy/paste, auto-layout, shortcuts, save-before-run, draft saves, focus trap, visual baselines, and separated performance smoke | Code complete for automated scope; manual usability and cross-machine evidence remain |
+| UX Milestone 3 | Inspector and data mapping: Parameters/Input/Output/Logs tabs, inline validation, credential action, JSON tree/table/raw views, upstream data picker, expression preview, redacted output/log rendering, and dirty save-before-activate | Automated implementation complete; manual usability evidence remains |
 
 ## P0 Checklist
 
@@ -153,6 +155,30 @@ timeline
 [ ] Low-end Windows visual/performance review
 ```
 
+## UX Milestone 3 Checklist
+
+```text
+[x] Properties inspector tabs: Parameters, Input, Output, Logs
+[x] Inline required, credential, JSON, number, select, URL, and expression validation
+[x] Credential missing action
+[x] Advanced options collapse
+[x] Input JSON tree, table, raw JSON, search, copy value, copy path
+[x] Data picker source selection and expression insertion
+[x] Runtime-compatible Fixed/Expression mode
+[x] Expression preview success and error states
+[x] Output JSON tree, table, raw, copy, download
+[x] Logs status, duration, attempts, execution ID, and error
+[x] Frontend redaction guard for inspector input/output/log/preview rendering
+[x] Dirty valid Activate saves graph before activation
+[x] ADR for expression and mapping data model
+[x] Component tests
+[x] E2E data mapping, inline validation, output/log, invalid expression, and dirty activation flows
+[x] Visual regression baselines for Milestone 3 inspector states
+[x] Inspector performance smoke
+[ ] Manual usability timing for mapping data between nodes
+[ ] Manual screen-reader pass for inspector tabs and JSON tree
+```
+
 ## Remaining Timeline
 
 ```mermaid
@@ -187,6 +213,8 @@ gantt
     UX Milestone 1 foundation      :done, ux1, 2026-07-26, 1d
     UX Milestone 2 automated closure:done, ux2, 2026-07-26, 1d
     UX Milestone 2 manual evidence:active, ux2m, 2026-07-26, 1d
+    UX Milestone 3 inspector/data mapping:done, ux3, 2026-07-26, 1d
+    UX Milestone 3 manual evidence:active, ux3m, 2026-07-26, 1d
     Release clean-machine checks   :active, goal2, 2026-07-26, 1d
 ```
 
@@ -194,4 +222,4 @@ gantt
 
 1. Rebuild release artifacts from the current commit.
 2. Run the release checklist against the packaged archive on a clean Windows machine.
-3. Continue UX Milestone 3: inspector structure, JSON tree, data picker hardening, expression mode, and resolved preview.
+3. Continue UX Milestone 4: execution debugger selector, failed path highlight, retry/replay, cancel/debug actions, and redacted debug bundle.

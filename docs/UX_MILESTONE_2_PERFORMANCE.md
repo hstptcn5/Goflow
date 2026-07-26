@@ -1,4 +1,4 @@
-# UX Milestone 2 Performance Smoke
+# UX Editor Performance Smoke
 
 Scope: editor usability foundation on Vue Flow with the embedded Go test server.
 
@@ -20,15 +20,15 @@ cd ui
 npm run test:e2e
 ```
 
-## Observed Results
+## Milestone 2 Observed Results
 
 Latest local verification output:
 
 | Graph size | Editor ready | Picker open | Picker search | Auto-layout |
 |---:|---:|---:|---:|---:|
-| 10 nodes | 578 ms | 77 ms | 77 ms | 85 ms |
-| 50 nodes | 346 ms | 78 ms | 76 ms | 198 ms |
-| 100 nodes | 511 ms | 136 ms | 110 ms | 331 ms |
+| 10 nodes | 677 ms | 92 ms | 71 ms | 96 ms |
+| 50 nodes | 366 ms | 84 ms | 85 ms | 205 ms |
+| 100 nodes | 561 ms | 145 ms | 109 ms | 316 ms |
 
 The automated thresholds are intentionally broad:
 
@@ -46,8 +46,25 @@ The automated thresholds are intentionally broad:
 - Runs explicit auto-layout for each graph size.
 - Confirms picker search remains responsive at 100 nodes.
 
+## Milestone 3 Inspector Results
+
+Latest local verification output:
+
+| Fixture | Inspector open | Input JSON tree | Input search | Expression preview |
+|---|---:|---:|---:|---:|
+| 12 upstream JSON sources | 154 ms | 116 ms | 52 ms | 201 ms |
+
+The automated thresholds are intentionally broad:
+
+- Inspector open: under 3 seconds.
+- JSON tree: under 3 seconds.
+- Input search: under 3 seconds.
+- Expression preview/data picker insert: under 3 seconds.
+
+The Milestone 3 smoke creates real upstream JSON Transform nodes, runs the workflow, opens the selected node inspector, renders input data, searches a nested value, inserts a runtime placeholder expression, and confirms the preview updates.
+
 ## Remaining Manual Review
 
 - Check drag/pan/zoom smoothness on a lower-end Windows machine.
 - Profile memory growth during long editing sessions if large workflows become common.
-- Add a large execution-output payload smoke in Milestone 3 when the JSON viewer is hardened.
+- Add larger execution-output payload profiling if users commonly inspect outputs above the current truncation limit.

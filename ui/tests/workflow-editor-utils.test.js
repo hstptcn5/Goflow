@@ -102,4 +102,16 @@ describe('workflow editor utilities', () => {
     const nodes = [createWorkflowNode(defs[0], { x: 10, y: 20 }, 'a')];
     expect(graphFingerprint(nodes, [])).toBe(graphFingerprint([{ ...nodes[0] }], []));
   });
+
+  it('validates expression references against upstream runtime placeholder syntax', () => {
+    const start = createWorkflowNode(defs[0], { x: 0, y: 0 }, 'start');
+    const branch = createWorkflowNode(defs[1], { x: 260, y: 0 }, 'branch');
+    branch.data.params.left = '{{missing.value}}';
+    const missing = validateWorkflowGraph([start, branch], [{ id: 'e1', source: 'start', target: 'branch' }], defs);
+    expect(missing.map((issue) => issue.type)).toContain('invalid_expression_reference');
+
+    branch.data.params.left = '{{start.payload.email}}';
+    const valid = validateWorkflowGraph([start, branch], [{ id: 'e1', source: 'start', target: 'branch' }], defs);
+    expect(valid.map((issue) => issue.type)).not.toContain('invalid_expression_reference');
+  });
 });

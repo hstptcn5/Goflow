@@ -227,4 +227,30 @@ describe('WorkflowEditor top bar', () => {
     await nextFrame();
     expect(root.textContent).toContain('Unsaved changes');
   });
+
+  it('saves a dirty valid workflow before activating it', async () => {
+    const { vm } = await mountWithApp(WorkflowEditor, { route: '/workflows/wf-1' });
+    const store = useWorkflowStore();
+    store.nodeDefinitions = [
+      { type: 'delaySleep', name: 'Delay / Sleep', category: 'LOGIC', description: 'Wait', params: [] },
+    ];
+    store.currentWorkflow = {
+      id: 'wf-1',
+      name: 'Editor Test',
+      description: '',
+      is_active: false,
+      nodes_json: '[]',
+      edges_json: '[]',
+    };
+    const updateSpy = vi.spyOn(api, 'updateWorkflow').mockImplementation(async (id, payload) => ({ id, ...payload }));
+    const toggleSpy = vi.spyOn(api, 'toggleWorkflowActive').mockResolvedValue({ id: 'wf-1', is_active: true });
+    await nextFrame();
+
+    vm.addNodeFromPicker(store.nodeDefinitions[0]);
+    await vm.toggleWorkflowActive({ target: { checked: true } });
+    await nextFrame();
+
+    expect(updateSpy).toHaveBeenCalledBefore(toggleSpy);
+    expect(toggleSpy).toHaveBeenCalledWith('wf-1', true);
+  });
 });

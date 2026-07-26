@@ -23,6 +23,7 @@ test('Milestone 2 editor usability flow', async ({ page }) => {
   await page.getByRole('option', { name: /Cron Schedule/ }).first().click();
   await expect(page.locator('.node-body-title', { hasText: 'Cron Schedule' })).toBeVisible();
 
+  await page.getByRole('button', { name: 'Close node inspector' }).click();
   await page.getByRole('button', { name: /Add step after Cron Schedule/ }).click();
   await page.getByLabel('Search nodes').fill('IF');
   await page.getByRole('option', { name: /IF \/ ELSE Condition/ }).first().click();
@@ -61,13 +62,13 @@ test('Milestone 2 keyboard picker and delete smoke', async ({ page }) => {
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+K' : 'Control+K');
   await page.getByLabel('Search nodes').fill('Delay');
   await page.keyboard.press('Enter');
-  await expect(page.getByText('Delay / Sleep')).toBeVisible();
+  await expect(page.locator('.node-body-title', { hasText: 'Delay / Sleep' })).toBeVisible();
 
-  await page.getByText('Delay / Sleep').click();
+  await page.locator('.node-body-title', { hasText: 'Delay / Sleep' }).click();
   await page.keyboard.press('Delete');
   await expect(page.getByText('No nodes yet')).toBeVisible();
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Z' : 'Control+Z');
-  await expect(page.getByText('Delay / Sleep')).toBeVisible();
+  await expect(page.locator('.node-body-title', { hasText: 'Delay / Sleep' })).toBeVisible();
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+S' : 'Control+S');
   await expect(page.getByText('Saved')).toBeVisible();
 });
@@ -93,6 +94,7 @@ test('Milestone 2 visual regression baseline states at 1366 editor', async ({ pa
   await expect(page.getByText('Configured')).toBeVisible();
   await expect(page).toHaveScreenshot('configured-node.png', snapshotOptions);
 
+  await page.getByRole('button', { name: 'Close node inspector' }).click();
   await page.getByRole('button', { name: /Add step after Delay \/ Sleep/ }).click();
   await page.getByLabel('Search nodes').fill('IF');
   await page.getByRole('option', { name: /IF \/ ELSE Condition/ }).first().click();
