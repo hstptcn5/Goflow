@@ -284,7 +284,7 @@ goflow workflow list
   goflow execution watch <execution-id>
   goflow execution cancel <execution-id>
   goflow token list
-  goflow token create mcp-runner --scope workflow:list --scope workflow:run --scope execution:read --workflow <workflow-id>
+  goflow token create mcp-runner --scope workflow:list --scope workflow:read --scope workflow:run --scope execution:read --workflow <workflow-id>
   goflow token delete <token-id>
   goflow mcp stdio
 ```
@@ -323,6 +323,7 @@ Scoped tokens are created with the admin API key and are returned only once:
 ```bash
 goflow token create mcp-runner \
   --scope workflow:list \
+  --scope workflow:read \
   --scope workflow:run \
   --scope execution:read \
   --workflow <workflow-id>
