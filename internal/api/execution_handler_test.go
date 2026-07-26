@@ -22,7 +22,7 @@ func TestExecutionInspectorDTORedactsSecrets(t *testing.T) {
 	t.Cleanup(db.Close)
 	execStore := storage.NewExecutionStore(db)
 	wfStore := storage.NewWorkflowStore(db)
-	handler := NewExecutionHandler(execStore, nil)
+	handler := NewExecutionHandler(execStore, nil, nil)
 	if err := wfStore.Create(&storage.Workflow{ID: "wf-redact", Name: "Redact", NodesJSON: "[]", EdgesJSON: "[]"}); err != nil {
 		t.Fatalf("create workflow: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestExecutionInspectorScopedTokenWorkflowAllowlist(t *testing.T) {
 	}
 
 	router := chi.NewRouter()
-	handler := NewExecutionHandler(execStore, nil)
+	handler := NewExecutionHandler(execStore, nil, nil)
 	router.Route("/api/v1", func(r chi.Router) {
 		r.Use(authMiddleware("admin-key", tokenStore, nil, false))
 		r.Get("/executions/{id}", handler.GetExecution)

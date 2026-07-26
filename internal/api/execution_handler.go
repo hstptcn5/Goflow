@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
 
+	"goflow/internal/application"
 	"goflow/internal/engine"
 	"goflow/internal/storage"
 
@@ -13,12 +15,13 @@ import (
 )
 
 type ExecutionHandler struct {
-	execStore *storage.ExecutionStore
-	engine    *engine.Engine
+	execStore      *storage.ExecutionStore
+	engine         *engine.Engine
+	triggerService *application.TriggerService
 }
 
-func NewExecutionHandler(es *storage.ExecutionStore, eng *engine.Engine) *ExecutionHandler {
-	return &ExecutionHandler{execStore: es, engine: eng}
+func NewExecutionHandler(es *storage.ExecutionStore, eng *engine.Engine, triggerService *application.TriggerService) *ExecutionHandler {
+	return &ExecutionHandler{execStore: es, engine: eng, triggerService: triggerService}
 }
 
 func (h *ExecutionHandler) GetExecution(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +85,48 @@ func (h *ExecutionHandler) CancelExecution(w http.ResponseWriter, r *http.Reques
 		"id":      exec.ID,
 		"status":  "CANCEL_REQUESTED",
 		"message": "cancellation requested",
+	})
+}
+
+func (h *ExecutionHandler) ReplayExecution(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	exec, err := h.execStore.GetByID(id)
+	if err != nil {
+		http.Error(w, "Execution log not found", http.StatusNotFound)
+		return
+	}
+	if !requestAllowsWorkflow(r, exec.WorkflowID) {
+		forbidden(w)
+		return
+	}
+	if h.triggerService == nil {
+		http.Error(w, "Replay is not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	var input interface{} = map[string]interface{}{}
+	if strings.TrimSpace(exec.InputJSON) != "" {
+		if err := json.Unmarshal([]byte(exec.InputJSON), &input); err != nil {
+			http.Error(w, "Stored execution input is invalid", http.StatusConflict)
+			return
+		}
+	}
+	result, err := h.triggerService.Trigger(context.Background(), application.TriggerRequest{
+		WorkflowID: exec.WorkflowID,
+		Input:      input,
+		Mode:       application.ModeAsync,
+		Source:     application.SourceUI,
+		Principal:  r.RemoteAddr,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	renderJSON(w, http.StatusAccepted, map[string]interface{}{
+		"execution_id": result.Execution.ID,
+		"workflow_id":  result.Execution.WorkflowID,
+		"status":       result.Execution.Status,
+		"deduplicated": result.Deduplicated,
 	})
 }
 

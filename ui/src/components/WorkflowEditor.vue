@@ -29,6 +29,7 @@ import {
   validateWorkflowGraph,
   validationStateForNode,
 } from '@/utils/workflowEditor';
+import { redactValue, safeJSONStringify } from '@/utils/inspector';
 
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
@@ -51,6 +52,9 @@ const clipboardNode = ref(null);
 const selectedEdgeId = ref(null);
 const dragStartSnapshot = ref(null);
 const savedFingerprint = ref('');
+const selectedExecutionId = ref('');
+const debugBundleMessage = ref('');
+const debugBundleText = ref('');
 const historyLimit = 60;
 
 function getNodeIcon(type) {
@@ -101,7 +105,7 @@ function getNodeCategory(type) {
 }
 
 function getNodeStatusClass(nodeId) {
-  const status = executionStore.nodeStatuses[nodeId];
+  const status = nodeStatus(nodeId);
   if (!status) return '';
   return `status-${status.toLowerCase()}`;
 }
@@ -126,6 +130,27 @@ const validationIssuesByNode = computed(() => {
   }, {});
 });
 const splitIssues = computed(() => splitValidationIssues(validationIssues.value));
+const selectedExecution = computed(() => {
+  if (!selectedExecutionId.value) return executionStore.executionLogs[0] || null;
+  return executionStore.executionLogs.find((exec) => exec.id === selectedExecutionId.value) || null;
+});
+const selectedExecutionLogs = computed(() => {
+  const exec = selectedExecution.value;
+  if (!exec) return [];
+  if (Array.isArray(exec.node_logs)) return exec.node_logs;
+  try {
+    return JSON.parse(exec.logs_json || '[]');
+  } catch {
+    return [];
+  }
+});
+const selectedLogByNode = computed(() => new Map(selectedExecutionLogs.value.map((log) => [log.node_id, log])));
+const hasLiveNodeEvents = computed(() => Object.keys(executionStore.nodeStatuses || {}).length > 0);
+const selectedExecutionIsRunning = computed(() => selectedExecution.value && ['RUNNING', 'QUEUED'].includes(String(selectedExecution.value.status || '').toUpperCase()));
+const executionSelectorLabel = computed(() => {
+  if (!selectedExecution.value) return 'No executions yet';
+  return `${selectedExecution.value.status || 'UNKNOWN'} ${String(selectedExecution.value.id || '').slice(0, 8)}`;
+});
 
 const canUndo = computed(() => undoStack.value.length > 0);
 const canRedo = computed(() => redoStack.value.length > 0);
@@ -140,6 +165,42 @@ function nodeValidationState(id) {
 
 function nodeOperationSummary(data) {
   return summarizeNodeOperation({ data }, nodeDefForType(data?.type));
+}
+
+function nodeExecutionLog(nodeId) {
+  if (selectedExecutionId.value || !hasLiveNodeEvents.value) return selectedLogByNode.value.get(nodeId) || null;
+  return executionStore.nodeEvents[nodeId] || selectedLogByNode.value.get(nodeId) || null;
+}
+
+function nodeStatus(nodeId) {
+  if (selectedExecutionId.value || !hasLiveNodeEvents.value) return selectedLogByNode.value.get(nodeId)?.status || '';
+  return executionStore.nodeStatuses[nodeId] || selectedLogByNode.value.get(nodeId)?.status || '';
+}
+
+function executionOptionLabel(exec) {
+  const started = exec.started_at ? new Date(exec.started_at).toLocaleString() : 'unknown time';
+  return `${exec.status || 'UNKNOWN'} - ${String(exec.id || '').slice(0, 8)} - ${started}`;
+}
+
+function redactParamValue(name, value) {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        return JSON.stringify(redactValue(JSON.parse(trimmed)), null, 2);
+      } catch {
+        // Fall through to key-aware redaction.
+      }
+    }
+  }
+  return redactValue({ [name]: value })[name];
+}
+
+function redactedParams(params = {}) {
+  return Object.entries(params || {}).reduce((acc, [key, value]) => {
+    acc[key] = redactParamValue(key, value);
+    return acc;
+  }, {});
 }
 
 const { onConnect } = useVueFlow();
@@ -157,7 +218,18 @@ watch(
   () => workflowStore.currentWorkflow,
   () => {
     loadCurrentWorkflow();
+    if (workflowStore.currentWorkflow?.id) {
+      executionStore.fetchExecutionHistory(workflowStore.currentWorkflow.id).catch((err) => {
+        runError.value = err.message;
+      });
+    }
   }
+);
+
+watch(
+  [selectedExecutionId, selectedExecutionLogs, () => executionStore.nodeStatuses],
+  () => applyExecutionOverlay(),
+  { deep: true }
 );
 
 function loadCurrentWorkflow() {
@@ -197,9 +269,40 @@ function loadCurrentWorkflow() {
     selectedEdgeId.value = null;
     savedFingerprint.value = graphFingerprint(nodes.value, edges.value);
     resetHistory();
+    applyExecutionOverlay();
   } catch (err) {
     console.error('Failed to parse nodes/edges JSON', err);
   }
+}
+
+function edgeExecutionState(edge) {
+  const sourceStatus = nodeStatus(edge.source);
+  const targetStatus = nodeStatus(edge.target);
+  if (targetStatus === 'FAILED' || sourceStatus === 'FAILED') return 'failed';
+  if (targetStatus === 'SKIPPED') return 'skipped';
+  if (targetStatus === 'RUNNING' || sourceStatus === 'RUNNING') return 'running';
+  if (targetStatus === 'SUCCESS' && sourceStatus === 'SUCCESS') return 'success';
+  return '';
+}
+
+function edgeStyleForState(state) {
+  if (state === 'failed') return { stroke: 'var(--color-danger)', strokeWidth: 3 };
+  if (state === 'skipped') return { stroke: 'var(--color-text-muted)', strokeWidth: 2, strokeDasharray: '6 4' };
+  if (state === 'running') return { stroke: 'var(--color-primary)', strokeWidth: 3 };
+  if (state === 'success') return { stroke: 'var(--color-success)', strokeWidth: 2.5 };
+  return { stroke: 'var(--color-border-strong)', strokeWidth: 2 };
+}
+
+function applyExecutionOverlay() {
+  edges.value = edges.value.map((edge) => {
+    const state = edgeExecutionState(edge);
+    return {
+      ...edge,
+      animated: state === 'running',
+      class: state ? `execution-edge-${state}` : '',
+      style: edgeStyleForState(state),
+    };
+  });
 }
 
 onConnect((connection) => {
@@ -534,6 +637,69 @@ async function runWorkflow() {
   }
 }
 
+async function retryFullWorkflow() {
+  return runWorkflow();
+}
+
+async function replaySelectedExecution() {
+  if (!selectedExecution.value) return null;
+  runError.value = '';
+  try {
+    const replay = await api.replayExecution(selectedExecution.value.id);
+    selectedExecutionId.value = replay.execution_id || '';
+    await executionStore.fetchExecutionHistory(workflowStore.currentWorkflow.id);
+    return replay;
+  } catch (err) {
+    runError.value = err.message;
+    return null;
+  }
+}
+
+async function cancelSelectedExecution() {
+  if (!selectedExecution.value) return null;
+  runError.value = '';
+  try {
+    const result = await api.cancelExecution(selectedExecution.value.id);
+    await executionStore.fetchExecutionHistory(workflowStore.currentWorkflow.id);
+    return result;
+  } catch (err) {
+    runError.value = err.message;
+    return null;
+  }
+}
+
+async function copyDebugBundle() {
+  const bundle = {
+    generated_at: new Date().toISOString(),
+    workflow: {
+      id: workflowStore.currentWorkflow?.id,
+      name: workflowStore.currentWorkflow?.name,
+      save_state: workflowStore.saveState,
+      active: Boolean(workflowStore.currentWorkflow?.is_active),
+    },
+    selected_execution: redactValue(selectedExecution.value || null),
+    nodes: nodes.value.map((node) => ({
+      id: node.id,
+      type: node.data?.type || node.type,
+      name: node.data?.name || node.label,
+      params: redactedParams(node.data?.params || {}),
+      status: nodeStatus(node.id) || 'NOT_RUN',
+      log: redactValue(nodeExecutionLog(node.id) || null),
+    })),
+    edges: serializableGraph().edges,
+    validation_issues: validationIssues.value,
+  };
+  const text = safeJSONStringify(bundle).text;
+  debugBundleText.value = text;
+  try {
+    await navigator.clipboard?.writeText(text);
+    debugBundleMessage.value = 'Debug bundle copied';
+  } catch {
+    debugBundleMessage.value = 'Debug bundle ready';
+  }
+  return text;
+}
+
 function handleLoadAIWorkflow(aiWorkflow) {
   if (!aiWorkflow) return;
 
@@ -773,6 +939,18 @@ function handleEditorShortcut(event) {
         />
         <span>{{ workflowStore.currentWorkflow?.is_active ? 'Active' : 'Inactive' }}</span>
       </label>
+      <div class="execution-toolbar" aria-label="Execution debugger controls">
+        <select v-model="selectedExecutionId" class="form-select compact" aria-label="Execution selector">
+          <option value="">Live/latest - {{ executionSelectorLabel }}</option>
+          <option v-for="exec in executionStore.executionLogs" :key="exec.id" :value="exec.id">
+            {{ executionOptionLabel(exec) }}
+          </option>
+        </select>
+        <button class="btn btn-secondary" type="button" :disabled="triggering" @click="retryFullWorkflow">Retry workflow</button>
+        <button class="btn btn-secondary" type="button" :disabled="!selectedExecution" @click="replaySelectedExecution">Replay execution</button>
+        <button class="btn btn-secondary" type="button" :disabled="!selectedExecutionIsRunning" @click="cancelSelectedExecution">Cancel execution</button>
+        <button class="btn btn-secondary" type="button" :disabled="!selectedExecution" @click="copyDebugBundle">Copy debug bundle</button>
+      </div>
       <button class="btn btn-primary" type="button" :disabled="triggering" @click="runWorkflow">
         {{ triggering ? 'Testing...' : 'Test Workflow' }}
       </button>
@@ -800,6 +978,13 @@ function handleEditorShortcut(event) {
     <div v-if="runError" class="inline-error" role="alert">
       {{ runError }}
     </div>
+    <div v-if="debugBundleMessage" class="inline-status" role="status">
+      {{ debugBundleMessage }}
+    </div>
+    <details v-if="debugBundleText" class="debug-bundle-preview">
+      <summary>Debug bundle preview</summary>
+      <pre>{{ debugBundleText }}</pre>
+    </details>
 
     <div v-if="validationAttempted && validationIssues.length" class="validation-summary" role="alert" aria-live="polite">
       <strong>{{ validationIssues.length }} issue{{ validationIssues.length === 1 ? '' : 's' }} need attention</strong>
@@ -877,7 +1062,13 @@ function handleEditorShortcut(event) {
                 {{ nodeValidationState(id) }}
               </span>
               <span v-if="executionStore.nodeStatuses[id]" class="node-execution-state">
-                {{ executionStore.nodeStatuses[id] }}
+                {{ nodeStatus(id) }}
+              </span>
+              <span v-else-if="nodeStatus(id)" class="node-execution-state">
+                {{ nodeStatus(id) }}
+              </span>
+              <span v-if="nodeExecutionLog(id)?.duration_ms" class="node-execution-meta">
+                {{ nodeExecutionLog(id).duration_ms }}ms
               </span>
             </div>
             <button
@@ -915,6 +1106,7 @@ function handleEditorShortcut(event) {
       :nodes="nodes"
       :edges="edges"
       :validationIssues="validationIssuesByNode[selectedNodeId] || []"
+      :selectedExecution="selectedExecution"
       @updateNodeParams="handleUpdateNodeParams"
       @deleteNode="handleDeleteNode"
       @close="selectedNodeId = null"
@@ -967,7 +1159,29 @@ function handleEditorShortcut(event) {
   padding: 0 var(--space-4);
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
-  z-index: var(--z-topbar);
+  z-index: var(--z-toast);
+}
+
+.execution-toolbar {
+  position: fixed;
+  left: 50%;
+  right: auto;
+  bottom: var(--space-4);
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  box-shadow: var(--shadow-md);
+}
+
+.execution-toolbar .form-select {
+  width: min(340px, 32vw);
 }
 
 .workflow-title-group {
@@ -999,6 +1213,49 @@ function handleEditorShortcut(event) {
 
 .save-saved {
   color: var(--color-success);
+}
+
+.inline-status {
+  position: absolute;
+  top: calc(var(--workflow-topbar-height) + var(--space-2));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  box-shadow: var(--shadow-md);
+}
+
+.debug-bundle-preview {
+  position: absolute;
+  top: calc(var(--workflow-topbar-height) + 58px);
+  right: var(--space-4);
+  width: min(560px, calc(100vw - 32px));
+  max-height: 320px;
+  overflow: auto;
+  z-index: var(--z-toast);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+  color: var(--color-text-primary);
+}
+
+.debug-bundle-preview summary {
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.debug-bundle-preview pre {
+  margin: 0;
+  padding: var(--space-3);
+  font-size: var(--font-size-xs);
+  white-space: pre-wrap;
 }
 
 .active-toggle {
@@ -1189,6 +1446,28 @@ function handleEditorShortcut(event) {
   color: var(--color-success);
   font-size: 0.68rem;
   font-weight: 750;
+}
+
+.node-execution-meta {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+:deep(.execution-edge-failed .vue-flow__edge-path) {
+  stroke: var(--color-danger);
+}
+
+:deep(.execution-edge-running .vue-flow__edge-path) {
+  stroke: var(--color-primary);
+}
+
+:deep(.execution-edge-success .vue-flow__edge-path) {
+  stroke: var(--color-success);
+}
+
+:deep(.execution-edge-skipped .vue-flow__edge-path) {
+  stroke: var(--color-text-muted);
+  stroke-dasharray: 6 4;
 }
 
 .node-config-state.invalid {

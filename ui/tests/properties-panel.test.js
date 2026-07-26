@@ -41,6 +41,20 @@ const nodeDefs = [
     description: 'Send message',
     params: [{ name: 'credential_id', label: 'Credential Token', type: 'credential', required: true, default: '' }],
   },
+  {
+    type: 'delaySleep',
+    name: 'Delay / Sleep',
+    category: 'UTILITY',
+    description: 'Wait',
+    params: [{ name: 'seconds', label: 'Delay Duration (Seconds)', type: 'number', required: true, default: '1' }],
+  },
+  {
+    type: 'integerCheck',
+    name: 'Integer Check',
+    category: 'UTILITY',
+    description: 'Integer field test',
+    params: [{ name: 'count', label: 'Count', type: 'integer', required: true, default: '1' }],
+  },
 ];
 
 describe('PropertiesPanel', () => {
@@ -185,6 +199,155 @@ describe('PropertiesPanel', () => {
     await nextFrame();
     expect(updated.url).toBe('https://api.example.test/users');
     expect(toggle.querySelectorAll('button')[0].classList.contains('active')).toBe(true);
+  });
+
+  it('renders number expressions as editable text and converts primitive previews back to fixed numbers', async () => {
+    const selectedNode = { id: 'delay_1', type: 'delaySleep', name: 'Delay / Sleep', params: { seconds: '1' } };
+    const nodes = [
+      { id: 'json_1', data: { id: 'json_1', type: 'jsonTransform', name: 'JSON Transform', params: {} } },
+      { id: 'delay_1', data: selectedNode },
+    ];
+    const edges = [{ id: 'e1', source: 'json_1', target: 'delay_1' }];
+    let updated = selectedNode.params;
+    const { root } = await mountWithApp(PropertiesPanel, {
+      props: {
+        selectedNode,
+        nodes,
+        edges,
+        onUpdateNodeParams: (_id, params) => { updated = params; selectedNode.params = params; },
+      },
+    });
+    const store = useWorkflowStore();
+    const executionStore = useExecutionStore();
+    store.nodeDefinitions = nodeDefs;
+    executionStore.executionLogs = [{
+      id: 'exec_1',
+      node_logs: [
+        { node_id: 'json_1', status: 'SUCCESS', output: { transformed: { score: 42 } }, attempts: 1, duration_ms: 3 },
+      ],
+    }];
+    await nextFrame();
+
+    const toggle = root.querySelector('[data-param-name="seconds"]');
+    const input = root.querySelector('[aria-label="Delay Duration (Seconds)"]');
+    expect(input.type).toBe('number');
+
+    toggle.querySelectorAll('button')[1].click();
+    await nextFrame();
+    const scoreRow = Array.from(root.querySelectorAll('.tree-row')).find((row) => row.textContent.includes('transformed.score'));
+    scoreRow.click();
+    await nextFrame();
+
+    const expressionInput = root.querySelector('[aria-label="Delay Duration (Seconds)"]');
+    expect(updated.seconds).toBe('{{json_1.transformed.score}}');
+    expect(expressionInput.type).toBe('text');
+    expect(expressionInput.value).toBe('{{json_1.transformed.score}}');
+
+    toggle.querySelectorAll('button')[0].click();
+    await nextFrame();
+    const fixedInput = root.querySelector('[aria-label="Delay Duration (Seconds)"]');
+    expect(updated.seconds).toBe('42');
+    expect(fixedInput.type).toBe('number');
+    expect(fixedInput.value).toBe('42');
+  });
+
+  it('keeps object and array expressions in Expression mode unless JSON literal conversion is explicit', async () => {
+    const selectedNode = { id: 'json_2', type: 'jsonTransform', name: 'JSON Transform', params: { json_template: '{{json_1.transformed.profile}}' } };
+    const nodes = [
+      { id: 'json_1', data: { id: 'json_1', type: 'jsonTransform', name: 'Source JSON', params: {} } },
+      { id: 'json_2', data: selectedNode },
+    ];
+    const edges = [{ id: 'e1', source: 'json_1', target: 'json_2' }];
+    let updated = selectedNode.params;
+    const { root } = await mountWithApp(PropertiesPanel, {
+      props: {
+        selectedNode,
+        nodes,
+        edges,
+        onUpdateNodeParams: (_id, params) => { updated = params; selectedNode.params = params; },
+      },
+    });
+    const store = useWorkflowStore();
+    const executionStore = useExecutionStore();
+    store.nodeDefinitions = nodeDefs;
+    executionStore.executionLogs = [{
+      id: 'exec_1',
+      node_logs: [
+        { node_id: 'json_1', status: 'SUCCESS', output: { transformed: { profile: { role: 'admin' }, items: [1, 2] } } },
+      ],
+    }];
+    await nextFrame();
+
+    const toggle = root.querySelector('[data-param-name="json_template"]');
+    expect(toggle.querySelectorAll('button')[1].classList.contains('active')).toBe(true);
+    toggle.querySelectorAll('button')[0].click();
+    await nextFrame();
+    expect(updated.json_template).toBe('{{json_1.transformed.profile}}');
+    expect(toggle.querySelectorAll('button')[1].classList.contains('active')).toBe(true);
+    expect(root.textContent).toContain('Object and array previews stay in Expression mode');
+
+    const convertButton = Array.from(root.querySelectorAll('button.mini-btn')).find((button) => button.textContent.includes('Convert to JSON literal'));
+    convertButton.click();
+    await nextFrame();
+    expect(updated.json_template).toContain('"role": "admin"');
+    expect(toggle.querySelectorAll('button')[0].classList.contains('active')).toBe(true);
+
+    updated = { ...updated, json_template: '{{json_1.transformed.items}}' };
+    selectedNode.params = updated;
+    toggle.querySelectorAll('button')[1].click();
+    await nextFrame();
+    toggle.querySelectorAll('button')[0].click();
+    await nextFrame();
+    expect(updated.json_template).toBe('{{json_1.transformed.items}}');
+    expect(toggle.querySelectorAll('button')[1].classList.contains('active')).toBe(true);
+  });
+
+  it('keeps Expression mode when preview is unavailable', async () => {
+    const selectedNode = { id: 'integer_1', type: 'integerCheck', name: 'Integer Check', params: { count: '{{json_1.transformed.missing}}' } };
+    const nodes = [
+      { id: 'json_1', data: { id: 'json_1', type: 'jsonTransform', name: 'Source JSON', params: {} } },
+      { id: 'integer_1', data: selectedNode },
+    ];
+    const edges = [{ id: 'e1', source: 'json_1', target: 'integer_1' }];
+    let updated = selectedNode.params;
+    const { root } = await mountWithApp(PropertiesPanel, {
+      props: {
+        selectedNode,
+        nodes,
+        edges,
+        onUpdateNodeParams: (_id, params) => { updated = params; selectedNode.params = params; },
+      },
+    });
+    const store = useWorkflowStore();
+    const executionStore = useExecutionStore();
+    store.nodeDefinitions = nodeDefs;
+    executionStore.executionLogs = [{
+      id: 'exec_1',
+      node_logs: [
+        { node_id: 'json_1', status: 'SUCCESS', output: { transformed: { score: 1 } } },
+      ],
+    }];
+    await nextFrame();
+
+    const toggle = root.querySelector('[data-param-name="count"]');
+    toggle.querySelectorAll('button')[0].click();
+    await nextFrame();
+    expect(updated.count).toBe('{{json_1.transformed.missing}}');
+    expect(toggle.querySelectorAll('button')[1].classList.contains('active')).toBe(true);
+    expect(root.textContent).toContain('Preview is unavailable');
+
+  });
+
+  it('validates integer literals in Fixed mode', async () => {
+    const selectedNode = { id: 'integer_1', type: 'integerCheck', name: 'Integer Check', params: { count: '1.5' } };
+    const { root } = await mountWithApp(PropertiesPanel, { props: { selectedNode } });
+    const store = useWorkflowStore();
+    store.nodeDefinitions = nodeDefs;
+    await nextFrame();
+
+    const input = root.querySelector('[aria-label="Count"]');
+    expect(input.type).toBe('number');
+    expect(root.textContent).toContain('Enter a valid integer.');
   });
 
   it('lists transitive upstream sources but not downstream or unrelated nodes', async () => {

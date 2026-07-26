@@ -61,7 +61,7 @@ func NewRouter(
 
 	triggerService := application.NewTriggerService(wfStore, eng)
 	wfHandler := NewWorkflowHandler(wfStore, triggerService, webhookRateLimitPerMinute)
-	execHandler := NewExecutionHandler(execStore, eng)
+	execHandler := NewExecutionHandler(execStore, eng, triggerService)
 	credHandler := NewCredentialHandler(credStore)
 	tokenHandler := NewTokenHandler(tokenStore, auditStore)
 	auditHandler := NewAuditHandler(auditStore)
@@ -89,6 +89,7 @@ func NewRouter(
 
 		r.Get("/executions/{id}", execHandler.GetExecution)
 		r.Post("/executions/{id}/cancel", execHandler.CancelExecution)
+		r.Post("/executions/{id}/replay", execHandler.ReplayExecution)
 		r.Get("/workflows/{workflowId}/executions", execHandler.ListWorkflowExecutions)
 
 		r.Get("/credentials", credHandler.ListCredentials)

@@ -77,6 +77,32 @@ func (m *panicAction) GetDefinition() nodes.NodeDefinition {
 	return nodes.NodeDefinition{Type: "panicAction", Retryable: false}
 }
 
+type typedSourceAction struct{}
+
+func (m *typedSourceAction) Execute(ctx *nodes.ExecutionContext, node *nodes.Node) (interface{}, error) {
+	return map[string]interface{}{
+		"str":     "hello",
+		"num":     float64(42),
+		"bool":    true,
+		"profile": map[string]interface{}{"role": "admin"},
+		"items":   []interface{}{float64(1), "two"},
+	}, nil
+}
+func (m *typedSourceAction) Validate(node *nodes.Node) error { return nil }
+func (m *typedSourceAction) GetDefinition() nodes.NodeDefinition {
+	return nodes.NodeDefinition{Type: "typedSourceAction"}
+}
+
+type echoParamsAction struct{}
+
+func (m *echoParamsAction) Execute(ctx *nodes.ExecutionContext, node *nodes.Node) (interface{}, error) {
+	return map[string]interface{}{"params": node.Params}, nil
+}
+func (m *echoParamsAction) Validate(node *nodes.Node) error { return nil }
+func (m *echoParamsAction) GetDefinition() nodes.NodeDefinition {
+	return nodes.NodeDefinition{Type: "echoParamsAction"}
+}
+
 func TestExecuteWorkflowConcurrencyLimit(t *testing.T) {
 	registry := nodes.NewPluginRegistry()
 	_ = registry.Register(&slowAction{})
@@ -204,6 +230,103 @@ func TestUnknownNodeTypeMarksExecutionFailedWithoutHanging(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatalf("execution hung for unknown node type")
+	}
+}
+
+func TestRuntimeCompleteExpressionsPreserveTypes(t *testing.T) {
+	registry := nodes.NewPluginRegistry()
+	_ = registry.Register(&typedSourceAction{})
+	_ = registry.Register(&echoParamsAction{})
+
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	execStore := storage.NewExecutionStore(db)
+	wfStore := storage.NewWorkflowStore(db)
+	eng := NewEngine(registry, execStore, storage.NewCredentialStore(db, nil), NewEventBus(), wfStore)
+
+	nodeList := []nodes.Node{
+		{ID: "source", Type: "typedSourceAction", Name: "Typed Source", Params: map[string]interface{}{}},
+		{ID: "capture", Type: "echoParamsAction", Name: "Capture", Params: map[string]interface{}{
+			"str":        "{{source.str}}",
+			"num":        "{{source.num}}",
+			"bool":       "{{source.bool}}",
+			"profile":    "{{source.profile}}",
+			"items":      "{{source.items}}",
+			"triggerObj": "{{$trigger.profile}}",
+			"triggerNum": "{{$trigger.count}}",
+			"mixed":      "count={{$trigger.count}} profile={{$trigger.profile}}",
+		}},
+	}
+	edgeList := []nodes.Edge{{ID: "e1", Source: "source", Target: "capture"}}
+	nodesJSON, _ := json.Marshal(nodeList)
+	edgesJSON, _ := json.Marshal(edgeList)
+	wf := &storage.Workflow{
+		ID:        "wf-runtime-types",
+		Name:      "Runtime Types",
+		NodesJSON: string(nodesJSON),
+		EdgesJSON: string(edgesJSON),
+	}
+	if err := wfStore.Create(wf); err != nil {
+		t.Fatalf("create workflow: %v", err)
+	}
+
+	exec, err := eng.ExecuteWorkflow(wf, map[string]interface{}{
+		"count":   float64(3),
+		"profile": map[string]interface{}{"role": "trigger"},
+	})
+	if err != nil {
+		t.Fatalf("execute workflow: %v", err)
+	}
+	if exec.Status != "SUCCESS" {
+		t.Fatalf("expected SUCCESS, got %s: %s", exec.Status, exec.ErrorMessage)
+	}
+
+	var logs []NodeLog
+	if err := json.Unmarshal([]byte(exec.LogsJSON), &logs); err != nil {
+		t.Fatalf("parse logs: %v", err)
+	}
+	var capture NodeLog
+	for _, log := range logs {
+		if log.NodeID == "capture" {
+			capture = log
+			break
+		}
+	}
+	output, ok := capture.Output.(map[string]interface{})
+	if !ok {
+		t.Fatalf("capture output has type %T", capture.Output)
+	}
+	params, ok := output["params"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("capture params has type %T", output["params"])
+	}
+	if params["str"] != "hello" {
+		t.Fatalf("expected string value, got %#v", params["str"])
+	}
+	if _, ok := params["num"].(float64); !ok || params["num"] != float64(42) {
+		t.Fatalf("number expression lost type: %#v (%T)", params["num"], params["num"])
+	}
+	if _, ok := params["bool"].(bool); !ok || params["bool"] != true {
+		t.Fatalf("boolean expression lost type: %#v (%T)", params["bool"], params["bool"])
+	}
+	if profile, ok := params["profile"].(map[string]interface{}); !ok || profile["role"] != "admin" {
+		t.Fatalf("object expression lost type: %#v (%T)", params["profile"], params["profile"])
+	}
+	if items, ok := params["items"].([]interface{}); !ok || len(items) != 2 || items[0] != float64(1) {
+		t.Fatalf("array expression lost type: %#v (%T)", params["items"], params["items"])
+	}
+	if triggerObj, ok := params["triggerObj"].(map[string]interface{}); !ok || triggerObj["role"] != "trigger" {
+		t.Fatalf("$trigger object expression lost type: %#v (%T)", params["triggerObj"], params["triggerObj"])
+	}
+	if _, ok := params["triggerNum"].(float64); !ok || params["triggerNum"] != float64(3) {
+		t.Fatalf("$trigger number expression lost type: %#v (%T)", params["triggerNum"], params["triggerNum"])
+	}
+	if params["mixed"] != `count=3 profile={"role":"trigger"}` {
+		t.Fatalf("mixed interpolation should stringify values, got %#v", params["mixed"])
 	}
 }
 

@@ -27,6 +27,7 @@ timeline
       UX Milestone 1 : app shell, routed pages, save state, frontend test foundation
       UX Milestone 2 : editor usability closure, snapshots, dirty run safety
       UX Milestone 3 : inspector tabs, data mapping, expression preview
+      UX Milestone 4 : execution selector, overlay, replay, cancel, debug bundle
 ```
 
 ## Phase Status
@@ -43,6 +44,7 @@ timeline
 | UX Milestone 1 | UX audit, app shell, durable Workflows/Editor/Executions/Credentials pages, design tokens, save state, frontend test foundation | Implemented and covered by frontend unit tests, Playwright smoke, and embedded route fallback test |
 | UX Milestone 2 | Editor usability: searchable picker, quick-add, node cards, validation, undo/redo, duplicate/copy/paste, auto-layout, shortcuts, save-before-run, draft saves, focus trap, visual baselines, and separated performance smoke | Code complete for automated scope; manual usability and cross-machine evidence remain |
 | UX Milestone 3 | Inspector and data mapping: Parameters/Input/Output/Logs tabs, inline validation, credential action, JSON tree/table/raw views, transitive upstream data picker, Fixed/Expression switching, expression preview, runtime parity, server-redacted output/log rendering, and dirty save-before-activate | Automated closure complete; manual usability evidence remains |
+| UX Milestone 4 | Execution debugging: editor execution selector, canvas execution overlay, failed-path highlight, retry full workflow, replay selected execution through TriggerService, cancel execution, contextual error actions, and redacted debug bundle | Automated closure complete; manual usability and accessibility evidence remain |
 
 ## P0 Checklist
 
@@ -166,11 +168,14 @@ timeline
 [x] Data picker source selection and expression insertion
 [x] Runtime-compatible Fixed/Expression mode
 [x] Fixed/Expression switch-back converts safe resolved primitive preview to literal without saving UI metadata
+[x] Number/integer Expression mode uses text input while Fixed mode keeps numeric input
+[x] Object/array expressions stay Expression unless JSON literal conversion is explicit
 [x] Expression preview success and error states
 [x] Output JSON tree, table, raw, copy, download
 [x] Logs status, duration, attempts, execution ID, and error
 [x] Server-redacted execution inspector DTO and frontend redaction guard for inspector input/output/log/preview rendering
 [x] Runtime expression parity for mapped node output and `$trigger`
+[x] Runtime type parity for complete string, number, boolean, object, array, and `$trigger` expressions
 [x] Transitive upstream picker for A -> B -> C graphs
 [x] Semantic tab keyboard navigation
 [x] Dirty valid Activate saves graph before activation
@@ -181,6 +186,22 @@ timeline
 [x] Inspector performance smoke
 [ ] Manual usability timing for mapping data between nodes
 [ ] Manual screen-reader pass for inspector tabs and JSON tree
+```
+
+## UX Milestone 4 Checklist
+
+```text
+[x] Editor execution selector for latest/specific executions
+[x] Canvas node execution overlay for selected or live execution state
+[x] Failed-path edge highlight with skipped/running/success edge states
+[x] Retry full workflow through the existing Test Workflow path
+[x] Replay selected execution through the server TriggerService using stored raw input
+[x] Cancel selected running execution through the REST cancellation API
+[x] Redacted debug bundle preview/copy with workflow params and execution logs redacted
+[x] Contextual node error actions in Logs: Open Parameters and Copy error
+[x] E2E execution debugger, replay, cancel, failed path, and redacted bundle coverage
+[ ] Manual failed-node diagnosis timing
+[ ] Manual screen-reader pass for execution debugger controls
 ```
 
 ## Remaining Timeline
@@ -219,6 +240,8 @@ gantt
     UX Milestone 2 manual evidence:active, ux2m, 2026-07-26, 1d
     UX Milestone 3 inspector/data mapping:done, ux3, 2026-07-26, 1d
     UX Milestone 3 manual evidence:active, ux3m, 2026-07-26, 1d
+    UX Milestone 4 execution debugging:done, ux4, 2026-07-27, 1d
+    UX Milestone 4 manual evidence:active, ux4m, 2026-07-27, 1d
     Release clean-machine checks   :active, goal2, 2026-07-26, 1d
 ```
 
@@ -226,4 +249,4 @@ gantt
 
 1. Rebuild release artifacts from the current commit.
 2. Run the release checklist against the packaged archive on a clean Windows machine.
-3. Continue UX Milestone 4: execution debugger selector, failed path highlight, retry/replay, cancel/debug actions, and redacted debug bundle.
+3. Run manual UX Milestone 2-4 usability checks: screen reader pass, failed-node diagnosis timing, and low-end Windows review.

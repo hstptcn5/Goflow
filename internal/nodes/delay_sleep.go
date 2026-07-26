@@ -47,7 +47,7 @@ func (e *DelaySleepExecutor) GetDefinition() NodeDefinition {
 			{
 				Name:        "seconds",
 				Label:       "Delay Duration (Seconds)",
-				Type:        "text",
+				Type:        "number",
 				Default:     "3",
 				Required:    true,
 				Description: "Number of seconds to pause, for example 3",

@@ -86,6 +86,7 @@ test('Milestone 3 output and logs tabs show execution context without secrets', 
   });
 
   await page.request.post(`/api/v1/workflows/${workflow.id}/trigger`, { data: { source: 'm3-output' } });
+  await waitForLatestExecution(page, workflow.id);
   await page.goto(`/workflows/${workflow.id}`);
   await page.locator('.node-body-title', { hasText: 'JSON Transform' }).click();
   await page.locator('.panel-tabs').getByRole('tab', { name: 'Output' }).click();
@@ -199,6 +200,122 @@ test('Milestone 3 runtime expression parity resolves mapped values and records s
   expect(triggerLogs.find((log) => log.node_id === 'if_1').output.target_handle).toBe('true');
 });
 
+test('Milestone 3 number expression remains editable and saves across reload', async ({ page }) => {
+  const workflow = await createWorkflow(page, {
+    name: 'UX M3 Number Expression',
+    description: '',
+    is_active: true,
+    nodes_json: JSON.stringify([
+      {
+        id: 'json_1',
+        type: 'jsonTransform',
+        name: 'JSON Transform',
+        position: { x: 220, y: 120 },
+        params: { json_template: '{"score":42}' },
+      },
+      { id: 'delay_1', type: 'delaySleep', name: 'Delay / Sleep', position: { x: 520, y: 120 }, params: { seconds: '1' } },
+    ]),
+    edges_json: JSON.stringify([{ id: 'e1', source: 'json_1', target: 'delay_1' }]),
+  });
+
+  await page.request.post(`/api/v1/workflows/${workflow.id}/trigger`, { data: { source: 'number-expression' } });
+  await waitForLatestExecution(page, workflow.id);
+  await page.goto(`/workflows/${workflow.id}`);
+  await page.locator('.node-body-title', { hasText: 'Delay / Sleep' }).click();
+  const secondsInput = page.locator('[aria-label="Delay Duration (Seconds)"]');
+  await expect(secondsInput).toHaveAttribute('type', 'number');
+
+  await page.locator('[data-param-name="seconds"]').getByRole('button', { name: 'Expression' }).click();
+  await page.getByLabel('Search input data').first().fill('score');
+  await page.getByRole('button', { name: /transformed.score/ }).first().click();
+  await expect(secondsInput).toHaveAttribute('type', 'text');
+  await expect(secondsInput).toHaveValue('{{json_1.transformed.score}}');
+
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Saved')).toBeVisible();
+  await page.reload();
+  await page.locator('.node-body-title', { hasText: 'Delay / Sleep' }).click();
+  await expect(secondsInput).toHaveAttribute('type', 'text');
+  await expect(secondsInput).toHaveValue('{{json_1.transformed.score}}');
+
+  await page.locator('[data-param-name="seconds"]').getByRole('button', { name: 'Fixed' }).click();
+  await expect(secondsInput).toHaveAttribute('type', 'number');
+  await expect(secondsInput).toHaveValue('42');
+});
+
+test('Milestone 3 object and array expressions stay Expression unless JSON literal conversion is explicit', async ({ page }) => {
+  const workflow = await createWorkflow(page, {
+    name: 'UX M3 Complex Expression Conversion',
+    description: '',
+    is_active: true,
+    nodes_json: JSON.stringify([
+      {
+        id: 'json_1',
+        type: 'jsonTransform',
+        name: 'Source JSON',
+        position: { x: 180, y: 120 },
+        params: { json_template: '{"profile":{"role":"admin"},"items":[1,2]}' },
+      },
+      {
+        id: 'json_obj',
+        type: 'jsonTransform',
+        name: 'Object Target',
+        position: { x: 520, y: 70 },
+        params: { json_template: '{{json_1.transformed.profile}}' },
+      },
+      {
+        id: 'json_arr',
+        type: 'jsonTransform',
+        name: 'Array Target',
+        position: { x: 520, y: 210 },
+        params: { json_template: '{{json_1.transformed.items}}' },
+      },
+      {
+        id: 'json_missing',
+        type: 'jsonTransform',
+        name: 'Missing Target',
+        position: { x: 520, y: 350 },
+        params: { json_template: '{{json_1.transformed.missing}}' },
+      },
+    ]),
+    edges_json: JSON.stringify([
+      { id: 'e1', source: 'json_1', target: 'json_obj' },
+      { id: 'e2', source: 'json_1', target: 'json_arr' },
+      { id: 'e3', source: 'json_1', target: 'json_missing' },
+    ]),
+  });
+
+  await page.request.post(`/api/v1/workflows/${workflow.id}/trigger`, { data: { source: 'complex-expression' } });
+  await waitForLatestExecution(page, workflow.id);
+  await page.goto(`/workflows/${workflow.id}`);
+
+  await page.locator('.node-body-title', { hasText: 'Object Target' }).click();
+  await expect(page.getByRole('textbox', { name: 'JSON Structure' })).toHaveValue('{{json_1.transformed.profile}}');
+  await expect(page.locator('[data-param-name="json_template"]').getByRole('button', { name: 'Expression' })).toHaveClass(/active/);
+  await page.locator('[data-param-name="json_template"]').getByRole('button', { name: 'Fixed' }).click();
+  await expect(page.locator('[data-param-name="json_template"]').getByRole('button', { name: 'Expression' })).toHaveClass(/active/);
+  await expect(page.getByRole('textbox', { name: 'JSON Structure' })).toHaveValue('{{json_1.transformed.profile}}');
+  await expect(page.getByText('Object and array previews stay in Expression mode')).toBeVisible();
+  await page.getByRole('button', { name: 'Convert to JSON literal' }).click();
+  await expect(page.locator('[data-param-name="json_template"]').getByRole('button', { name: 'Fixed' })).toHaveClass(/active/);
+  await expect(page.getByRole('textbox', { name: 'JSON Structure' })).toHaveValue(/"role": "admin"/);
+
+  await page.getByRole('button', { name: 'Close node inspector' }).click();
+  await page.locator('.node-body-title', { hasText: 'Array Target' }).click();
+  await expect(page.getByRole('textbox', { name: 'JSON Structure' })).toHaveValue('{{json_1.transformed.items}}');
+  await page.locator('[data-param-name="json_template"]').getByRole('button', { name: 'Fixed' }).click();
+  await expect(page.locator('[data-param-name="json_template"]').getByRole('button', { name: 'Expression' })).toHaveClass(/active/);
+  await expect(page.getByRole('textbox', { name: 'JSON Structure' })).toHaveValue('{{json_1.transformed.items}}');
+
+  await page.getByRole('button', { name: 'Close node inspector' }).click();
+  await page.locator('.node-body-title', { hasText: 'Missing Target' }).click();
+  await expect(page.getByRole('textbox', { name: 'JSON Structure' })).toHaveValue('{{json_1.transformed.missing}}');
+  await page.locator('[data-param-name="json_template"]').getByRole('button', { name: 'Fixed' }).click();
+  await expect(page.locator('[data-param-name="json_template"]').getByRole('button', { name: 'Expression' })).toHaveClass(/active/);
+  await expect(page.getByRole('textbox', { name: 'JSON Structure' })).toHaveValue('{{json_1.transformed.missing}}');
+  await expect(page.getByText('Preview is unavailable')).toBeVisible();
+});
+
 test('Milestone 3 data picker includes transitive upstream nodes only', async ({ page }) => {
   const workflow = await createWorkflow(page, {
     name: 'UX M3 Transitive Mapping',
@@ -266,7 +383,7 @@ test('Milestone 3 dirty valid activation saves first', async ({ page }) => {
 
   await page.goto(`/workflows/${workflow.id}`);
   await page.getByText('Delay / Sleep').click();
-  await page.getByRole('textbox', { name: 'Delay Duration (Seconds)' }).fill('2');
+  await page.locator('[aria-label="Delay Duration (Seconds)"]').fill('2');
   await expect(page.getByText('Unsaved changes')).toBeVisible();
   await page.getByLabel('Inactive').click();
   await expect(page.getByText('Active')).toBeVisible();
@@ -279,6 +396,17 @@ test('Milestone 3 dirty valid activation saves first', async ({ page }) => {
 
 test('Milestone 3 inspector visual regression baseline states', async ({ page }) => {
   const snapshot = visualOptions(page);
+  const hideExecutionDebugger = () => page.addStyleTag({
+    content: `
+      .execution-toolbar,.debug-bundle-preview,.node-execution-state,.node-execution-meta{display:none!important}
+      .custom-node-card.status-running,.custom-node-card.status-success,.custom-node-card.status-failed{
+        border-color: var(--color-border)!important;
+        box-shadow: 0 2px 8px rgba(15,23,42,.07)!important;
+        animation: none!important;
+      }
+      .vue-flow__edge-path{stroke:var(--color-border-strong)!important;stroke-width:2!important;stroke-dasharray:none!important}
+    `,
+  });
   await page.setViewportSize({ width: 1366, height: 768 });
 
   const validationWorkflow = await createWorkflow(page, {
@@ -292,6 +420,7 @@ test('Milestone 3 inspector visual regression baseline states', async ({ page })
     edges_json: '[]',
   });
   await page.goto(`/workflows/${validationWorkflow.id}`);
+  await hideExecutionDebugger();
   await page.getByText('IF / ELSE Condition').click();
   await page.getByRole('button', { name: 'Test Workflow' }).click();
   await expect(page.getByText('Input Value is required.')).toBeVisible();
@@ -314,6 +443,7 @@ test('Milestone 3 inspector visual regression baseline states', async ({ page })
   });
   await page.request.post(`/api/v1/workflows/${mappingWorkflow.id}/trigger`, { data: { source: 'visual' } });
   await page.goto(`/workflows/${mappingWorkflow.id}`);
+  await hideExecutionDebugger();
   await page.getByText('IF / ELSE Condition').click();
   await page.locator('.panel-tabs').getByRole('tab', { name: 'Input' }).click();
   await expect(page.getByText('transformed.user.email')).toBeVisible();
@@ -342,6 +472,7 @@ test('Milestone 3 inspector visual regression baseline states', async ({ page })
   });
   await page.request.post(`/api/v1/workflows/${failedWorkflow.id}/trigger`, { data: { source: 'visual-fail' } });
   await page.goto(`/workflows/${failedWorkflow.id}`);
+  await hideExecutionDebugger();
   await page.getByText('Bad JSON').click();
   await page.locator('.panel-tabs').getByRole('tab', { name: 'Logs' }).click();
   await expect(page.getByText('Node failed')).toBeVisible();

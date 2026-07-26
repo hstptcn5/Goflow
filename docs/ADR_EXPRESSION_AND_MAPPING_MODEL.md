@@ -24,7 +24,9 @@ Parameter mode is held as temporary component state while the inspector is open 
 - **Fixed**: normal literal parameter value.
 - **Expression**: value is a complete runtime placeholder such as `{{json_1.transformed.user.email}}`.
 
-Switching to Expression mode opens the data picker and keeps the existing literal value until the user chooses a source path. Switching back to Fixed converts a complete expression to the current resolved primitive preview when that is safe. If the preview is missing or complex, the inspector keeps Expression mode unless the user explicitly confirms.
+Switching to Expression mode opens the data picker and keeps the existing literal value until the user chooses a source path. Number and integer fields render as text/code inputs while they are in Expression mode so placeholders remain visible and editable; they render as numeric inputs only in Fixed mode.
+
+Switching back to Fixed converts a complete expression only when the current resolved preview is a primitive value. Object and array previews stay in Expression mode by default. JSON fields expose an explicit `Convert to JSON literal` action for object and array previews; canceling that action by not invoking it leaves both mode and value unchanged. The UI must not enter a `Fixed` mode with a `{{...}}` expression value.
 
 ## Preview
 
@@ -67,6 +69,7 @@ Backend redaction remains the source of truth for inspector API responses. Front
 - The frontend validator now blocks invalid JSON/URL/number/integer/select literals, invalid expression syntax, missing expression sources, and sources that are not upstream of the selected node before Test or Activate.
 - Save draft still only blocks structural graph errors.
 - `$trigger` is resolved by the backend through the shared execution context.
+- Backend execution preserves the resolved type for complete expressions over strings, numbers, booleans, objects, arrays, and `$trigger` values. Mixed interpolation stringifies non-string values according to the current runtime placeholder contract.
 - Skipped branch nodes are logged as `SKIPPED` so inspector/runtime parity tests can distinguish the executed path.
 
 ## Migration

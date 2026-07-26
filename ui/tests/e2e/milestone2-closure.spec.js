@@ -27,7 +27,7 @@ test('Test Workflow saves dirty graph before triggering backend execution', asyn
 
   await page.goto(`/workflows/${workflow.id}`);
   await page.getByText('Delay / Sleep').click();
-  await page.getByRole('textbox', { name: 'Delay Duration (Seconds)' }).fill('2');
+  await page.locator('[aria-label="Delay Duration (Seconds)"]').fill('2');
   await expect(page.getByText('Unsaved changes')).toBeVisible();
   await page.getByRole('button', { name: 'Test Workflow' }).click();
   await expect(page).toHaveURL(/\/executions/);

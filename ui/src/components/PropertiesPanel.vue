@@ -25,6 +25,7 @@ const props = defineProps({
   nodes: { type: Array, default: () => [] },
   edges: { type: Array, default: () => [] },
   validationIssues: { type: Array, default: () => [] },
+  selectedExecution: { type: Object, default: null },
 });
 
 const emit = defineEmits(['updateNodeParams', 'deleteNode', 'close']);
@@ -43,6 +44,7 @@ const mappingField = ref('');
 const paramModes = ref({});
 const selectedSourceId = ref('');
 const treeSearch = ref('');
+const conversionNotice = ref({});
 const aiHelperPrompt = ref('');
 const aiHelperLoading = ref(false);
 const aiHelperError = ref(null);
@@ -68,7 +70,7 @@ const helpData = computed(() => {
   return nodeHelpMap[props.selectedNode.type] || null;
 });
 
-const latestExecution = computed(() => executionStore.executionLogs[0] || null);
+const latestExecution = computed(() => props.selectedExecution || executionStore.executionLogs[0] || null);
 
 const executionLogs = computed(() => {
   if (!latestExecution.value) return [];
@@ -225,7 +227,8 @@ function isExpressionValue(param) {
 }
 
 function paramMode(param) {
-  return paramModes.value[param.name] || (parseSingleExpression(currentValue(param)) ? 'expression' : 'fixed');
+  if (parseSingleExpression(currentValue(param))) return 'expression';
+  return paramModes.value[param.name] || 'fixed';
 }
 
 function expressionModeHint(param) {
@@ -236,8 +239,52 @@ function expressionModeHint(param) {
   return '';
 }
 
+function inputTypeForParam(param) {
+  if ((param.type === 'number' || param.type === 'integer') && paramMode(param) === 'fixed') return 'number';
+  return 'text';
+}
+
+function conversionNoticeFor(param) {
+  return conversionNotice.value[param.name] || '';
+}
+
+function clearConversionNotice(paramName) {
+  if (!conversionNotice.value[paramName]) return;
+  const next = { ...conversionNotice.value };
+  delete next[paramName];
+  conversionNotice.value = next;
+}
+
+function keepExpressionMode(param, message) {
+  paramModes.value = { ...paramModes.value, [param.name]: 'expression' };
+  mappingField.value = param.name;
+  conversionNotice.value = { ...conversionNotice.value, [param.name]: message };
+}
+
+function canConvertJSONLiteral(param) {
+  if (param.type !== 'json') return false;
+  const value = currentValue(param);
+  if (!parseSingleExpression(value)) return false;
+  const preview = resolveExpression(value, sourceNodes.value);
+  return Boolean(preview.ok && preview.value !== null && typeof preview.value === 'object');
+}
+
+function convertExpressionToJSONLiteral(param) {
+  const value = currentValue(param);
+  const preview = resolveExpression(value, sourceNodes.value);
+  if (!preview.ok || preview.value === null || typeof preview.value !== 'object') {
+    keepExpressionMode(param, 'This expression cannot be converted because the preview is unavailable.');
+    return;
+  }
+  handleParamChange(param.name, JSON.stringify(preview.value, null, 2));
+  paramModes.value = { ...paramModes.value, [param.name]: 'fixed' };
+  mappingField.value = mappingField.value === param.name ? '' : mappingField.value;
+  clearConversionNotice(param.name);
+}
+
 function switchParamMode(param, mode) {
   const value = currentValue(param);
+  clearConversionNotice(param.name);
   if (mode === 'expression') {
     paramModes.value = { ...paramModes.value, [param.name]: 'expression' };
     mappingField.value = param.name;
@@ -251,8 +298,17 @@ function switchParamMode(param, mode) {
       mappingField.value = '';
       return;
     }
-    const ok = window.confirm('This expression cannot be converted to a simple literal from the selected execution. Keep Expression mode?');
-    if (ok) return;
+    if (preview.ok && typeof preview.value === 'object') {
+      keepExpressionMode(
+        param,
+        param.type === 'json'
+          ? 'Object and array previews stay in Expression mode unless you convert them to a JSON literal.'
+          : 'Object and array previews cannot become a fixed primitive value. Expression mode was kept.'
+      );
+      return;
+    }
+    keepExpressionMode(param, 'Preview is unavailable, so this field stayed in Expression mode.');
+    return;
   }
   paramModes.value = { ...paramModes.value, [param.name]: 'fixed' };
   mappingField.value = mappingField.value === param.name ? '' : mappingField.value;
@@ -260,6 +316,7 @@ function switchParamMode(param, mode) {
 
 function handleParamChange(paramName, value) {
   if (!props.selectedNode) return;
+  clearConversionNotice(paramName);
   const updatedParams = { ...props.selectedNode.params, [paramName]: value };
   emit('updateNodeParams', props.selectedNode.id, updatedParams);
 }
@@ -277,6 +334,7 @@ function insertExpression(row) {
   if (!mappingField.value || !activeSource.value || row.truncated) return;
   handleParamChange(mappingField.value, expressionForPath(activeSource.value.id, row.path));
   paramModes.value = { ...paramModes.value, [mappingField.value]: 'expression' };
+  clearConversionNotice(mappingField.value);
 }
 
 function tabId(tab) {
@@ -482,7 +540,7 @@ async function runAIHelper() {
               <input
                 v-else
                 :id="`param-${param.name}`"
-                :type="param.type === 'number' || param.type === 'integer' ? 'number' : 'text'"
+                :type="inputTypeForParam(param)"
                 :value="currentValue(param)"
                 class="form-input"
                 :aria-label="param.label || param.name"
@@ -501,8 +559,10 @@ async function runAIHelper() {
                 <p>Source: {{ expressionPreview?.sourceId || 'None' }} | {{ inspectorContextLabel }}</p>
                 <pre v-if="expressionPreview?.ok">{{ safeJSONStringify(expressionPreview.value).text }}</pre>
                 <p v-else class="field-error">{{ expressionPreview?.error || 'Choose a data path below.' }}</p>
+                <button v-if="canConvertJSONLiteral(param)" type="button" class="mini-btn" @click="convertExpressionToJSONLiteral(param)">Convert to JSON literal</button>
               </div>
               <p v-if="expressionModeHint(param)" class="param-desc">{{ expressionModeHint(param) }}</p>
+              <p v-if="conversionNoticeFor(param)" class="param-desc">{{ conversionNoticeFor(param) }}</p>
             </div>
           </section>
 
@@ -531,6 +591,7 @@ async function runAIHelper() {
                 <input
                   v-else
                   :id="`param-${param.name}`"
+                  :type="inputTypeForParam(param)"
                   :value="currentValue(param)"
                   class="form-input"
                   :aria-label="param.label || param.name"
@@ -541,7 +602,16 @@ async function runAIHelper() {
                   <button v-if="supportsExpression(param)" type="button" class="mini-btn" @click="mappingField = param.name">Pick data</button>
                 </div>
                 <p v-if="fieldErrors[param.name]" class="field-error" role="alert">{{ fieldErrors[param.name] }}</p>
+                <div v-if="mappingField === param.name" class="expression-preview">
+                  <strong>Expression preview</strong>
+                  <code>{{ currentValue(param) || 'No expression selected' }}</code>
+                  <p>Source: {{ expressionPreview?.sourceId || 'None' }} | {{ inspectorContextLabel }}</p>
+                  <pre v-if="expressionPreview?.ok">{{ safeJSONStringify(expressionPreview.value).text }}</pre>
+                  <p v-else class="field-error">{{ expressionPreview?.error || 'Choose a data path below.' }}</p>
+                  <button v-if="canConvertJSONLiteral(param)" type="button" class="mini-btn" @click="convertExpressionToJSONLiteral(param)">Convert to JSON literal</button>
+                </div>
                 <p v-if="expressionModeHint(param)" class="param-desc">{{ expressionModeHint(param) }}</p>
+                <p v-if="conversionNoticeFor(param)" class="param-desc">{{ conversionNoticeFor(param) }}</p>
               </div>
             </div>
           </section>
@@ -670,6 +740,10 @@ async function runAIHelper() {
           <div v-if="nodeExecutionResult.error" class="node-error-summary">
             <div class="node-error-title">Error</div>
             <pre class="node-error-message">{{ redactValue(nodeExecutionResult.error) }}</pre>
+            <div class="field-actions">
+              <button type="button" class="mini-btn" @click="activeTab = 'parameters'">Open Parameters</button>
+              <button type="button" class="mini-btn" @click="copyText(redactValue(nodeExecutionResult.error), 'Error copied')">Copy error</button>
+            </div>
           </div>
           <p class="param-desc">Resolved parameters are shown only when the backend records redacted resolved parameters for this node.</p>
           <pre class="json-code"><code>{{ logsJSON.text }}</code></pre>

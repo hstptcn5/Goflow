@@ -12,6 +12,7 @@ All notable changes to Goflow are tracked here.
 - UX Milestone 2 editor usability foundation with searchable node picker, quick-add, validation summary, node config badges, undo/redo, duplicate/copy/paste, keyboard shortcuts, auto-layout, visual smoke, and performance smoke docs.
 - UX Milestone 2 closure coverage for save-before-run behavior, incomplete draft saves, activation blocking, node picker focus trap, stable graph fingerprints, robust graph ID generation, visual regression baselines, and separated editor performance measurements.
 - UX Milestone 3 inspector with Parameters/Input/Output/Logs tabs, inline field validation, data picker, runtime placeholder expression preview, JSON tree/table/raw views, output/log inspection, visual baselines, and inspector performance smoke.
+- UX Milestone 4 execution debugger controls in the editor: execution selector, canvas execution overlay, failed-path edge highlight, retry workflow, replay execution, cancel execution, contextual node error actions, and a redacted debug bundle preview/copy action.
 - `docs/ADR_EXPRESSION_AND_MAPPING_MODEL.md` documenting the existing `{{node.path}}` / `{{$trigger.path}}` expression contract, Fixed/Expression mode storage, preview behavior, compatibility, and security model.
 - Server-redacted execution inspector DTOs for UI/debug surfaces, including redacted trigger input, node logs, node output, errors, and attempts.
 - `scripts/goal-smoke-test.ps1` to run a reusable Windows smoke test for CLI, MCP stdio, MCP HTTP, scoped tokens, cancellation, audit, and concurrent idempotency against a temporary local instance.
@@ -57,9 +58,13 @@ All notable changes to Goflow are tracked here.
 - Fixed Activate behavior for dirty valid workflows so the current graph is saved before activation.
 - Fixed inspector rendering to redact common secret keys and bearer-like values from visible input/output/log/preview data.
 - Fixed Fixed/Expression mode switching so converting back to Fixed uses the resolved primitive preview instead of showing contradictory mode state.
+- Fixed number/integer expression fields so Expression mode renders an editable text/code input while Fixed mode keeps numeric input validation.
+- Fixed object/array Expression-to-Fixed switching so JSON/object/array previews stay in Expression mode unless the user explicitly converts supported JSON fields to a JSON literal.
+- Fixed redacted debug bundle generation so secrets embedded inside JSON string parameters are parsed and redacted before display/copy.
 - Fixed pre-run validation so JSON, URL, number, integer, select, and expression field errors block Test/Activate while Save draft remains allowed.
 - Fixed data picker source discovery to include transitive upstream nodes and exclude downstream or unrelated nodes.
 - Fixed runtime expression parity for `$trigger` references by exposing trigger input through the shared execution context.
+- Fixed runtime expression parity for complete placeholders so backend execution preserves string, number, boolean, object, array, and `$trigger` types while mixed interpolation stringifies values.
 - Fixed branch debugging by recording skipped branch nodes as `SKIPPED` in execution logs.
 
 ## 0.5.0-http-mcp-beta - 2026-07-26

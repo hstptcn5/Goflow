@@ -131,6 +131,24 @@ export const api = {
     return res.json();
   },
 
+  async cancelExecution(id) {
+    const res = await customFetch(`${API_BASE}/executions/${id}/cancel`, { method: 'POST' });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || 'Failed to cancel execution');
+    }
+    return res.json();
+  },
+
+  async replayExecution(id) {
+    const res = await customFetch(`${API_BASE}/executions/${id}/replay`, { method: 'POST' });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || 'Failed to replay execution');
+    }
+    return res.json();
+  },
+
   // Credentials
   async getCredentials() {
     const res = await customFetch(`${API_BASE}/credentials`);

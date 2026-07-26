@@ -6,6 +6,7 @@ Current UX status: `IN_PROGRESS`.
 Milestone 1 status: `DONE`.
 Milestone 2 status: `MANUAL_VERIFICATION_REQUIRED`.
 Milestone 3 status: `DONE` for automated closure and hardening; manual usability evidence remains `MANUAL_VERIFICATION_REQUIRED`.
+Milestone 4 status: `DONE` for automated execution debugging closure; manual usability evidence remains `MANUAL_VERIFICATION_REQUIRED`.
 
 Allowed status values: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `MANUAL_VERIFICATION_REQUIRED`, `DONE`.
 
@@ -53,7 +54,7 @@ Allowed status values: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `MANUAL_VERIFICA
 | Advanced options collapse | DONE | `showAdvanced` advanced parameter group | Component/render coverage through inspector tests | Local browser smoke | More node metadata can improve classification |
 | Input JSON tree/table/raw/search/copy/source selector | DONE | `buildJsonTree()`, `rowsForTable()`, Input tab | Utility tests, E2E data mapping and visual baseline `m3-input-json-tree` | Local browser smoke | Large payload virtualization beyond truncation remains later |
 | Data mapping picker | DONE | Data picker uses upstream execution outputs and trigger payload; click inserts `{{node.path}}` expression | Component test and E2E data mapping save/reload | Local browser smoke | Drag/drop mapping not implemented |
-| Fixed/Expression mode | DONE | Temporary component state keeps Fixed/Expression state clear without writing UI metadata; Expression to Fixed converts safe primitive preview to literal | `ui/tests/properties-panel.test.js`, Milestone 3 E2E save/reload/switch-back test | Local browser smoke | Complex preview conversion asks for confirmation |
+| Fixed/Expression mode | DONE | Temporary component state keeps Fixed/Expression state clear without writing UI metadata; Expression values force Expression mode; number/integer fields render text inputs in Expression mode and numeric inputs in Fixed mode; Expression to Fixed converts safe primitive preview to literal; JSON object/array previews require explicit JSON literal conversion | `ui/tests/properties-panel.test.js`, `ui/tests/e2e/milestone3-inspector.spec.js` number expression and object/array conversion tests | Local browser smoke | None |
 | Expression preview success/error | DONE | `resolveExpression()` frontend preview using runtime placeholder contract | Utility tests, E2E preview success and invalid reference flow | Local browser smoke | No backend preview endpoint yet |
 | Output JSON/table/raw/copy/download | DONE | Output tab redacted tree/table/raw plus copy/download controls | Component tests, E2E output/log flow, visual baseline `m3-output-json` | Local browser smoke | Download is browser-only smoke covered visually |
 | Logs status/error/attempts/execution ID | DONE | Logs tab with status, duration, attempts, execution ID, error, raw redacted log DTO | Component tests, E2E logs flow, visual baseline `m3-logs-error` | Local browser smoke | Redacted resolved parameters await backend storage |
@@ -63,11 +64,24 @@ Allowed status values: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `MANUAL_VERIFICA
 | ADR for expression/mapping model | DONE | `docs/ADR_EXPRESSION_AND_MAPPING_MODEL.md` | Documentation review | Not required | Revisit if backend preview endpoint is added |
 | Visual regression baselines | DONE | Seven M3 screenshot baselines | `npm run test:e2e` | Local visual review | Cross-platform baselines only if CI adds screenshot tests |
 | Inspector performance smoke | DONE | `ui/tests/e2e/performance.spec.js` second smoke | `npm run test:e2e` logs inspector timings | Local Windows Chromium run | Low-end Windows profiling remains manual |
-| Runtime expression parity | DONE | Backend now exposes `$trigger` in shared execution context and logs skipped branch nodes | Engine tests and Milestone 3 E2E branch parity | Local browser smoke | Broader type preservation cases can expand later |
+| Runtime expression parity | DONE | Backend exposes `$trigger` in shared execution context, logs skipped branch nodes, and preserves complete-expression runtime types for string, number, boolean, object, array, and `$trigger` values | `internal/engine/engine_test.go`, Milestone 3 E2E branch parity | Local browser smoke | None |
 | Transitive upstream picker | DONE | Data picker uses graph ancestor traversal shared with validation | Component test and Milestone 3 E2E A -> B -> C coverage | Local browser smoke | Drag/drop mapping not implemented |
 | Tab accessibility automation | DONE | Inspector tabs use tablist/tab/tabpanel semantics, roving focus, Arrow/Home/End handling | Component keyboard test | Manual screen-reader remains pending | NVDA/Narrator pass |
 | Usability timing for mapping data | MANUAL_VERIFICATION_REQUIRED | Automated flow exists | E2E mapping passes | Pending target user timing | Run UX_GOAL tester tasks |
 | Screen-reader pass for inspector | MANUAL_VERIFICATION_REQUIRED | Labels and tabs implemented | Component/E2E focus/label coverage | Pending NVDA/Narrator pass | Manual accessibility pass |
+
+## Milestone 4 - Execution Debugging
+
+| Requirement | Status | Implementation evidence | Test evidence | Manual evidence | Remaining work |
+|---|---|---|---|---|---|
+| Execution selector in editor | DONE | `ui/src/components/WorkflowEditor.vue` execution selector bound to workflow execution history | `ui/tests/e2e/milestone4-debugging.spec.js` | Local browser smoke | Manual screen-reader pass |
+| Canvas execution overlay | DONE | Node status/duration badges and selected/live execution state mapping in `WorkflowEditor.vue` | `ui/tests/e2e/milestone4-debugging.spec.js` | Local browser smoke | Manual visual review on low-end Windows |
+| Failed-path highlight | DONE | Execution edge classes/styles for failed, skipped, running, and success paths | `ui/tests/e2e/milestone4-debugging.spec.js` failed edge assertion | Local browser smoke | Broader visual baselines can be added later |
+| Retry full workflow | DONE | `retryFullWorkflow()` reuses `runWorkflow()` validation/save/trigger path | Component tests cover run path; E2E keeps Test/Retry path in editor | Local browser smoke | None |
+| Replay execution | DONE | `POST /api/v1/executions/{id}/replay` uses `TriggerService` with stored raw input and async UI source | `ui/tests/e2e/milestone4-debugging.spec.js` replay assertion | Local browser smoke | None |
+| Cancel execution | DONE | Editor Cancel action calls existing REST cancellation API | `ui/tests/e2e/milestone4-debugging.spec.js` cancellation assertion | Local browser smoke | None |
+| Redacted debug bundle | DONE | Workflow params, selected execution, node logs, and validation issues are bundled with JSON-string param redaction | `ui/tests/e2e/milestone4-debugging.spec.js` verifies no raw secret in bundle preview | Local browser smoke | None |
+| Contextual error actions | DONE | Logs tab shows Open Parameters and Copy error for failed node errors | `ui/tests/e2e/milestone4-debugging.spec.js` | Local browser smoke | Manual failed-node diagnosis timing |
 
 ## Final UX Definition Of Done Snapshot
 
@@ -87,10 +101,10 @@ Allowed status values: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `MANUAL_VERIFICA
 | 12 | Required field and credential inline errors | DONE | Field-level validation and credential action tests | Manual screen-reader pass pending separately |
 | 13 | Data mapping between nodes via UI | DONE | Upstream data picker inserts runtime placeholder expressions and save/reload E2E passes | Timed user test pending separately |
 | 14 | Expression preview | DONE | Preview success/error tests and ADR | Backend preview endpoint not added |
-| 15 | Execution selector | IN_PROGRESS | Executions page selector exists | Editor selector in Milestone 4 |
-| 16 | Failed path highlight | IN_PROGRESS | Failed node state visible | Milestone 4 path highlight |
-| 17 | Retry/replay full workflow | NOT_STARTED | Not implemented | Milestone 4 |
-| 18 | Redacted debug bundle | NOT_STARTED | Runtime redaction exists | Milestone 4 bundle UI |
+| 15 | Execution selector | DONE | Editor execution selector and E2E M4 coverage | Manual screen-reader pass pending separately |
+| 16 | Failed path highlight | DONE | Canvas node/edge execution overlay and E2E failed-path assertion | Broader visual baselines later |
+| 17 | Retry/replay full workflow | DONE | Retry uses existing Test Workflow path; replay endpoint uses TriggerService | None |
+| 18 | Redacted debug bundle | DONE | Editor debug bundle preview/copy redacts execution and JSON-string params | None |
 | 19 | Diagnose failed node under 2 minutes | MANUAL_VERIFICATION_REQUIRED | Debug surfaces partially exist | Timed user test after Milestone 4 |
 | 20 | First workflow under 10 minutes | MANUAL_VERIFICATION_REQUIRED | E2E create/save/run path exists | Timed user test |
 | 21 | 4/5 usability testers complete task | MANUAL_VERIFICATION_REQUIRED | Not automatable | Recruit/test users |
@@ -126,3 +140,18 @@ Allowed status values: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `MANUAL_VERIFICA
 - Passed: `cd ui && npm run test:e2e` - 18 Chromium tests.
 - Passed closure focused gate: `cd ui && npx playwright test tests/e2e/milestone3-inspector.spec.js` - 9 Chromium tests.
 - Latest inspector performance smoke: `{"upstreamCount":12,"inspectorOpenMs":187,"inputTreeMs":142,"inputSearchMs":55,"expressionPreviewMs":248}`.
+- Milestone 3 final patch added: number/integer Expression mode text input, primitive conversion back to Fixed numeric input, object/array Expression retention, explicit JSON literal conversion, and backend runtime type parity coverage.
+- Passed focused final patch gates: `cd ui && npm run test -- properties-panel` - 11 tests; `go test ./internal/engine`; `cd ui && npm run build`; `cd ui && npx playwright test tests/e2e/milestone3-inspector.spec.js -g "number expression|object and array"` - 2 Chromium tests.
+
+## Milestone 4 Automated Gate Evidence
+
+- Passed: `cd ui && npm ci` - 0 vulnerabilities.
+- Passed: `cd ui && npm run build`.
+- Passed: `cd ui && npm run test` - 9 files, 42 tests.
+- Passed: `cd ui && npm run test:e2e` - 22 Chromium tests, deterministic with one worker because tests share one embedded local server/database.
+- Passed: `go test ./...`.
+- Passed: `go vet ./...`.
+- Passed: `go build ./...`.
+- Passed: `go build -trimpath -ldflags="-s -w" -o goflow.exe main.go static_embed.go`.
+- Passed: `.\scripts\goal-smoke-test.ps1 -Binary .\goflow.exe -Port 18080 -AdminKey goal-admin-key`.
+- Passed embedded binary UX gate: `cd ui; $env:GOFLOW_E2E_BINARY = ".\goflow.exe"; npx playwright test tests/e2e/milestone2-closure.spec.js tests/e2e/milestone3-inspector.spec.js tests/e2e/milestone4-debugging.spec.js` - 16 Chromium tests.
