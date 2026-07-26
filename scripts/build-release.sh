@@ -24,9 +24,9 @@ archive="$release_root/goflow-$version-$goos-$goarch.tar.gz"
 rm -rf "$stage"
 mkdir -p "$stage" "$release_root"
 
-go test ./...
-mapfile -t packages < <(go list ./... | grep -v '/release/')
-go vet "${packages[@]}"
+go_packages=(. ./config ./internal/... ./plugins/examples)
+go test "${go_packages[@]}"
+go vet "${go_packages[@]}"
 
 (
   cd ui

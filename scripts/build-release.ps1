@@ -22,10 +22,10 @@ if (Test-Path $stage) {
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 
-go test ./...
+$goPackages = @(".", "./config", "./internal/...", "./plugins/examples")
+go test $goPackages
 if ($LASTEXITCODE -ne 0) { throw "go test failed with exit code $LASTEXITCODE" }
-$packages = go list ./... | Where-Object { $_ -notlike "*release*" }
-go vet $packages
+go vet $goPackages
 if ($LASTEXITCODE -ne 0) { throw "go vet failed with exit code $LASTEXITCODE" }
 
 Push-Location "ui"
