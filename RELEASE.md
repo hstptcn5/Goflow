@@ -27,15 +27,26 @@ This guide describes how to prepare a Goflow preview release.
    go build -trimpath -ldflags="-s -w" -o goflow.exe main.go static_embed.go
    ```
 
-6. Start Goflow locally and check:
+6. Check the MCP stdio bridge:
+
+   ```bash
+   node scripts/mcp-smoke-test.mjs --tools-only
+   ```
+
+7. Start Goflow locally and check:
 
    - UI loads at `http://127.0.0.1:8080`.
    - `NODES.md` opens from the Docs button.
    - Workflow templates can be imported or loaded.
    - A simple workflow can run.
    - Credentials can be created and selected.
+   - A workflow exposed through **Workflows > Interface > Expose to MCP** can pass:
 
-7. Package the release with:
+     ```bash
+     node scripts/mcp-smoke-test.mjs --url http://127.0.0.1:8080 --workflow <workflow-id-or-slug> --input '{"source":"release-smoke"}'
+     ```
+
+8. Package the release with:
 
    - Binary: `goflow.exe` or `goflow`.
    - `README.md`

@@ -2,7 +2,7 @@
 
 All notable changes to Goflow are tracked here.
 
-## 0.1.0-preview - Unreleased
+## 0.4.0-mcp-stdio-alpha - 2026-07-26
 
 ### Added
 
@@ -36,3 +36,4 @@ All notable changes to Goflow are tracked here.
 
 - This is a preview release intended for local, homelab, and small internal deployments.
 - Goflow is not yet positioned as a multi-user SaaS automation platform.
+- CLI and MCP stdio support are alpha features; dynamic MCP workflow tools, cancellation, scoped tokens, and Streamable HTTP MCP are not included yet.
