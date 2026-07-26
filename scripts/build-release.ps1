@@ -42,7 +42,7 @@ Copy-Item README.md, NODES.md, MCP_HTTP.md, PLUGINS.md, BACKUP.md, ROADMAP.md, C
 Copy-Item plugins -Destination $stage -Recurse
 Copy-Item templates -Destination $stage -Recurse
 New-Item -ItemType Directory -Force -Path (Join-Path $stage "scripts") | Out-Null
-Copy-Item scripts/mcp-smoke-test.mjs, scripts/mcp-http-smoke-test.mjs -Destination (Join-Path $stage "scripts")
+Copy-Item scripts/mcp-smoke-test.mjs, scripts/mcp-http-smoke-test.mjs, scripts/goal-smoke-test.ps1 -Destination (Join-Path $stage "scripts")
 
 if (Test-Path $archive) {
   Remove-Item -LiteralPath $archive -Force

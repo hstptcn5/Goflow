@@ -40,7 +40,7 @@ cp README.md NODES.md MCP_HTTP.md PLUGINS.md BACKUP.md ROADMAP.md CLI_MCP_ROADMA
 cp -R plugins "$stage/"
 cp -R templates "$stage/"
 mkdir -p "$stage/scripts"
-cp scripts/mcp-smoke-test.mjs scripts/mcp-http-smoke-test.mjs "$stage/scripts/"
+cp scripts/mcp-smoke-test.mjs scripts/mcp-http-smoke-test.mjs scripts/goal-smoke-test.ps1 "$stage/scripts/"
 
 tar -czf "$archive" -C "$release_root" "$(basename "$stage")"
 sha256sum "$archive" > "$archive.sha256"
