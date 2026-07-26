@@ -67,6 +67,16 @@ func (m *countingAction) GetDefinition() nodes.NodeDefinition {
 	return nodes.NodeDefinition{Type: "countingAction", Retryable: false}
 }
 
+type panicAction struct{}
+
+func (m *panicAction) Execute(ctx *nodes.ExecutionContext, node *nodes.Node) (interface{}, error) {
+	panic("boom")
+}
+func (m *panicAction) Validate(node *nodes.Node) error { return nil }
+func (m *panicAction) GetDefinition() nodes.NodeDefinition {
+	return nodes.NodeDefinition{Type: "panicAction", Retryable: false}
+}
+
 func TestExecuteWorkflowConcurrencyLimit(t *testing.T) {
 	registry := nodes.NewPluginRegistry()
 	_ = registry.Register(&slowAction{})
@@ -106,6 +116,44 @@ func TestExecuteWorkflowConcurrencyLimit(t *testing.T) {
 		t.Fatalf("expected ErrConcurrencyLimit, got %v", err)
 	}
 	time.Sleep(250 * time.Millisecond)
+}
+
+func TestNodePanicMarksExecutionFailed(t *testing.T) {
+	registry := nodes.NewPluginRegistry()
+	_ = registry.Register(&panicAction{})
+
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	execStore := storage.NewExecutionStore(db)
+	wfStore := storage.NewWorkflowStore(db)
+	eng := NewEngine(registry, execStore, storage.NewCredentialStore(db, nil), NewEventBus(), wfStore)
+
+	nodeList := []nodes.Node{{ID: "panic", Type: "panicAction", Name: "Panic", Params: map[string]interface{}{}}}
+	nodesJSON, _ := json.Marshal(nodeList)
+	wf := &storage.Workflow{
+		ID:        "wf-panic",
+		Name:      "Panic Workflow",
+		NodesJSON: string(nodesJSON),
+		EdgesJSON: "[]",
+	}
+	if err := wfStore.Create(wf); err != nil {
+		t.Fatalf("create workflow: %v", err)
+	}
+
+	exec, err := eng.ExecuteWorkflow(wf, nil)
+	if err != nil {
+		t.Fatalf("execute workflow returned error: %v", err)
+	}
+	if exec.Status != "FAILED" {
+		t.Fatalf("expected FAILED, got %s", exec.Status)
+	}
+	if !strings.Contains(exec.ErrorMessage, "node panic recovered") {
+		t.Fatalf("expected recovered panic error, got %q", exec.ErrorMessage)
+	}
 }
 
 func TestCancelAsyncWorkflow(t *testing.T) {

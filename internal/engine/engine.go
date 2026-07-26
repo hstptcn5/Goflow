@@ -486,6 +486,48 @@ schedulerLoop:
 				nodeObj := plan.Nodes[nodeID]
 				executor, ok := e.registry.Get(nodeObj.Type)
 				nodeStart := time.Now()
+				defer func() {
+					if recovered := recover(); recovered != nil {
+						durationMs := time.Since(nodeStart).Milliseconds()
+						errStr := redactSensitiveString(fmt.Sprintf("node panic recovered: %v", recovered))
+
+						stateMu.Lock()
+						nodeLogs = append(nodeLogs, NodeLog{
+							NodeID:     nodeID,
+							Status:     "FAILED",
+							DurationMs: durationMs,
+							Attempts:   1,
+							Error:      errStr,
+						})
+						nodeStates[nodeID] = StateFailed
+						hasFailed = true
+						for _, edge := range plan.EdgesFrom[nodeID] {
+							childID := edge.Target
+							inDegrees[childID]--
+							if inDegrees[childID] == 0 {
+								if !hasActiveIncomingPath[childID] {
+									nodeStates[childID] = StateSkipped
+								}
+								readyChan <- childID
+							}
+						}
+						remainingCount--
+						if remainingCount == 0 {
+							close(doneChan)
+						}
+						stateMu.Unlock()
+
+						e.eventBus.Publish(ExecutionEvent{
+							WorkflowID:  wf.ID,
+							ExecutionID: executionID,
+							NodeID:      nodeID,
+							Status:      "FAILED",
+							Timestamp:   time.Now(),
+							Error:       errStr,
+							DurationMs:  durationMs,
+						})
+					}
+				}()
 
 				// Emit Start Event
 				e.eventBus.Publish(ExecutionEvent{
@@ -600,10 +642,6 @@ schedulerLoop:
 					})
 					nodeStates[nodeID] = StateFailed
 					hasFailed = true
-					remainingCount--
-					if remainingCount == 0 {
-						close(doneChan)
-					}
 
 					// Propagate failure/skip to children
 					for _, edge := range plan.EdgesFrom[nodeID] {

@@ -47,3 +47,48 @@ func TestRedactSensitiveString(t *testing.T) {
 		t.Fatalf("expected sensitive string to be redacted, got %q", got)
 	}
 }
+
+func TestRedactSensitiveHandlesMapCycle(t *testing.T) {
+	input := map[string]interface{}{"name": "root"}
+	child := map[string]interface{}{"parent": input}
+	input["child"] = child
+
+	got := redactSensitive(input).(map[string]interface{})
+	redactedChild := got["child"].(map[string]interface{})
+	if redactedChild["parent"] != redactionCycleValue {
+		t.Fatalf("expected cycle marker, got %#v", redactedChild["parent"])
+	}
+}
+
+func TestRedactSensitiveHandlesSliceCycle(t *testing.T) {
+	input := []interface{}{nil}
+	input[0] = input
+
+	got := redactSensitive(input).([]interface{})
+	if got[0] != redactionCycleValue {
+		t.Fatalf("expected cycle marker, got %#v", got[0])
+	}
+}
+
+func TestRedactSensitiveDepthLimit(t *testing.T) {
+	var value interface{} = "leaf"
+	for i := 0; i < maxRedactionDepth+2; i++ {
+		value = map[string]interface{}{"next": value}
+	}
+
+	got := redactSensitive(value)
+	current := got
+	for i := 0; i < maxRedactionDepth+1; i++ {
+		m, ok := current.(map[string]interface{})
+		if !ok {
+			if current == redactionDepthValue {
+				return
+			}
+			t.Fatalf("unexpected value before depth marker: %#v", current)
+		}
+		current = m["next"]
+	}
+	if current != redactionDepthValue {
+		t.Fatalf("expected depth marker, got %#v", current)
+	}
+}

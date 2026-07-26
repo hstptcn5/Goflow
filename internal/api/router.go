@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"net/http"
+	"os"
 	"strings"
 
 	"goflow/internal/application"
@@ -35,7 +36,9 @@ func NewRouter(
 ) *chi.Mux {
 	r := chi.NewRouter()
 
-	r.Use(middleware.Logger)
+	if os.Getenv("GOFLOW_HTTP_LOGS") == "1" {
+		r.Use(middleware.Logger)
+	}
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestSize(10 << 20))
 
