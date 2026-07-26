@@ -20,7 +20,11 @@ import {
   cloneGraph,
   createWorkflowEdge,
   createWorkflowNode,
+  generateGraphId,
   getDefaultParams,
+  graphFingerprint,
+  serializeGraph,
+  splitValidationIssues,
   summarizeNodeOperation,
   validateWorkflowGraph,
   validationStateForNode,
@@ -46,6 +50,7 @@ const redoStack = ref([]);
 const clipboardNode = ref(null);
 const selectedEdgeId = ref(null);
 const dragStartSnapshot = ref(null);
+const savedFingerprint = ref('');
 const historyLimit = 60;
 
 function getNodeIcon(type) {
@@ -120,6 +125,7 @@ const validationIssuesByNode = computed(() => {
     return acc;
   }, {});
 });
+const splitIssues = computed(() => splitValidationIssues(validationIssues.value));
 
 const canUndo = computed(() => undoStack.value.length > 0);
 const canRedo = computed(() => redoStack.value.length > 0);
@@ -189,6 +195,7 @@ function loadCurrentWorkflow() {
     }));
     selectedNodeId.value = null;
     selectedEdgeId.value = null;
+    savedFingerprint.value = graphFingerprint(nodes.value, edges.value);
     resetHistory();
   } catch (err) {
     console.error('Failed to parse nodes/edges JSON', err);
@@ -200,9 +207,8 @@ onConnect((connection) => {
     return;
   }
   pushHistory();
-  const edgeId = `edge_${connection.source}-${connection.target}_${Date.now()}`;
   const newEdge = {
-    id: edgeId,
+    id: generateGraphId('edge'),
     source: connection.source,
     sourceHandle: connection.sourceHandle || null,
     target: connection.target,
@@ -225,7 +231,7 @@ function onDrop(event) {
   if (!rawDef) return;
 
   const nodeDef = JSON.parse(rawDef);
-  const nodeId = `node_${Date.now()}`;
+  const nodeId = generateGraphId('node');
 
   pushHistory();
   const newNode = decorateNode(createWorkflowNode(nodeDef, {
@@ -253,6 +259,14 @@ function decorateNode(node) {
 function markGraphDirty() {
   runError.value = '';
   validationAttempted.value = validationAttempted.value && validationIssues.value.length > 0;
+  updateSaveStateFromFingerprint();
+}
+
+function updateSaveStateFromFingerprint() {
+  if (savedFingerprint.value && graphFingerprint(nodes.value, edges.value) === savedFingerprint.value) {
+    workflowStore.markSaved();
+    return;
+  }
   workflowStore.markDirty();
 }
 
@@ -272,7 +286,7 @@ function restoreSnapshot(snapshot) {
   edges.value = snapshot.edges.map((edge) => ({ ...edge, animated: false, style: edge.style || { stroke: 'var(--color-border-strong)', strokeWidth: 2 } }));
   selectedNodeId.value = null;
   selectedEdgeId.value = null;
-  workflowStore.markDirty();
+  updateSaveStateFromFingerprint();
 }
 
 function undo() {
@@ -309,7 +323,7 @@ function nextNodePosition(sourceNodeId) {
 
 function addNodeFromPicker(nodeDef) {
   pushHistory();
-  const nodeId = `node_${Date.now()}`;
+  const nodeId = generateGraphId('node');
   const newNode = decorateNode(createWorkflowNode(nodeDef, pickerContext.value.position, nodeId));
   nodes.value.push(newNode);
 
@@ -407,7 +421,7 @@ function duplicateSelectedNode() {
   const source = nodes.value.find((node) => node.id === selectedNodeId.value);
   if (!source) return;
   pushHistory();
-  const nodeId = `node_${Date.now()}`;
+  const nodeId = generateGraphId('node');
   const duplicate = decorateNode({
     ...cloneGraph([source], []).nodes[0],
     id: nodeId,
@@ -433,7 +447,7 @@ function copySelectedNode() {
 function pasteNode() {
   if (!clipboardNode.value) return;
   pushHistory();
-  const nodeId = `node_${Date.now()}`;
+  const nodeId = generateGraphId('node');
   const pasted = decorateNode({
     ...clipboardNode.value,
     id: nodeId,
@@ -460,7 +474,7 @@ function focusValidationIssue(issue) {
   selectedNodeId.value = issue.nodeId;
 }
 
-function validateBeforeAction() {
+function validateForTest() {
   validationAttempted.value = true;
   if (validationIssues.value.length === 0) return true;
   const firstNodeIssue = validationIssues.value.find((issue) => issue.nodeId);
@@ -468,33 +482,33 @@ function validateBeforeAction() {
   return false;
 }
 
-async function saveCanvas() {
-  if (!validateBeforeAction()) {
-    workflowStore.markDirty();
-    return;
+function validateForSave() {
+  validationAttempted.value = true;
+  if (splitIssues.value.hard.length === 0) return true;
+  const firstNodeIssue = splitIssues.value.hard.find((issue) => issue.nodeId);
+  focusValidationIssue(firstNodeIssue);
+  runError.value = 'Fix structural workflow issues before saving.';
+  return false;
+}
+
+function serializableGraph() {
+  return serializeGraph(nodes.value, edges.value);
+}
+
+async function saveCanvas({ validateStructure = true } = {}) {
+  if (validateStructure && !validateForSave()) {
+    updateSaveStateFromFingerprint();
+    return null;
   }
-  const serializableNodes = nodes.value.map((n) => ({
-    id: n.id,
-    type: n.data.type,
-    name: n.data.name,
-    position: n.position,
-    params: n.data.params,
-  }));
-
-  const serializableEdges = edges.value.map((e) => ({
-    id: e.id,
-    source: e.source,
-    sourceHandle: e.sourceHandle || null,
-    target: e.target,
-    targetHandle: e.targetHandle || null,
-  }));
-
-  await workflowStore.saveCurrentWorkflow(serializableNodes, serializableEdges);
+  const graph = serializableGraph();
+  const saved = await workflowStore.saveCurrentWorkflow(graph.nodes, graph.edges);
+  savedFingerprint.value = graphFingerprint(nodes.value, edges.value);
+  return saved;
 }
 
 async function runWorkflow() {
   if (!workflowStore.currentWorkflow) return;
-  if (!validateBeforeAction()) {
+  if (!validateForTest()) {
     runError.value = 'Fix workflow validation issues before testing.';
     return;
   }
@@ -502,6 +516,13 @@ async function runWorkflow() {
   runError.value = '';
   executionStore.resetNodeStatuses();
   try {
+    if (workflowStore.isDirty) {
+      const saved = await saveCanvas();
+      if (!saved) {
+        runError.value = workflowStore.saveError || runError.value || 'Save failed. Workflow was not tested.';
+        return null;
+      }
+    }
     const execution = await api.triggerWorkflow(workflowStore.currentWorkflow.id, {}, false);
     await executionStore.fetchExecutionHistory(workflowStore.currentWorkflow.id);
     await router.push('/executions');
@@ -567,7 +588,7 @@ function handleLoadAIWorkflow(aiWorkflow) {
   });
 
   const mappedAIEdges = (aiWorkflow.edges || []).map((e) => ({
-    id: e.id || `edge_${e.source}-${e.target}_${Date.now()}`,
+    id: e.id || generateGraphId('edge'),
     source: e.source,
     sourceHandle: e.sourceHandle || null,
     target: e.target,
@@ -628,6 +649,16 @@ function exportCanvas() {
   URL.revokeObjectURL(url);
 }
 
+async function toggleWorkflowActive(event) {
+  const isActive = event.target.checked;
+  if (isActive && !validateForTest()) {
+    event.target.checked = false;
+    runError.value = 'Fix workflow validation issues before activating.';
+    return;
+  }
+  await workflowStore.toggleActive(workflowStore.currentWorkflow.id, isActive);
+}
+
 defineExpose({
   addNodeFromPicker,
   autoLayout,
@@ -641,7 +672,10 @@ defineExpose({
   redo,
   runWorkflow,
   saveCanvas,
+  savedFingerprint,
   selectedNodeId,
+  serializableGraph,
+  toggleWorkflowActive,
   undo,
   validationIssues,
 });
@@ -727,7 +761,7 @@ function handleEditorShortcut(event) {
         <input
           type="checkbox"
           :checked="workflowStore.currentWorkflow?.is_active"
-          @change="workflowStore.toggleActive(workflowStore.currentWorkflow.id, $event.target.checked)"
+          @change="toggleWorkflowActive"
         />
         <span>{{ workflowStore.currentWorkflow?.is_active ? 'Active' : 'Inactive' }}</span>
       </label>

@@ -52,4 +52,46 @@ describe('NodePicker', () => {
     await nextFrame();
     expect(JSON.parse(localStorage.getItem('goflow.favoriteNodes'))).toContain('httpRequest');
   });
+
+  it('keeps favorite action separate from node selection', async () => {
+    let selected = false;
+    const { root } = await mountWithApp(NodePicker, { props: { visible: true, onSelect: () => { selected = true; } } });
+    const store = useWorkflowStore();
+    store.nodeDefinitions = nodeDefs;
+    await nextFrame();
+
+    root.querySelector('[aria-label="Add HTTP Request to favorites"]').click();
+    await nextFrame();
+
+    expect(selected).toBe(false);
+    expect(JSON.parse(localStorage.getItem('goflow.favoriteNodes'))).toContain('httpRequest');
+  });
+
+  it('traps focus and restores focus when closed', async () => {
+    const opener = document.createElement('button');
+    opener.textContent = 'Open picker';
+    document.body.appendChild(opener);
+    opener.focus();
+
+    const { root } = await mountWithApp(NodePicker, { props: { visible: true } });
+    const store = useWorkflowStore();
+    store.nodeDefinitions = nodeDefs;
+    await nextFrame();
+
+    const input = root.querySelector('[aria-label="Search nodes"]');
+    const close = root.querySelector('[aria-label="Close node picker"]');
+    const lastFavorite = root.querySelector('[aria-label="Add Telegram Bot to favorites"]');
+    close.focus();
+    close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }));
+    await nextFrame();
+    expect(document.activeElement).toBe(lastFavorite);
+
+    lastFavorite.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    await nextFrame();
+    expect(document.activeElement).toBe(close);
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await nextFrame();
+    expect(document.activeElement).toBe(opener);
+  });
 });

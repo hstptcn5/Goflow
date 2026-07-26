@@ -1,35 +1,53 @@
-# UX Milestone 2 Performance
+# UX Milestone 2 Performance Smoke
 
 Scope: editor usability foundation on Vue Flow with the embedded Go test server.
 
-## Automated Smoke
+This is a regression smoke, not an absolute product benchmark. Results depend on the local machine, browser, power mode, antivirus, and background processes.
 
-Command:
+## Environment
+
+- Date: 2026-07-26
+- OS: Windows
+- Browser: Playwright Chromium
+- Server: embedded Goflow test server started by Playwright
+- UI build: Vite production build through `npm run test:e2e`
+- Viewport: 1366 x 768
+
+## Command
 
 ```powershell
 cd ui
 npm run test:e2e
 ```
 
-Observed Playwright output from the local Windows run:
+## Observed Results
 
-| Graph size | Picker search smoke |
-|---:|---:|
-| 10 nodes | 660 ms |
-| 50 nodes | 506 ms |
-| 100 nodes | 766 ms |
+Latest local verification output:
 
-The test creates real workflows through the REST API, opens each workflow in the editor, opens the node picker, searches for `http`, and verifies the HTTP Request result is visible.
+| Graph size | Editor ready | Picker open | Picker search | Auto-layout |
+|---:|---:|---:|---:|---:|
+| 10 nodes | 578 ms | 77 ms | 77 ms | 85 ms |
+| 50 nodes | 346 ms | 78 ms | 76 ms | 198 ms |
+| 100 nodes | 511 ms | 136 ms | 110 ms | 331 ms |
 
-## Checks
+The automated thresholds are intentionally broad:
 
-- Picker search does not show visible lag in Chromium during the smoke run.
-- Auto-layout is explicit user action only.
-- Auto-layout does not change node IDs.
-- Undo history is capped at 60 graph snapshots.
-- Execution status is not written into undo history; only graph nodes and edges are snapshotted.
+- Editor ready: under 10 seconds.
+- Picker open: under 3 seconds.
+- Picker search: under 3 seconds.
+- Auto-layout: under 3 seconds.
+
+## What The Smoke Covers
+
+- Creates real workflows through the REST API.
+- Opens 10, 50, and 100-node workflows in the editor.
+- Measures editor ready time separately from picker interactions.
+- Opens the node picker and searches for `http`.
+- Runs explicit auto-layout for each graph size.
+- Confirms picker search remains responsive at 100 nodes.
 
 ## Remaining Manual Review
 
-- Visual smoothness while dragging 100 nodes should be checked on a lower-end Windows machine.
-- Memory growth over a long editing session should be profiled if large workflows become common.
+- Check drag/pan/zoom smoothness on a lower-end Windows machine.
+- Profile memory growth during long editing sessions if large workflows become common.
+- Add a large execution-output payload smoke in Milestone 3 when the JSON viewer is hardened.

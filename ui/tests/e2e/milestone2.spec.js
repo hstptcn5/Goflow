@@ -1,5 +1,16 @@
 import { expect, test } from '@playwright/test';
 
+function visualSnapshotOptions(page) {
+  return {
+    animations: 'disabled',
+    maxDiffPixelRatio: 0.02,
+    mask: [
+      page.locator('.shell-status'),
+      page.locator('.node-id'),
+    ],
+  };
+}
+
 test('Milestone 2 editor usability flow', async ({ page }) => {
   await page.goto('/workflows');
   await page.getByLabel('Workflow name').fill('UX M2 Workflow');
@@ -61,18 +72,33 @@ test('Milestone 2 keyboard picker and delete smoke', async ({ page }) => {
   await expect(page.getByText('Saved')).toBeVisible();
 });
 
-test('Milestone 2 visual states and 1366 editor smoke', async ({ page }) => {
+test('Milestone 2 visual regression baseline states at 1366 editor', async ({ page }) => {
+  const snapshotOptions = visualSnapshotOptions(page);
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.goto('/workflows');
   await page.getByLabel('Workflow name').fill('UX M2 Visual');
   await page.getByRole('button', { name: 'Create blank workflow' }).click();
   await expect(page.getByText('No nodes yet')).toBeVisible();
-  expect((await page.screenshot({ fullPage: true })).byteLength).toBeGreaterThan(10000);
+  await expect(page).toHaveScreenshot('blank-canvas.png', snapshotOptions);
 
   await page.getByRole('button', { name: 'Add first step' }).click();
   await expect(page.getByRole('dialog', { name: 'Add step' })).toBeVisible();
-  expect((await page.screenshot({ fullPage: true })).byteLength).toBeGreaterThan(10000);
+  await expect(page).toHaveScreenshot('node-picker.png', snapshotOptions);
   await page.getByLabel('Search nodes').fill('zzzzzz');
   await expect(page.getByText('No nodes match this search.')).toBeVisible();
-  expect((await page.screenshot({ fullPage: true })).byteLength).toBeGreaterThan(10000);
+  await expect(page).toHaveScreenshot('node-picker-empty.png', snapshotOptions);
+
+  await page.getByLabel('Search nodes').fill('Delay');
+  await page.getByRole('option', { name: /Delay \/ Sleep/ }).first().click();
+  await expect(page.getByText('Configured')).toBeVisible();
+  await expect(page).toHaveScreenshot('configured-node.png', snapshotOptions);
+
+  await page.getByRole('button', { name: /Add step after Delay \/ Sleep/ }).click();
+  await page.getByLabel('Search nodes').fill('IF');
+  await page.getByRole('option', { name: /IF \/ ELSE Condition/ }).first().click();
+  await expect(page.getByText('Missing required fields')).toBeVisible();
+  await expect(page.getByText('true')).toBeVisible();
+  await expect(page.getByText('false')).toBeVisible();
+  await expect(page).toHaveScreenshot('invalid-node-if-handles.png', snapshotOptions);
+  await expect(page).toHaveScreenshot('editor-1366.png', snapshotOptions);
 });

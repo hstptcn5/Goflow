@@ -10,6 +10,7 @@ All notable changes to Goflow are tracked here.
 - `UX_GOAL_PROGRESS.md`, `docs/UX_AUDIT.md`, and `docs/UX_MILESTONE_1_TEST_PLAN.md` for UX Milestone 1 tracking and verification.
 - Frontend Vitest and Playwright test foundations covering navigation, workflow save state, API auth prompt behavior, empty/error states, and a browser smoke path.
 - UX Milestone 2 editor usability foundation with searchable node picker, quick-add, validation summary, node config badges, undo/redo, duplicate/copy/paste, keyboard shortcuts, auto-layout, visual smoke, and performance smoke docs.
+- UX Milestone 2 closure coverage for save-before-run behavior, incomplete draft saves, activation blocking, node picker focus trap, stable graph fingerprints, robust graph ID generation, visual regression baselines, and separated editor performance measurements.
 - `scripts/goal-smoke-test.ps1` to run a reusable Windows smoke test for CLI, MCP stdio, MCP HTTP, scoped tokens, cancellation, audit, and concurrent idempotency against a temporary local instance.
 - `GOFLOW_MCP_RATE_LIMIT_PER_MINUTE` for HTTP MCP request rate limiting per token/principal.
 - `goflow_reload_tools` MCP tool to tell clients when dynamic workflow tools require reconnect/reload.
@@ -45,6 +46,11 @@ All notable changes to Goflow are tracked here.
 - Fixed webhook execution input persistence so sensitive headers such as `Authorization`, `Cookie`, `X-Goflow-Webhook-Secret`, and API key headers are omitted.
 - Fixed sub-workflow recursion safety with cycle detection and `GOFLOW_MAX_SUBWORKFLOW_DEPTH`.
 - Fixed an engine status race where a single failing node could be marked `SUCCESS` if the scheduler observed completion before `hasFailed` was set.
+- Fixed `Test Workflow` so it persists the current dirty graph before triggering, aborts if save fails, and never runs a stale saved graph.
+- Fixed workflow draft saving so incomplete node parameters or missing credentials can be saved as drafts while Test and Activate still block invalid runnable workflows.
+- Fixed node picker semantics by removing nested interactive controls and making favorite toggles independent from node selection.
+- Fixed node picker dialog focus handling so open, Tab/Shift+Tab trap, Escape close, backdrop close, and focus restore are covered by tests.
+- Fixed saved/unsaved state after undo and redo by comparing the current graph to a saved graph fingerprint.
 
 ## 0.5.0-http-mcp-beta - 2026-07-26
 

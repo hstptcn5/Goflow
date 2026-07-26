@@ -3,6 +3,9 @@ import {
   autoLayoutGraph,
   createWorkflowEdge,
   createWorkflowNode,
+  generateGraphId,
+  graphFingerprint,
+  splitValidationIssues,
   validateWorkflowGraph,
   validationStateForNode,
 } from '../src/utils/workflowEditor';
@@ -43,6 +46,15 @@ describe('workflow editor utilities', () => {
     expect(edge.style.strokeWidth).toBe(2);
   });
 
+  it('generates unique node and edge IDs for rapid graph edits', () => {
+    const ids = new Set();
+    for (let i = 0; i < 500; i += 1) {
+      ids.add(generateGraphId('node'));
+      ids.add(generateGraphId('edge'));
+    }
+    expect(ids.size).toBe(1000);
+  });
+
   it('validates missing fields, credentials, unknown nodes, bad edges, duplicate ids, and cycles', () => {
     const nodes = [
       createWorkflowNode(defs[1], { x: 0, y: 0 }, 'a'),
@@ -63,6 +75,17 @@ describe('workflow editor utilities', () => {
       'graph_cycle',
     ]));
     expect(validationStateForNode('b', issues)).toBe('Unknown node');
+    const split = splitValidationIssues(issues);
+    expect(split.hard.map((issue) => issue.type)).toEqual(expect.arrayContaining([
+      'duplicate_node_id',
+      'invalid_edge_reference',
+      'graph_cycle',
+      'unknown_node',
+    ]));
+    expect(split.soft.map((issue) => issue.type)).toEqual(expect.arrayContaining([
+      'missing_required',
+      'missing_credential',
+    ]));
   });
 
   it('auto-layout keeps IDs and moves connected nodes left to right', () => {
@@ -74,5 +97,9 @@ describe('workflow editor utilities', () => {
     expect(laidOut.map((node) => node.id)).toEqual(['start', 'branch']);
     expect(laidOut[1].position.x).toBeGreaterThan(laidOut[0].position.x);
   });
-});
 
+  it('fingerprints equivalent graph snapshots consistently', () => {
+    const nodes = [createWorkflowNode(defs[0], { x: 10, y: 20 }, 'a')];
+    expect(graphFingerprint(nodes, [])).toBe(graphFingerprint([{ ...nodes[0] }], []));
+  });
+});

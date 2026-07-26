@@ -14,6 +14,8 @@ const workflowStore = useWorkflowStore();
 const search = ref('');
 const selectedIndex = ref(0);
 const searchInput = ref(null);
+const dialog = ref(null);
+const previousFocus = ref(null);
 const favoriteTypes = ref(readStoredList('goflow.favoriteNodes'));
 const recentTypes = ref(readStoredList('goflow.recentNodes'));
 
@@ -33,6 +35,7 @@ watch(
   () => props.visible,
   async (visible) => {
     if (visible) {
+      previousFocus.value = document.activeElement;
       search.value = '';
       selectedIndex.value = 0;
       await nextTick();
@@ -43,6 +46,7 @@ watch(
 
 onMounted(async () => {
   if (!props.visible) return;
+  previousFocus.value = document.activeElement;
   await nextTick();
   searchInput.value?.focus();
 });
@@ -104,8 +108,7 @@ function isFavorite(type) {
   return favoriteTypes.value.includes(type);
 }
 
-function toggleFavorite(def, event) {
-  event.stopPropagation();
+function toggleFavorite(def) {
   const next = isFavorite(def.type)
     ? favoriteTypes.value.filter((type) => type !== def.type)
     : [def.type, ...favoriteTypes.value];
@@ -121,12 +124,44 @@ function rememberRecent(def) {
 
 function selectNode(def) {
   rememberRecent(def);
+  restoreFocus();
   emit('select', def);
+}
+
+function restoreFocus() {
+  const target = previousFocus.value;
+  if (target && typeof target.focus === 'function') {
+    target.focus();
+  }
+}
+
+function closePicker() {
+  restoreFocus();
+  emit('close');
+}
+
+function focusableElements() {
+  return Array.from(dialog.value?.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') || [])
+    .filter((el) => !el.disabled);
 }
 
 function onKeydown(event) {
   if (event.key === 'Escape') {
-    emit('close');
+    closePicker();
+    return;
+  }
+  if (event.key === 'Tab') {
+    const focusables = focusableElements();
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
     return;
   }
   if (event.key === 'ArrowDown') {
@@ -139,6 +174,9 @@ function onKeydown(event) {
     selectedIndex.value = Math.max(0, selectedIndex.value - 1);
     return;
   }
+  if (event.target?.classList?.contains('favorite-button')) {
+    return;
+  }
   if (event.key === 'Enter' && flatNodes.value[selectedIndex.value]) {
     event.preventDefault();
     selectNode(flatNodes.value[selectedIndex.value]);
@@ -147,8 +185,9 @@ function onKeydown(event) {
 </script>
 
 <template>
-  <div v-if="visible" class="node-picker-backdrop" @click.self="emit('close')">
+  <div v-if="visible" class="node-picker-backdrop" @click.self="closePicker">
     <section
+      ref="dialog"
       class="node-picker"
       role="dialog"
       aria-modal="true"
@@ -160,7 +199,7 @@ function onKeydown(event) {
           <h2 id="node-picker-title">Add step</h2>
           <p>Search by node name, type, description, or category.</p>
         </div>
-        <button type="button" class="icon-button" aria-label="Close node picker" @click="emit('close')">x</button>
+        <button type="button" class="icon-button" aria-label="Close node picker" @click="closePicker">x</button>
       </header>
 
       <input
@@ -179,23 +218,23 @@ function onKeydown(event) {
       <div v-else class="node-picker-list" role="listbox" aria-label="Available nodes">
         <section v-for="group in groupedNodes" :key="group.label" class="node-picker-group">
           <h3>{{ group.label }}</h3>
-          <button
+          <div
             v-for="def in group.nodes"
             :key="`${group.label}-${def.type}`"
-            type="button"
             class="node-picker-item"
             :class="{ highlighted: flatNodes[selectedIndex]?.type === def.type }"
             role="option"
             :aria-selected="flatNodes[selectedIndex]?.type === def.type"
-            @click="selectNode(def)"
             @mouseenter="selectedIndex = flatNodes.findIndex((item) => item.type === def.type)"
           >
-            <span class="node-picker-icon" v-html="getNodeIconSVG(def.type)"></span>
-            <span class="node-picker-main">
-              <strong>{{ def.name }}</strong>
-              <span>{{ def.description || def.type }}</span>
-              <small>{{ def.friendlyCategory }} · {{ def.triggerKind }}</small>
-            </span>
+            <button type="button" class="node-picker-select" @click="selectNode(def)">
+              <span class="node-picker-icon" v-html="getNodeIconSVG(def.type)"></span>
+              <span class="node-picker-main">
+                <strong>{{ def.name }}</strong>
+                <span>{{ def.description || def.type }}</span>
+                <small>{{ def.friendlyCategory }} · {{ def.triggerKind }}</small>
+              </span>
+            </button>
             <span class="node-picker-badges">
               <span v-if="def.credentialRequired" class="badge badge-warning">Credential</span>
               <span v-if="def.experimental" class="badge badge-muted">Experimental</span>
@@ -203,12 +242,12 @@ function onKeydown(event) {
                 type="button"
                 class="favorite-button"
                 :aria-label="isFavorite(def.type) ? `Remove ${def.name} from favorites` : `Add ${def.name} to favorites`"
-                @click="toggleFavorite(def, $event)"
+                @click="toggleFavorite(def)"
               >
                 {{ isFavorite(def.type) ? 'Starred' : 'Star' }}
               </button>
             </span>
-          </button>
+          </div>
         </section>
       </div>
     </section>
@@ -286,7 +325,7 @@ function onKeydown(event) {
 .node-picker-item {
   width: 100%;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-3);
   align-items: center;
   padding: var(--space-3);
@@ -295,6 +334,21 @@ function onKeydown(event) {
   background: transparent;
   text-align: left;
   cursor: pointer;
+}
+
+.node-picker-select {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
 }
 
 .node-picker-item:hover,

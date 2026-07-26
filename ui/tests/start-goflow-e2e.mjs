@@ -5,8 +5,11 @@ import { join, resolve } from 'node:path';
 
 const root = resolve(process.cwd(), '..');
 const tempDir = mkdtempSync(join(tmpdir(), 'goflow-ui-e2e-'));
+const configuredBinary = process.env.GOFLOW_E2E_BINARY;
+const command = configuredBinary ? resolve(root, configuredBinary) : 'go';
+const args = configuredBinary ? ['serve'] : ['run', 'main.go', 'static_embed.go', 'serve'];
 
-const child = spawn('go', ['run', 'main.go', 'static_embed.go', 'serve'], {
+const child = spawn(command, args, {
   cwd: root,
   env: {
     ...process.env,

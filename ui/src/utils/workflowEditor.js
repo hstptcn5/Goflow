@@ -21,7 +21,17 @@ export function getDefaultParams(nodeDef) {
   return params;
 }
 
-export function createWorkflowNode(nodeDef, position, id = `node_${Date.now()}`) {
+let fallbackCounter = 0;
+
+export function generateGraphId(prefix) {
+  if (globalThis.crypto?.randomUUID) {
+    return `${prefix}_${globalThis.crypto.randomUUID()}`;
+  }
+  fallbackCounter += 1;
+  return `${prefix}_${Date.now().toString(36)}_${fallbackCounter.toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function createWorkflowNode(nodeDef, position, id = generateGraphId('node')) {
   return {
     id,
     type: 'custom',
@@ -38,7 +48,7 @@ export function createWorkflowNode(nodeDef, position, id = `node_${Date.now()}`)
 
 export function createWorkflowEdge(source, target, sourceHandle = null) {
   return {
-    id: `edge_${source}-${target}_${Date.now()}`,
+    id: generateGraphId('edge'),
     source,
     sourceHandle,
     target,
@@ -52,6 +62,58 @@ export function cloneGraph(nodes, edges) {
   return {
     nodes: JSON.parse(JSON.stringify(nodes || [])),
     edges: JSON.parse(JSON.stringify(edges || [])),
+  };
+}
+
+export function serializeGraph(nodes, edges) {
+  return {
+    nodes: (nodes || []).map((node) => ({
+      id: node.id,
+      type: node.data?.type || node.type,
+      name: node.data?.name || node.label,
+      position: node.position || { x: 0, y: 0 },
+      params: node.data?.params || {},
+    })),
+    edges: (edges || []).map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      sourceHandle: edge.sourceHandle || null,
+      target: edge.target,
+      targetHandle: edge.targetHandle || null,
+    })),
+  };
+}
+
+export function graphFingerprint(nodes, edges) {
+  const graph = serializeGraph(nodes, edges);
+  const normalized = {
+    nodes: graph.nodes.map((node) => ({
+      ...node,
+      params: Object.keys(node.params || {}).sort().reduce((acc, key) => {
+        acc[key] = node.params[key];
+        return acc;
+      }, {}),
+    })).sort((a, b) => a.id.localeCompare(b.id)),
+    edges: graph.edges.slice().sort((a, b) => a.id.localeCompare(b.id)),
+  };
+  return JSON.stringify(normalized);
+}
+
+const hardIssueTypes = new Set([
+  'duplicate_node_id',
+  'invalid_edge_reference',
+  'graph_cycle',
+  'unknown_node',
+]);
+
+export function isHardValidationIssue(issue) {
+  return hardIssueTypes.has(issue?.type);
+}
+
+export function splitValidationIssues(issues) {
+  return {
+    hard: (issues || []).filter(isHardValidationIssue),
+    soft: (issues || []).filter((issue) => !isHardValidationIssue(issue)),
   };
 }
 
@@ -241,4 +303,3 @@ export function autoLayoutGraph(nodes, edges) {
     };
   });
 }
-

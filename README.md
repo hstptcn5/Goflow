@@ -12,7 +12,7 @@ Goflow is in secure preview for self-hosted workflow automation. The core workfl
 
 Key achievements in the current version include:
 - UX Milestone 1 Foundation: Added a routed app shell with dedicated Workflows, Workflow Editor, Executions, Credentials, Templates, Nodes, Settings, and Help pages, plus visible workflow save states and frontend unit/E2E test coverage.
-- UX Milestone 2 Editor Usability: Added searchable node picker, quick-add, validation badges and summary, undo/redo, duplicate/copy/paste, keyboard shortcuts, and explicit auto-layout without changing the runtime engine.
+- UX Milestone 2 Editor Usability: Added searchable node picker, quick-add, validation badges and summary, undo/redo, duplicate/copy/paste, keyboard shortcuts, explicit auto-layout, draft-safe saves, save-before-run behavior, and visual/performance regression smoke coverage without changing the runtime engine.
 - Core DAG Engine Optimization: Implemented Node Skip Logic where non-matching conditional branches are marked as skipped to prevent execution waste.
 - Sub-workflow Execution (Looping and Batching): Added a Sub-workflow Runner node that executes a child workflow by iterating over a list of items, supporting both sequential looping and concurrent parallel execution using Goroutines.
 - Centralized Credentials Vault with AES-256-GCM: Implemented secure credentials storage utilizing authenticated encryption.
@@ -144,7 +144,7 @@ graph TD
 - **Common Trigger Path for API, CLI, and MCP**: CLI and MCP call the REST API and share the same `TriggerService`, idempotency, concurrency, execution history, scoped token checks, and audit trail.
 - **Scoped Runtime Controls**: Workflow allowlists, redacted scoped workflow lists, server-enforced CLI/MCP exposure, cancellation, and per-workflow reject concurrency are enforced by the backend.
 - **Routed Web UI Foundation**: Workflows, editor, executions, credentials, templates, node catalog, settings, and help have durable frontend routes with embedded-server refresh support.
-- **Editor Usability Tools**: Searchable Add step picker, recent/favorite nodes, quick-add, pre-run graph validation, undo/redo, duplicate/copy/paste, and auto-layout are available in the workflow editor.
+- **Editor Usability Tools**: Searchable Add step picker, recent/favorite nodes, quick-add, pre-run graph validation, incomplete draft saves, save-before-run test execution, undo/redo, duplicate/copy/paste, focus-managed picker dialog, visual snapshots, and auto-layout are available in the workflow editor.
 
 ---
 
