@@ -11,16 +11,21 @@ import (
 )
 
 var ErrInvalidWorkflowInput = errors.New("invalid workflow input")
+var ErrWorkflowInactive = errors.New("workflow is inactive")
+var ErrWorkflowNotExposed = errors.New("workflow is not exposed to requested interface")
+var ErrWorkflowRequiresApproval = errors.New("workflow requires approval")
 
 type TriggerSource string
 
 const (
-	SourceUI      TriggerSource = "ui"
-	SourceAPI     TriggerSource = "api"
-	SourceWebhook TriggerSource = "webhook"
-	SourceCron    TriggerSource = "cron"
-	SourceCLI     TriggerSource = "cli"
-	SourceMCP     TriggerSource = "mcp"
+	SourceUI       TriggerSource = "ui"
+	SourceAPI      TriggerSource = "api"
+	SourceWebhook  TriggerSource = "webhook"
+	SourceCron     TriggerSource = "cron"
+	SourceCLI      TriggerSource = "cli"
+	SourceMCP      TriggerSource = "mcp"
+	SourceMCPStdio TriggerSource = "mcp_stdio"
+	SourceMCPHTTP  TriggerSource = "mcp_http"
 )
 
 type TriggerMode string
@@ -67,6 +72,12 @@ func (s *TriggerService) Trigger(ctx context.Context, req TriggerRequest) (*Trig
 	if err != nil {
 		return nil, err
 	}
+	if !wf.IsActive {
+		return nil, ErrWorkflowInactive
+	}
+	if err := validateWorkflowExposure(wf, req.Source); err != nil {
+		return nil, err
+	}
 	if err := validateWorkflowInput(wf.InputSchemaJSON, req.Input); err != nil {
 		return nil, err
 	}
@@ -91,6 +102,23 @@ func (s *TriggerService) Trigger(ctx context.Context, req TriggerRequest) (*Trig
 		return nil, err
 	}
 	return &TriggerResult{Execution: exec, Deduplicated: false}, nil
+}
+
+func validateWorkflowExposure(wf *storage.Workflow, source TriggerSource) error {
+	switch source {
+	case SourceCLI:
+		if !wf.ExposeCLI {
+			return ErrWorkflowNotExposed
+		}
+	case SourceMCP, SourceMCPStdio, SourceMCPHTTP:
+		if !wf.ExposeMCP {
+			return ErrWorkflowNotExposed
+		}
+		if wf.RequiresApproval {
+			return ErrWorkflowRequiresApproval
+		}
+	}
+	return nil
 }
 
 func (r *TriggerRequest) normalize() {

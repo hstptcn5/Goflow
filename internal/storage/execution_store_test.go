@@ -98,6 +98,35 @@ func TestMigrationsAddWorkflowAndExecutionMetadata(t *testing.T) {
 	}
 }
 
+func TestRunMigrationsIsIdempotentAndPreservesData(t *testing.T) {
+	db := newTestDB(t)
+	insertWorkflowForTest(t, db, "wf-1")
+	insertExecutionForTest(t, db, "exec-1", "wf-1", time.Now())
+
+	before := migrationCount(t, db)
+	if err := db.RunMigrations(); err != nil {
+		t.Fatalf("RunMigrations failed: %v", err)
+	}
+	after := migrationCount(t, db)
+	if after != before {
+		t.Fatalf("expected migration count to remain %d, got %d", before, after)
+	}
+	var workflowCount int
+	if err := db.WriteDB.QueryRow(`SELECT COUNT(1) FROM workflows WHERE id = 'wf-1'`).Scan(&workflowCount); err != nil {
+		t.Fatalf("count workflow: %v", err)
+	}
+	if workflowCount != 1 {
+		t.Fatalf("expected workflow to be preserved, got count %d", workflowCount)
+	}
+	var executionCount int
+	if err := db.WriteDB.QueryRow(`SELECT COUNT(1) FROM executions WHERE id = 'exec-1'`).Scan(&executionCount); err != nil {
+		t.Fatalf("count execution: %v", err)
+	}
+	if executionCount != 1 {
+		t.Fatalf("expected execution to be preserved, got count %d", executionCount)
+	}
+}
+
 func TestAccessTokenStoreCreateAuthenticateListDelete(t *testing.T) {
 	db := newTestDB(t)
 	store := NewAccessTokenStore(db)
@@ -223,4 +252,13 @@ func mustTableColumns(t *testing.T, db *DB, table string) map[string]bool {
 		cols[name] = true
 	}
 	return cols
+}
+
+func migrationCount(t *testing.T, db *DB) int {
+	t.Helper()
+	var count int
+	if err := db.WriteDB.QueryRow(`SELECT COUNT(1) FROM schema_migrations`).Scan(&count); err != nil {
+		t.Fatalf("count migrations: %v", err)
+	}
+	return count
 }

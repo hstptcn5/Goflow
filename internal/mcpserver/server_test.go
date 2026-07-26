@@ -93,6 +93,7 @@ func TestDynamicToolNameUsesMCPToolNameSlugThenName(t *testing.T) {
 func TestDynamicWorkflowHandlerRunsWorkflow(t *testing.T) {
 	var runPath string
 	var runBody map[string]interface{}
+	var triggerSource string
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/workflows/wf-1/executions" {
@@ -100,6 +101,7 @@ func TestDynamicWorkflowHandlerRunsWorkflow(t *testing.T) {
 			return
 		}
 		runPath = r.URL.Path
+		triggerSource = r.Header.Get("X-Goflow-Trigger-Source")
 		_ = json.NewDecoder(r.Body).Decode(&runBody)
 		_ = json.NewEncoder(w).Encode(client.ExecutionAccepted{
 			ExecutionID:  "exec-1",
@@ -110,9 +112,9 @@ func TestDynamicWorkflowHandlerRunsWorkflow(t *testing.T) {
 	}))
 	t.Cleanup(httpServer.Close)
 
-	server := New(Options{BaseURL: httpServer.URL})
+	server := New(Options{BaseURL: httpServer.URL, TriggerSource: "mcp_stdio"})
 	handler := server.dynamicWorkflowHandler(client.Workflow{ID: "wf-1", Name: "Daily", IsActive: true, ExposeMCP: true})
-	args := json.RawMessage(`{"date":"2026-07-26","idempotency_key":"idem-1"}`)
+	args := json.RawMessage(`{"date":"2026-07-26","idempotency_key":"business-value","_goflow":{"idempotency_key":"idem-1"}}`)
 	result, err := handler(context.Background(), &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Arguments: args}})
 	if err != nil {
 		t.Fatalf("dynamic workflow handler returned protocol error: %v", err)
@@ -123,12 +125,18 @@ func TestDynamicWorkflowHandlerRunsWorkflow(t *testing.T) {
 	if runPath != "/api/v1/workflows/wf-1/executions" {
 		t.Fatalf("unexpected run path: %s", runPath)
 	}
+	if triggerSource != "mcp_stdio" {
+		t.Fatalf("expected mcp_stdio trigger source header, got %q", triggerSource)
+	}
 	if runBody["idempotency_key"] != "idem-1" {
 		t.Fatalf("idempotency key was not forwarded: %#v", runBody)
 	}
 	input, ok := runBody["input"].(map[string]interface{})
-	if !ok || input["date"] != "2026-07-26" {
+	if !ok || input["date"] != "2026-07-26" || input["idempotency_key"] != "business-value" {
 		t.Fatalf("workflow input was not forwarded correctly: %#v", runBody)
+	}
+	if _, leaked := input["_goflow"]; leaked {
+		t.Fatalf("_goflow control envelope leaked into workflow input: %#v", input)
 	}
 	output, ok := result.StructuredContent.(runWorkflowOutput)
 	if !ok || output.ExecutionID != "exec-1" {
@@ -175,6 +183,32 @@ func TestHTTPHandlerRejectsDisallowedOrigin(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHTTPClientLimitersPersistAcrossRequestsForSameToken(t *testing.T) {
+	limiters := newHTTPClientLimiters(1)
+	firstReq := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	firstReq.Header.Set("Authorization", "Bearer token-1")
+	secondReq := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	secondReq.Header.Set("Authorization", "Bearer token-1")
+	otherReq := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	otherReq.Header.Set("Authorization", "Bearer token-2")
+
+	first := limiters.limiterFor(firstReq)
+	second := limiters.limiterFor(secondReq)
+	other := limiters.limiterFor(otherReq)
+	if first != second {
+		t.Fatalf("expected same limiter for same token")
+	}
+	if first == other {
+		t.Fatalf("expected different limiter for different token")
+	}
+	first <- struct{}{}
+	select {
+	case second <- struct{}{}:
+		t.Fatalf("expected shared limiter to be full")
+	default:
 	}
 }
 

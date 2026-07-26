@@ -29,6 +29,15 @@ func TestReadInputFromSet(t *testing.T) {
 	}
 }
 
+func TestCLIClientSetsTriggerSource(t *testing.T) {
+	url := "http://127.0.0.1:8080"
+	apiKey := "test-key"
+	c := cliClient(clientOptions{url: &url, apiKey: &apiKey})
+	if c.TriggerSource != "cli" {
+		t.Fatalf("expected cli trigger source, got %q", c.TriggerSource)
+	}
+}
+
 func TestParseOneRefAllowsFlagsAfterReference(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -75,6 +84,40 @@ func TestReadWorkflowFileAcceptsUIExportShape(t *testing.T) {
 	}
 	if workflow.Name != "Imported" || workflow.NodesJSON != "[]" || workflow.EdgesJSON != "[]" {
 		t.Fatalf("unexpected workflow: %#v", workflow)
+	}
+}
+
+func TestReadWorkflowFilePreservesInterfaceMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workflow.json")
+	data := `{
+		"name":"Imported",
+		"description":"From UI",
+		"nodes":[],
+		"edges":[],
+		"slug":"imported",
+		"input_schema_json":{"type":"object"},
+		"output_schema_json":{"type":"object"},
+		"expose_cli":false,
+		"expose_mcp":true,
+		"mcp_tool_name":"imported_tool",
+		"mcp_description":"Imported tool",
+		"risk_level":"high",
+		"requires_approval":true,
+		"max_concurrent_runs":1,
+		"concurrency_policy":"reject"
+	}`
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatalf("write workflow file: %v", err)
+	}
+	workflow, err := readWorkflowFile(path)
+	if err != nil {
+		t.Fatalf("readWorkflowFile failed: %v", err)
+	}
+	if workflow.ExposeCLI || !workflow.ExposeMCP || !workflow.RequiresApproval || workflow.MaxConcurrentRuns != 1 || workflow.ConcurrencyPolicy != "reject" {
+		t.Fatalf("interface metadata was not preserved: %#v", workflow)
+	}
+	if workflow.MCPToolName != "imported_tool" || workflow.RiskLevel != "high" {
+		t.Fatalf("unexpected metadata: %#v", workflow)
 	}
 }
 

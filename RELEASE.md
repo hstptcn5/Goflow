@@ -11,6 +11,7 @@ This guide describes how to prepare a Goflow preview release.
    ```bash
    go test ./...
    go vet ./...
+   go build ./...
    ```
 
 4. Build the Web UI:
@@ -40,7 +41,15 @@ This guide describes how to prepare a Goflow preview release.
    node --check scripts/mcp-http-smoke-test.mjs
    ```
 
-8. Start Goflow locally and check:
+8. Run the local GOAL smoke test on Windows:
+
+   ```powershell
+   .\scripts\goal-smoke-test.ps1 -Binary .\goflow.exe -Port 18080 -AdminKey goal-admin-key
+   ```
+
+   This uses a temporary database and validates CLI, MCP stdio, MCP Streamable HTTP, scoped token allowlist, cancellation, audit, and concurrent idempotency.
+
+9. Start Goflow locally and check:
 
    - UI loads at `http://127.0.0.1:8080`.
    - `NODES.md` opens from the Docs button.
@@ -60,7 +69,7 @@ This guide describes how to prepare a Goflow preview release.
      node scripts/mcp-http-smoke-test.mjs --url http://127.0.0.1:8080/mcp --api-key <scoped-token> --origin http://127.0.0.1:8080 --workflow <workflow-id-or-slug> --input '{"source":"release-http-mcp-smoke"}'
      ```
 
-9. Package the release with:
+10. Package the release with:
 
    - Binary: `goflow.exe` or `goflow`.
    - `README.md`
@@ -76,6 +85,7 @@ This guide describes how to prepare a Goflow preview release.
    - `TRADEMARK.md`
    - `scripts/mcp-smoke-test.mjs`
    - `scripts/mcp-http-smoke-test.mjs`
+   - `scripts/goal-smoke-test.ps1`
    - `templates/`
 
 ## Windows Packaging

@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,6 +24,15 @@ type Execution struct {
 	InputJSON        string     `json:"input_json,omitempty"`
 	ErrorMessage     string     `json:"error_message,omitempty"`
 	CancelledAt      *time.Time `json:"cancelled_at,omitempty"`
+}
+
+func IsExecutionIdempotencyConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "idx_execution_idempotency") ||
+		(strings.Contains(message, "constraint") && strings.Contains(message, "idempotency_key"))
 }
 
 type ExecutionStore struct {

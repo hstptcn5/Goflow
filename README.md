@@ -139,6 +139,8 @@ graph TD
 - **Modern High-Contrast Light Theme Canvas**: Visual workflow builder powered by Vue 3, Vite, Vue Flow, and Pinia with manual wire connection tools.
 - **Export and Import Workflow JSON**: Portable JSON format allowing easy backup and sharing of workflows across instances.
 - **Built-in Auto-Retry Engine**: Automatic retry loop (up to 3 attempts with exponential backoff) for resilient network calls.
+- **Common Trigger Path for API, CLI, and MCP**: CLI and MCP call the REST API and share the same `TriggerService`, idempotency, concurrency, execution history, scoped token checks, and audit trail.
+- **Scoped Runtime Controls**: Workflow allowlists, redacted scoped workflow lists, server-enforced CLI/MCP exposure, cancellation, and per-workflow reject concurrency are enforced by the backend.
 
 ---
 
@@ -398,7 +400,7 @@ node scripts/mcp-http-smoke-test.mjs \
   --idempotency-key mcp-http-smoke-2026-07-26
 ```
 
-The target workflow must be active, must have **Expose to MCP** enabled in its Interface settings, and must not have **Requires Approval** enabled for the current MCP alpha/beta bridge.
+The target workflow must be active, must have **Expose to MCP** enabled in its Interface settings, and must not have **Requires Approval** enabled for the current MCP alpha/beta bridge. Dynamic workflow tools reserve `_goflow` for control metadata; use `_goflow.idempotency_key` for execution idempotency so a business field named `idempotency_key` can remain part of the workflow input.
 
 To assert and call a dynamic workflow tool over HTTP MCP:
 
@@ -494,9 +496,10 @@ Goflow includes conservative defaults for local/self-hosted use. Override them w
 | :--- | :---: | :--- |
 | `GOFLOW_MAX_CONCURRENT_EXECUTIONS` | `10` | Maximum workflows executing at the same time. Returns HTTP 429 when full. |
 | `GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION` | `0` | Maximum concurrently executing nodes inside one execution. `0` disables the per-execution node limit. |
-| `GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT` | `2` | Maximum concurrent MCP workflow run calls per stdio client process or HTTP request session. |
+| `GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT` | `2` | Maximum concurrent MCP workflow run calls per stdio client process or HTTP token/principal. |
 | `GOFLOW_MCP_BASE_URL` | derived from host/port | Internal base URL used by `/mcp` when it calls the Goflow REST API. |
 | `GOFLOW_MCP_ALLOWED_ORIGINS` | local UI origins | Comma-separated Origin allowlist for `/mcp` browser/remote clients. |
+| `GOFLOW_MAX_SUBWORKFLOW_DEPTH` | `5` | Maximum nested sub-workflow depth before execution fails with a clear error. |
 | `GOFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE` | `60` | Maximum webhook requests per minute per workflow/IP. Set `0` to disable. |
 | `GOFLOW_EXECUTION_RETENTION_DAYS` | `30` | Deletes execution records older than this many days. Set `0` to disable age cleanup. |
 | `GOFLOW_MAX_EXECUTIONS_PER_WORKFLOW` | `1000` | Keeps only the newest N executions per workflow. Set `0` to disable count cleanup. |
@@ -507,7 +510,7 @@ On startup, any execution left in `RUNNING` from a previous crash or shutdown is
 
 ## REST API and Endpoint Specifications
 
-- `GET /api/v1/workflows`: List all workflows.
+- `GET /api/v1/workflows`: List workflows. Admin requests return full workflow records for the editor; scoped tokens receive allowlisted summaries without graph JSON.
 - `POST /api/v1/workflows`: Create a new workflow.
 - `GET /api/v1/workflows/{id}`: Fetch workflow detail.
 - `PUT /api/v1/workflows/{id}`: Update workflow nodes and edges JSON.

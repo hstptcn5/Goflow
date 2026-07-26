@@ -224,7 +224,7 @@ func addClientFlags(fs *flag.FlagSet) clientOptions {
 }
 
 func cliClient(opts clientOptions) *client.Client {
-	return client.New(*opts.url, *opts.apiKey)
+	return client.New(*opts.url, *opts.apiKey).WithTriggerSource("cli")
 }
 
 func (r Runner) status(args []string) int {
@@ -643,22 +643,25 @@ func readWorkflowFile(path string) (client.Workflow, error) {
 		return client.Workflow{}, err
 	}
 	var raw struct {
-		ID               string          `json:"id"`
-		Name             string          `json:"name"`
-		Description      string          `json:"description"`
-		IsActive         bool            `json:"is_active"`
-		NodesJSON        string          `json:"nodes_json"`
-		EdgesJSON        string          `json:"edges_json"`
-		Nodes            json.RawMessage `json:"nodes"`
-		Edges            json.RawMessage `json:"edges"`
-		Slug             string          `json:"slug"`
-		InputSchemaJSON  string          `json:"input_schema_json"`
-		OutputSchemaJSON string          `json:"output_schema_json"`
-		ExposeCLI        bool            `json:"expose_cli"`
-		ExposeMCP        bool            `json:"expose_mcp"`
-		MCPToolName      string          `json:"mcp_tool_name"`
-		MCPDescription   string          `json:"mcp_description"`
-		RiskLevel        string          `json:"risk_level"`
+		ID                string          `json:"id"`
+		Name              string          `json:"name"`
+		Description       string          `json:"description"`
+		IsActive          bool            `json:"is_active"`
+		NodesJSON         string          `json:"nodes_json"`
+		EdgesJSON         string          `json:"edges_json"`
+		Nodes             json.RawMessage `json:"nodes"`
+		Edges             json.RawMessage `json:"edges"`
+		Slug              string          `json:"slug"`
+		InputSchemaJSON   json.RawMessage `json:"input_schema_json"`
+		OutputSchemaJSON  json.RawMessage `json:"output_schema_json"`
+		ExposeCLI         bool            `json:"expose_cli"`
+		ExposeMCP         bool            `json:"expose_mcp"`
+		MCPToolName       string          `json:"mcp_tool_name"`
+		MCPDescription    string          `json:"mcp_description"`
+		RiskLevel         string          `json:"risk_level"`
+		RequiresApproval  bool            `json:"requires_approval"`
+		MaxConcurrentRuns int             `json:"max_concurrent_runs"`
+		ConcurrencyPolicy string          `json:"concurrency_policy"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return client.Workflow{}, fmt.Errorf("workflow file must be JSON: %w", err)
@@ -687,26 +690,43 @@ func readWorkflowFile(path string) (client.Workflow, error) {
 		return client.Workflow{}, fmt.Errorf("edges_json or edges must be a JSON array")
 	}
 	return client.Workflow{
-		ID:               raw.ID,
-		Name:             raw.Name,
-		Description:      raw.Description,
-		IsActive:         raw.IsActive,
-		NodesJSON:        nodesJSON,
-		EdgesJSON:        edgesJSON,
-		Slug:             raw.Slug,
-		InputSchemaJSON:  raw.InputSchemaJSON,
-		OutputSchemaJSON: raw.OutputSchemaJSON,
-		ExposeCLI:        raw.ExposeCLI,
-		ExposeMCP:        raw.ExposeMCP,
-		MCPToolName:      raw.MCPToolName,
-		MCPDescription:   raw.MCPDescription,
-		RiskLevel:        raw.RiskLevel,
+		ID:                raw.ID,
+		Name:              raw.Name,
+		Description:       raw.Description,
+		IsActive:          raw.IsActive,
+		NodesJSON:         nodesJSON,
+		EdgesJSON:         edgesJSON,
+		Slug:              raw.Slug,
+		InputSchemaJSON:   rawJSONFieldToString(raw.InputSchemaJSON, "{}"),
+		OutputSchemaJSON:  rawJSONFieldToString(raw.OutputSchemaJSON, "{}"),
+		ExposeCLI:         raw.ExposeCLI,
+		ExposeMCP:         raw.ExposeMCP,
+		MCPToolName:       raw.MCPToolName,
+		MCPDescription:    raw.MCPDescription,
+		RiskLevel:         raw.RiskLevel,
+		RequiresApproval:  raw.RequiresApproval,
+		MaxConcurrentRuns: raw.MaxConcurrentRuns,
+		ConcurrencyPolicy: raw.ConcurrencyPolicy,
 	}, nil
 }
 
 func isJSONArray(raw string) bool {
 	var decoded []interface{}
 	return json.Unmarshal([]byte(raw), &decoded) == nil
+}
+
+func rawJSONFieldToString(raw json.RawMessage, fallback string) string {
+	if len(raw) == 0 {
+		return fallback
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		if strings.TrimSpace(text) == "" {
+			return fallback
+		}
+		return text
+	}
+	return string(raw)
 }
 
 func printExecution(w io.Writer, exec *client.Execution) {

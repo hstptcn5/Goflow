@@ -11,9 +11,10 @@ import (
 )
 
 type Client struct {
-	BaseURL string
-	APIKey  string
-	HTTP    *http.Client
+	BaseURL       string
+	APIKey        string
+	TriggerSource string
+	HTTP          *http.Client
 }
 
 type Workflow struct {
@@ -91,6 +92,11 @@ func New(baseURL, apiKey string) *Client {
 		APIKey:  strings.TrimSpace(apiKey),
 		HTTP:    &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+func (c *Client) WithTriggerSource(source string) *Client {
+	c.TriggerSource = strings.TrimSpace(source)
+	return c
 }
 
 func (c *Client) ListWorkflows() ([]Workflow, error) {
@@ -234,6 +240,9 @@ func (c *Client) doJSON(method, path string, in interface{}, out interface{}) er
 	}
 	if c.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	}
+	if c.TriggerSource != "" {
+		req.Header.Set("X-Goflow-Trigger-Source", c.TriggerSource)
 	}
 
 	resp, err := c.HTTP.Do(req)

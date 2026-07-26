@@ -481,6 +481,112 @@ func TestSubWorkflowExecution(t *testing.T) {
 	}
 }
 
+func TestSubWorkflowCycleFailsExecution(t *testing.T) {
+	registry := nodes.NewPluginRegistry()
+	_ = registry.Register(nodes.NewSubWorkflowExecutor())
+
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	execStore := storage.NewExecutionStore(db)
+	wfStore := storage.NewWorkflowStore(db)
+	eng := NewEngine(registry, execStore, storage.NewCredentialStore(db, nil), NewEventBus(), wfStore)
+
+	nodeList := []nodes.Node{{
+		ID:   "self",
+		Type: nodes.TypeSubWorkflow,
+		Name: "Self",
+		Params: map[string]interface{}{
+			"sub_workflow_id": "wf-cycle",
+		},
+	}}
+	nodesJSON, _ := json.Marshal(nodeList)
+	wf := &storage.Workflow{
+		ID:        "wf-cycle",
+		Name:      "Cycle",
+		NodesJSON: string(nodesJSON),
+		EdgesJSON: "[]",
+	}
+	if err := wfStore.Create(wf); err != nil {
+		t.Fatalf("create workflow: %v", err)
+	}
+
+	exec, err := eng.ExecuteWorkflow(wf, nil)
+	if err != nil {
+		t.Fatalf("execute workflow returned protocol error: %v", err)
+	}
+	if exec.Status != "FAILED" {
+		t.Fatalf("expected FAILED, got %s", exec.Status)
+	}
+	if !strings.Contains(exec.ErrorMessage, "cycle detected") {
+		t.Fatalf("expected cycle error, got %q", exec.ErrorMessage)
+	}
+}
+
+func TestSubWorkflowDepthLimitFailsExecution(t *testing.T) {
+	t.Setenv("GOFLOW_MAX_SUBWORKFLOW_DEPTH", "1")
+	registry := nodes.NewPluginRegistry()
+	_ = registry.Register(nodes.NewSubWorkflowExecutor())
+	_ = registry.Register(&mockAction{executed: make(map[string]bool)})
+
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	execStore := storage.NewExecutionStore(db)
+	wfStore := storage.NewWorkflowStore(db)
+	eng := NewEngine(registry, execStore, storage.NewCredentialStore(db, nil), NewEventBus(), wfStore)
+
+	createSubWorkflowTestWorkflow(t, wfStore, "wf-c", []nodes.Node{{ID: "done", Type: "mockAction", Name: "Done", Params: map[string]interface{}{}}})
+	createSubWorkflowTestWorkflow(t, wfStore, "wf-b", []nodes.Node{{
+		ID:   "to_c",
+		Type: nodes.TypeSubWorkflow,
+		Name: "To C",
+		Params: map[string]interface{}{
+			"sub_workflow_id": "wf-c",
+		},
+	}})
+	wfA := createSubWorkflowTestWorkflow(t, wfStore, "wf-a", []nodes.Node{{
+		ID:   "to_b",
+		Type: nodes.TypeSubWorkflow,
+		Name: "To B",
+		Params: map[string]interface{}{
+			"sub_workflow_id": "wf-b",
+		},
+	}})
+
+	exec, err := eng.ExecuteWorkflow(wfA, nil)
+	if err != nil {
+		t.Fatalf("execute workflow returned protocol error: %v", err)
+	}
+	if exec.Status != "FAILED" {
+		t.Fatalf("expected FAILED, got %s", exec.Status)
+	}
+	if !strings.Contains(exec.ErrorMessage, "depth limit exceeded") {
+		t.Fatalf("expected depth limit error, got %q", exec.ErrorMessage)
+	}
+}
+
+func createSubWorkflowTestWorkflow(t *testing.T, wfStore *storage.WorkflowStore, id string, nodeList []nodes.Node) *storage.Workflow {
+	t.Helper()
+	nodesJSON, _ := json.Marshal(nodeList)
+	wf := &storage.Workflow{
+		ID:        id,
+		Name:      id,
+		NodesJSON: string(nodesJSON),
+		EdgesJSON: "[]",
+	}
+	if err := wfStore.Create(wf); err != nil {
+		t.Fatalf("create workflow %s: %v", id, err)
+	}
+	return wf
+}
+
 func BenchmarkEngineParallel(b *testing.B) {
 	registry := nodes.NewPluginRegistry()
 	_ = registry.Register(&mockTrigger{})

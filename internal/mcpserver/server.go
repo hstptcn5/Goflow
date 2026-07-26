@@ -15,9 +15,11 @@ import (
 )
 
 type Options struct {
-	BaseURL     string
-	APIKey      string
-	MaxInflight int
+	BaseURL       string
+	APIKey        string
+	MaxInflight   int
+	TriggerSource string
+	RunInflight   chan struct{}
 }
 
 type Server struct {
@@ -29,9 +31,13 @@ func New(opts Options) *Server {
 	if opts.MaxInflight <= 0 {
 		opts.MaxInflight = 2
 	}
+	runInflight := opts.RunInflight
+	if runInflight == nil {
+		runInflight = make(chan struct{}, opts.MaxInflight)
+	}
 	return &Server{
-		client:      client.New(opts.BaseURL, opts.APIKey),
-		runInflight: make(chan struct{}, opts.MaxInflight),
+		client:      client.New(opts.BaseURL, opts.APIKey).WithTriggerSource(opts.TriggerSource),
+		runInflight: runInflight,
 	}
 }
 
@@ -217,9 +223,11 @@ func (s *Server) dynamicWorkflowHandler(workflow client.Workflow) mcp.ToolHandle
 			input = map[string]interface{}{}
 		}
 		idempotencyKey := ""
-		if value, ok := input["idempotency_key"].(string); ok {
-			idempotencyKey = value
-			delete(input, "idempotency_key")
+		if control, ok := input["_goflow"].(map[string]interface{}); ok {
+			if value, ok := control["idempotency_key"].(string); ok {
+				idempotencyKey = value
+			}
+			delete(input, "_goflow")
 		}
 
 		accepted, err := s.client.RunWorkflow(workflow.ID, input, idempotencyKey)
@@ -407,9 +415,10 @@ func readVersion() string {
 
 func OptionsFromEnv() Options {
 	return Options{
-		BaseURL:     envDefault("GOFLOW_URL", "http://127.0.0.1:8080"),
-		APIKey:      os.Getenv("GOFLOW_API_KEY"),
-		MaxInflight: envInt("GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT", 2),
+		BaseURL:       envDefault("GOFLOW_URL", "http://127.0.0.1:8080"),
+		APIKey:        os.Getenv("GOFLOW_API_KEY"),
+		MaxInflight:   envInt("GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT", 2),
+		TriggerSource: "mcp_stdio",
 	}
 }
 

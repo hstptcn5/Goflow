@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -14,11 +15,14 @@ type HTTPOptions struct {
 }
 
 func NewHTTPHandler(opts HTTPOptions) http.Handler {
+	limiters := newHTTPClientLimiters(opts.MaxInflight)
 	handler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		server := New(Options{
-			BaseURL:     opts.BaseURL,
-			APIKey:      bearerToken(r),
-			MaxInflight: opts.MaxInflight,
+			BaseURL:       opts.BaseURL,
+			APIKey:        bearerToken(r),
+			MaxInflight:   opts.MaxInflight,
+			TriggerSource: "mcp_http",
+			RunInflight:   limiters.limiterFor(r),
 		})
 		mcpServer := mcp.NewServer(&mcp.Implementation{
 			Name:    "goflow",
@@ -32,6 +36,37 @@ func NewHTTPHandler(opts HTTPOptions) http.Handler {
 		JSONResponse: true,
 	})
 	return originMiddleware(normalizeOrigins(opts.AllowedOrigins), handler)
+}
+
+type httpClientLimiters struct {
+	maxInflight int
+	mu          sync.Mutex
+	byPrincipal map[string]chan struct{}
+}
+
+func newHTTPClientLimiters(maxInflight int) *httpClientLimiters {
+	if maxInflight <= 0 {
+		maxInflight = 2
+	}
+	return &httpClientLimiters{
+		maxInflight: maxInflight,
+		byPrincipal: map[string]chan struct{}{},
+	}
+}
+
+func (l *httpClientLimiters) limiterFor(r *http.Request) chan struct{} {
+	principal := bearerToken(r)
+	if principal == "" {
+		principal = r.RemoteAddr
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	limiter, ok := l.byPrincipal[principal]
+	if !ok {
+		limiter = make(chan struct{}, l.maxInflight)
+		l.byPrincipal[principal] = limiter
+	}
+	return limiter
 }
 
 func bearerToken(r *http.Request) string {

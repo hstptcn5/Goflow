@@ -21,8 +21,9 @@ timeline
       P1 Hardening : Input validation, cancellation, node concurrency, workflow-as-code
       Scoped Tokens : Token scopes, workflow allowlists, audit metadata
 
-    section Next
+    section Done
       Streamable HTTP MCP : HTTP beta endpoint, smoke test, client compatibility hardening
+      GOAL Hardening Pass : security, idempotency, limits, sub-workflow safety
 ```
 
 ## Phase Status
@@ -34,7 +35,8 @@ timeline
 | `v0.4.0-mcp-stdio-alpha` | MCP stdio static tools | Released |
 | `v0.5.0-mcp-dynamic-preview` | Workflow MCP exposure, dynamic tools, input schema validation | Dynamic workflow tools and input validation implemented |
 | Hardening | Concurrency, cancellation, scoped token, audit | Complete for P1 |
-| Streamable HTTP MCP | `/mcp` HTTP transport | P2 complete; ready for release-candidate testing |
+| Streamable HTTP MCP | `/mcp` HTTP transport | P2 complete and smoke tested |
+| GOAL hardening | North Star audit items for security, idempotency, source tracking, exposure, sub-workflow safety, and smoke coverage | Completed local verification pass |
 
 ## P0 Checklist
 
@@ -81,6 +83,11 @@ timeline
 [x] Release candidate checklist
 [x] HTTP MCP setup/troubleshooting guide
 [x] Workflow Interface MCP readiness UI
+[x] GOAL smoke test script for CLI, MCP stdio, MCP HTTP, scoped token, cancellation, audit, and concurrent idempotency
+[x] Server-side CLI/MCP exposure enforcement
+[x] Concurrent idempotency race handling
+[x] Sub-workflow cycle/depth guards
+[x] Scoped workflow list summary filtering
 ```
 
 ## Remaining Timeline
@@ -113,10 +120,11 @@ gantt
     HTTP MCP smoke hardening       :done, http2, 2026-07-26, 1d
     HTTP MCP client compatibility  :done, http3, 2026-07-26, 1d
     Release candidate polish       :done, rc1, 2026-07-26, 1d
+    GOAL hardening verification    :done, goal1, 2026-07-26, 1d
 ```
 
 ## Next Priorities
 
-1. Package a preview release candidate.
-2. Run the release checklist against the packaged archive.
-3. Publish the release after smoke tests pass on a clean machine.
+1. Rebuild release artifacts from the current commit.
+2. Run the release checklist against the packaged archive on a clean Windows machine.
+3. Publish the next patch/beta release after packaged smoke tests pass.

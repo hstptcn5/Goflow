@@ -253,8 +253,6 @@ func normalizeWorkflowInterfaceDefaults(wf *Workflow) {
 	if wf.ConcurrencyPolicy == "" {
 		wf.ConcurrencyPolicy = "global"
 	}
-	// Until the Interfaces UI exists, keep CLI exposure enabled for existing workflows.
-	wf.ExposeCLI = true
 }
 
 func boolToInt(value bool) int {

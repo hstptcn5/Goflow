@@ -41,6 +41,17 @@ func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) 
 	if list == nil {
 		list = []storage.Workflow{}
 	}
+	if auth, ok := AuthFromContext(r.Context()); ok && !auth.Admin && auth.Token != nil {
+		summaries := make([]workflowSummary, 0, len(list))
+		for _, wf := range list {
+			if !auth.Token.AllowsWorkflow(wf.ID) {
+				continue
+			}
+			summaries = append(summaries, workflowSummaryFromWorkflow(wf))
+		}
+		renderJSON(w, http.StatusOK, summaries)
+		return
+	}
 	renderJSON(w, http.StatusOK, list)
 }
 
@@ -180,7 +191,7 @@ func (h *WorkflowHandler) TriggerWorkflow(w http.ResponseWriter, r *http.Request
 			WorkflowID:     id,
 			Input:          payload,
 			Mode:           application.ModeAsync,
-			Source:         "api",
+			Source:         requestTriggerSource(r),
 			Principal:      requestPrincipal(r),
 			RequestID:      r.Header.Get("X-Request-ID"),
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
@@ -197,7 +208,7 @@ func (h *WorkflowHandler) TriggerWorkflow(w http.ResponseWriter, r *http.Request
 		WorkflowID: id,
 		Input:      payload,
 		Mode:       application.ModeSync,
-		Source:     application.SourceAPI,
+		Source:     requestTriggerSource(r),
 		Principal:  requestPrincipal(r),
 		RequestID:  r.Header.Get("X-Request-ID"),
 	})
@@ -235,7 +246,7 @@ func (h *WorkflowHandler) CreateExecution(w http.ResponseWriter, r *http.Request
 		WorkflowID:     id,
 		Input:          req.Input,
 		Mode:           application.ModeAsync,
-		Source:         application.SourceAPI,
+		Source:         requestTriggerSource(r),
 		Principal:      requestPrincipal(r),
 		RequestID:      r.Header.Get("X-Request-ID"),
 		IdempotencyKey: req.IdempotencyKey,
@@ -299,6 +310,9 @@ func (h *WorkflowHandler) TriggerWebhook(w http.ResponseWriter, r *http.Request)
 
 	headers := make(map[string]interface{}, len(r.Header))
 	for key, values := range r.Header {
+		if isSensitiveWebhookHeader(key) {
+			continue
+		}
 		headers[key] = values
 	}
 	query := make(map[string]interface{}, len(r.URL.Query()))
@@ -358,22 +372,73 @@ func executionAcceptedResponse(result *application.TriggerResult) map[string]int
 }
 
 func requestPrincipal(r *http.Request) string {
-	if value := r.Header.Get("X-Goflow-Principal"); value != "" {
-		return value
-	}
 	if auth, ok := AuthFromContext(r.Context()); ok && auth.Subject != "" {
 		return auth.Subject
 	}
 	return r.RemoteAddr
 }
 
+func requestTriggerSource(r *http.Request) application.TriggerSource {
+	switch strings.TrimSpace(strings.ToLower(r.Header.Get("X-Goflow-Trigger-Source"))) {
+	case string(application.SourceCLI):
+		return application.SourceCLI
+	case string(application.SourceMCPStdio):
+		return application.SourceMCPStdio
+	case string(application.SourceMCPHTTP):
+		return application.SourceMCPHTTP
+	default:
+		return application.SourceAPI
+	}
+}
+
+type workflowSummary struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description"`
+	IsActive    bool   `json:"is_active"`
+	ExposeCLI   bool   `json:"expose_cli"`
+	ExposeMCP   bool   `json:"expose_mcp"`
+	RiskLevel   string `json:"risk_level"`
+}
+
+func workflowSummaryFromWorkflow(wf storage.Workflow) workflowSummary {
+	return workflowSummary{
+		ID:          wf.ID,
+		Name:        wf.Name,
+		Slug:        wf.Slug,
+		Description: wf.Description,
+		IsActive:    wf.IsActive,
+		ExposeCLI:   wf.ExposeCLI,
+		ExposeMCP:   wf.ExposeMCP,
+		RiskLevel:   wf.RiskLevel,
+	}
+}
+
+func isSensitiveWebhookHeader(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "authorization", "cookie", "set-cookie", "x-goflow-webhook-secret", "proxy-authorization", "api-key", "x-api-key":
+		return true
+	default:
+		return false
+	}
+}
+
 func writeExecutionError(w http.ResponseWriter, err error) {
-	if errors.Is(err, engine.ErrConcurrencyLimit) {
+	if errors.Is(err, engine.ErrConcurrencyLimit) || errors.Is(err, engine.ErrWorkflowConcurrencyLimit) {
 		http.Error(w, err.Error(), http.StatusTooManyRequests)
 		return
 	}
 	if errors.Is(err, application.ErrInvalidWorkflowInput) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if errors.Is(err, application.ErrWorkflowInactive) {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	if errors.Is(err, application.ErrWorkflowNotExposed) || errors.Is(err, application.ErrWorkflowRequiresApproval) {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 	if strings.Contains(strings.ToLower(err.Error()), "workflow not found") {
@@ -464,9 +529,9 @@ func validateWorkflowInterface(req workflowInterface) error {
 		return errors.New("risk_level must be low, medium, or high")
 	}
 	switch req.ConcurrencyPolicy {
-	case "", "global", "allow", "reject", "queue":
+	case "", "global", "allow", "reject":
 	default:
-		return errors.New("concurrency_policy must be global, allow, reject, or queue")
+		return errors.New("concurrency_policy must be global, allow, or reject")
 	}
 	if req.MaxConcurrentRuns < 0 {
 		return errors.New("max_concurrent_runs cannot be negative")

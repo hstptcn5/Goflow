@@ -48,7 +48,7 @@ func NewRouter(
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "MCP-Protocol-Version", "Mcp-Session-Id", "Last-Event-ID"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Goflow-Trigger-Source", "MCP-Protocol-Version", "Mcp-Session-Id", "Last-Event-ID"},
 		ExposedHeaders:   []string{"Link", "Mcp-Session-Id"},
 		AllowCredentials: true,
 		MaxAge:           300,

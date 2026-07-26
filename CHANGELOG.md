@@ -6,7 +6,24 @@ All notable changes to Goflow are tracked here.
 
 ### Added
 
-- Nothing yet.
+- `scripts/goal-smoke-test.ps1` to run a reusable Windows smoke test for CLI, MCP stdio, MCP HTTP, scoped tokens, cancellation, audit, and concurrent idempotency against a temporary local instance.
+
+### Changed
+
+- Server-side workflow execution now rejects inactive workflows and enforces CLI/MCP exposure flags for CLI and MCP trigger sources.
+- MCP dynamic workflow tools now use `_goflow.idempotency_key` as control metadata instead of consuming a business input field named `idempotency_key`.
+- Scoped `workflow:list` responses now return allowlisted workflow summaries only, without graph JSON or node configuration.
+- HTTP MCP per-client inflight limiting now persists across requests for the same token/principal.
+- Workflow input schema validation now supports the documented subset: `type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const`, `minimum`, `maximum`, `minLength`, `maxLength`, `pattern`, `oneOf`, and `anyOf`; unsupported keywords fail clearly.
+- CLI workflow import now preserves full interface metadata including approval, max concurrent runs, and concurrency policy.
+
+### Fixed
+
+- Fixed principal spoofing by ignoring caller-provided `X-Goflow-Principal` and deriving the principal from authentication context.
+- Fixed concurrent idempotency races so duplicate inserts return the existing execution instead of surfacing a unique constraint or HTTP 500.
+- Fixed webhook execution input persistence so sensitive headers such as `Authorization`, `Cookie`, `X-Goflow-Webhook-Secret`, and API key headers are omitted.
+- Fixed sub-workflow recursion safety with cycle detection and `GOFLOW_MAX_SUBWORKFLOW_DEPTH`.
+- Fixed an engine status race where a single failing node could be marked `SUCCESS` if the scheduler observed completion before `hasFailed` was set.
 
 ## 0.5.0-http-mcp-beta - 2026-07-26
 

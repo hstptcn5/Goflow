@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +20,14 @@ import (
 )
 
 var ErrConcurrencyLimit = errors.New("execution concurrency limit reached")
+var ErrWorkflowConcurrencyLimit = errors.New("workflow concurrency limit reached")
+
+type subWorkflowStateKey struct{}
+
+type subWorkflowState struct {
+	Stack []string
+	Depth int
+}
 
 type TriggerOptions struct {
 	Source         string
@@ -44,6 +55,8 @@ type Engine struct {
 	maxNodeSlots   int
 	activeMu       sync.Mutex
 	activeCancels  map[string]context.CancelFunc
+	workflowMu     sync.Mutex
+	workflowActive map[string]int
 }
 
 func NewEngine(
@@ -71,6 +84,7 @@ func NewEngine(
 		executionSlots: slots,
 		maxNodeSlots:   maxNodeSlots,
 		activeCancels:  make(map[string]context.CancelFunc),
+		workflowActive: make(map[string]int),
 	}
 }
 
@@ -89,6 +103,12 @@ func (e *Engine) ExecuteWorkflow(wf *storage.Workflow, triggerPayload interface{
 }
 
 func (e *Engine) ExecuteWorkflowWithOptions(wf *storage.Workflow, triggerPayload interface{}, opts TriggerOptions) (*storage.Execution, error) {
+	releaseWorkflow, err := e.acquireWorkflowSlot(wf)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseWorkflow()
+
 	release, err := e.acquireExecutionSlot()
 	if err != nil {
 		return nil, err
@@ -110,20 +130,33 @@ func (e *Engine) StartWorkflowAsync(wf *storage.Workflow, triggerPayload interfa
 		}
 	}
 
+	releaseWorkflow, err := e.acquireWorkflowSlot(wf)
+	if err != nil {
+		return nil, false, err
+	}
+
 	release, err := e.acquireExecutionSlot()
 	if err != nil {
+		releaseWorkflow()
 		return nil, false, err
 	}
 
 	execRecord, err := e.createExecutionRecord(wf, triggerPayload, opts)
 	if err != nil {
 		release()
+		releaseWorkflow()
+		if opts.IdempotencyKey != "" && storage.IsExecutionIdempotencyConflict(err) {
+			if existing, getErr := e.executionStore.GetByIdempotencyKey(wf.ID, opts.IdempotencyKey); getErr == nil {
+				return existing, true, nil
+			}
+		}
 		return nil, false, err
 	}
 
 	runCtx, cancel := context.WithCancel(context.Background())
 	e.registerExecutionCancel(execRecord.ID, cancel)
 	go func() {
+		defer releaseWorkflow()
 		defer release()
 		defer e.unregisterExecutionCancel(execRecord.ID)
 		if _, err := e.executeWorkflow(runCtx, wf, triggerPayload, execRecord, TriggerOptions{}); err != nil {
@@ -167,6 +200,25 @@ func (e *Engine) acquireExecutionSlot() (func(), error) {
 	}
 }
 
+func (e *Engine) acquireWorkflowSlot(wf *storage.Workflow) (func(), error) {
+	if wf == nil || wf.MaxConcurrentRuns <= 0 || wf.ConcurrencyPolicy != "reject" {
+		return func() {}, nil
+	}
+	e.workflowMu.Lock()
+	defer e.workflowMu.Unlock()
+	if e.workflowActive[wf.ID] >= wf.MaxConcurrentRuns {
+		return nil, ErrWorkflowConcurrencyLimit
+	}
+	e.workflowActive[wf.ID]++
+	return func() {
+		e.workflowMu.Lock()
+		defer e.workflowMu.Unlock()
+		if e.workflowActive[wf.ID] > 0 {
+			e.workflowActive[wf.ID]--
+		}
+	}, nil
+}
+
 func (e *Engine) createExecutionRecord(wf *storage.Workflow, triggerPayload interface{}, opts TriggerOptions) (*storage.Execution, error) {
 	executionID := uuid.New().String()
 	inputJSON := ""
@@ -197,6 +249,11 @@ func (e *Engine) createExecutionRecord(wf *storage.Workflow, triggerPayload inte
 func (e *Engine) executeWorkflow(runCtx context.Context, wf *storage.Workflow, triggerPayload interface{}, execRecord *storage.Execution, opts TriggerOptions) (*storage.Execution, error) {
 	if runCtx == nil {
 		runCtx = context.Background()
+	}
+	state := subWorkflowStateFromContext(runCtx)
+	if len(state.Stack) == 0 {
+		state.Stack = []string{wf.ID}
+		runCtx = context.WithValue(runCtx, subWorkflowStateKey{}, state)
 	}
 	var nodeList []nodes.Node
 	if err := json.Unmarshal([]byte(wf.NodesJSON), &nodeList); err != nil {
@@ -291,8 +348,24 @@ func (e *Engine) executeWorkflow(runCtx context.Context, wf *storage.Workflow, t
 		if err != nil {
 			return nil, fmt.Errorf("sub-workflow %s not found: %w", subWfID, err)
 		}
+		currentState := subWorkflowStateFromContext(runCtx)
+		for _, item := range currentState.Stack {
+			if item == subWfID {
+				return nil, fmt.Errorf("sub-workflow cycle detected: %s already exists in execution stack", subWfID)
+			}
+		}
+		maxDepth := maxSubWorkflowDepth()
+		nextDepth := currentState.Depth + 1
+		if nextDepth > maxDepth {
+			return nil, fmt.Errorf("sub-workflow depth limit exceeded: depth %d is greater than max %d", nextDepth, maxDepth)
+		}
+		nextStack := append(append([]string{}, currentState.Stack...), subWfID)
+		childRunCtx := context.WithValue(runCtx, subWorkflowStateKey{}, subWorkflowState{
+			Stack: nextStack,
+			Depth: nextDepth,
+		})
 
-		execRecord, err := e.executeWorkflow(runCtx, subWf, payload, nil, TriggerOptions{
+		childExec, err := e.executeWorkflow(childRunCtx, subWf, payload, nil, TriggerOptions{
 			Source:    "sub_workflow",
 			Principal: execRecord.ID,
 		})
@@ -300,12 +373,15 @@ func (e *Engine) executeWorkflow(runCtx context.Context, wf *storage.Workflow, t
 			return nil, fmt.Errorf("sub-workflow execution failed: %w", err)
 		}
 
-		if execRecord.Status == "FAILED" {
+		if childExec.Status == "FAILED" {
+			if childExec.ErrorMessage != "" {
+				return nil, fmt.Errorf("sub-workflow execution failed: %s", childExec.ErrorMessage)
+			}
 			return nil, fmt.Errorf("sub-workflow execution status returned FAILED")
 		}
 
 		var logs []NodeLog
-		_ = json.Unmarshal([]byte(execRecord.LogsJSON), &logs)
+		_ = json.Unmarshal([]byte(childExec.LogsJSON), &logs)
 
 		results := make(map[string]interface{})
 		for _, logItem := range logs {
@@ -434,10 +510,6 @@ schedulerLoop:
 					})
 					nodeStates[nodeID] = StateFailed
 					hasFailed = true
-					remainingCount--
-					if remainingCount == 0 {
-						close(doneChan)
-					}
 
 					// Propagate failure/skip to children
 					for _, edge := range plan.EdgesFrom[nodeID] {
@@ -516,11 +588,6 @@ schedulerLoop:
 				stateMu.Lock()
 				defer stateMu.Unlock()
 
-				remainingCount--
-				if remainingCount == 0 {
-					close(doneChan)
-				}
-
 				if lastErr != nil {
 					log.Printf("[Engine] Node %s (%s) FAILED after %d attempts: %v", nodeID, nodeObj.Name, attemptsUsed, lastErr)
 					redactedErr := redactError(lastErr)
@@ -533,6 +600,10 @@ schedulerLoop:
 					})
 					nodeStates[nodeID] = StateFailed
 					hasFailed = true
+					remainingCount--
+					if remainingCount == 0 {
+						close(doneChan)
+					}
 
 					// Propagate failure/skip to children
 					for _, edge := range plan.EdgesFrom[nodeID] {
@@ -612,6 +683,10 @@ schedulerLoop:
 						DurationMs:  durationMs,
 					})
 				}
+				remainingCount--
+				if remainingCount == 0 {
+					close(doneChan)
+				}
 			}(nid)
 		case <-doneChan:
 			break schedulerLoop
@@ -643,6 +718,27 @@ schedulerLoop:
 	execRecord.ErrorMessage = errorMessage
 
 	return execRecord, nil
+}
+
+func subWorkflowStateFromContext(ctx context.Context) subWorkflowState {
+	if ctx == nil {
+		return subWorkflowState{}
+	}
+	state, _ := ctx.Value(subWorkflowStateKey{}).(subWorkflowState)
+	return state
+}
+
+func maxSubWorkflowDepth() int {
+	const fallback = 5
+	raw := strings.TrimSpace(os.Getenv("GOFLOW_MAX_SUBWORKFLOW_DEPTH"))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 {
+		return fallback
+	}
+	return value
 }
 
 func (e *Engine) newNodeSlots() chan struct{} {
