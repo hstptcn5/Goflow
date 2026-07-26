@@ -385,6 +385,32 @@ node scripts/mcp-http-smoke-test.mjs \
   --origin http://127.0.0.1:8080
 ```
 
+To also run a workflow through HTTP MCP:
+
+```bash
+node scripts/mcp-http-smoke-test.mjs \
+  --url http://127.0.0.1:8080/mcp \
+  --api-key your-scoped-token \
+  --origin http://127.0.0.1:8080 \
+  --workflow prepare-daily-report \
+  --input '{"date":"2026-07-26"}' \
+  --idempotency-key mcp-http-smoke-2026-07-26
+```
+
+The target workflow must be active, must have **Expose to MCP** enabled in its Interface settings, and must not have **Requires Approval** enabled for the current MCP alpha/beta bridge.
+
+To assert and call a dynamic workflow tool over HTTP MCP:
+
+```bash
+node scripts/mcp-http-smoke-test.mjs \
+  --url http://127.0.0.1:8080/mcp \
+  --api-key your-scoped-token \
+  --origin http://127.0.0.1:8080 \
+  --expect-tool goflow.prepare_daily_report \
+  --dynamic-tool goflow.prepare_daily_report \
+  --input '{"date":"2026-07-26"}'
+```
+
 For HTTP MCP clients, use `Authorization: Bearer <scoped-token>`. The recommended scoped token for CLI/MCP runners is:
 
 ```bash
@@ -397,6 +423,14 @@ goflow token create mcp-runner \
 ```
 
 If the client needs to cancel executions, add `--scope execution:cancel`.
+
+HTTP MCP deployment notes:
+
+- Keep `/mcp` behind HTTPS when exposing it outside localhost.
+- Forward `Authorization`, `Accept`, `Content-Type`, `MCP-Protocol-Version`, `Mcp-Session-Id`, `Last-Event-ID`, and `Origin` headers through the reverse proxy.
+- Set `GOFLOW_MCP_ALLOWED_ORIGINS` to the exact browser/client origins that may call `/mcp`.
+- Set `GOFLOW_MCP_BASE_URL` to the internal Goflow URL reachable from the Goflow process when the public URL is behind a reverse proxy.
+- Prefer scoped tokens over the admin API key for MCP clients.
 
 If the Goflow server is not running yet, test only the MCP stdio handshake and tool registration:
 

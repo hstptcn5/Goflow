@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"goflow/internal/client"
 
@@ -174,6 +175,53 @@ func TestHTTPHandlerRejectsDisallowedOrigin(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHTTPHandlerWorksWithSDKStreamableClient(t *testing.T) {
+	restServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/workflows":
+			_ = json.NewEncoder(w).Encode([]client.Workflow{
+				{ID: "wf-1", Name: "Daily", IsActive: true, ExposeMCP: true, Slug: "daily"},
+			})
+			return
+		case "/api/v1/workflows/wf-1":
+			_ = json.NewEncoder(w).Encode(client.Workflow{ID: "wf-1", Name: "Daily", IsActive: true, ExposeMCP: true, Slug: "daily"})
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(restServer.Close)
+
+	mcpHTTP := httptest.NewServer(NewHTTPHandler(HTTPOptions{BaseURL: restServer.URL}))
+	t.Cleanup(mcpHTTP.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	session, err := mcp.NewClient(&mcp.Implementation{
+		Name:    "goflow-http-client-compat-test",
+		Version: "0.0.0",
+	}, nil).Connect(ctx, &mcp.StreamableClientTransport{Endpoint: mcpHTTP.URL}, nil)
+	if err != nil {
+		t.Fatalf("connect streamable client: %v", err)
+	}
+	defer session.Close()
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools failed: %v", err)
+	}
+	names := map[string]bool{}
+	for _, tool := range tools.Tools {
+		names[tool.Name] = true
+	}
+	for _, want := range []string{"goflow_list_workflows", "goflow_run_workflow", "goflow.daily"} {
+		if !names[want] {
+			t.Fatalf("expected tool %s, got %#v", want, names)
+		}
 	}
 }
 

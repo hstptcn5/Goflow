@@ -34,7 +34,7 @@ timeline
 | `v0.4.0-mcp-stdio-alpha` | MCP stdio static tools | Released |
 | `v0.5.0-mcp-dynamic-preview` | Workflow MCP exposure, dynamic tools, input schema validation | Dynamic workflow tools and input validation implemented |
 | Hardening | Concurrency, cancellation, scoped token, audit | Complete for P1 |
-| Streamable HTTP MCP | `/mcp` HTTP transport | Beta foundation implemented; needs real-client testing |
+| Streamable HTTP MCP | `/mcp` HTTP transport | P2 complete; ready for release-candidate testing |
 
 ## P0 Checklist
 
@@ -75,8 +75,9 @@ timeline
 [x] Bearer auth through scoped tokens/API key
 [x] Origin allowlist for browser/remote clients
 [x] HTTP MCP smoke test script
-[ ] Real-client compatibility testing
-[ ] Production deployment notes for reverse proxies/TLS
+[x] HTTP MCP workflow and dynamic tool smoke test support
+[x] Production deployment notes for reverse proxies/TLS
+[x] Real-client compatibility testing
 ```
 
 ## Remaining Timeline
@@ -104,17 +105,15 @@ gantt
     Node/sub-workflow hardening    :done, hard1, 2026-07-26, 1d
     Scoped tokens and audit        :done, sec1, 2026-07-26, 1d
 
-    section In Progress
-    Streamable HTTP MCP foundation :active, http1, 2026-07-26, 1d
-
-    section Next
-    HTTP MCP real-client testing   :http2, after http1, 3d
-    Reverse proxy/TLS notes        :http3, after http2, 2d
+    section Completed
+    Streamable HTTP MCP foundation :done, http1, 2026-07-26, 1d
+    HTTP MCP smoke hardening       :done, http2, 2026-07-26, 1d
+    HTTP MCP client compatibility  :done, http3, 2026-07-26, 1d
 ```
 
 ## Next Priorities
 
 1. Test cancellation against a real long-running workflow.
 2. Test dynamic MCP tool calls against a real exposed workflow.
-3. Test HTTP MCP against a real scoped token and exposed workflow.
-4. Add deployment notes for reverse proxy/TLS before calling HTTP MCP release-ready.
+3. Package and test a preview release candidate.
+4. Continue with product-facing polish: HTTP MCP setup docs, examples, and UI affordances.

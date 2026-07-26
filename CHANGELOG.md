@@ -17,6 +17,8 @@ All notable changes to Goflow are tracked here.
 - Audit event metadata for authenticated API requests and token management.
 - Admin token management endpoints and CLI commands.
 - Streamable HTTP MCP beta endpoint at `/mcp` with Bearer auth, origin allowlist, and HTTP smoke test script.
+- HTTP MCP smoke test can call static and dynamic workflow tools.
+- HTTP MCP compatibility test covers the official SDK streamable client transport.
 
 ## 0.4.0-mcp-stdio-alpha - 2026-07-26
 
