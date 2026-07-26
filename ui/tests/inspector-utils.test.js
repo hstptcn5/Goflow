@@ -42,6 +42,25 @@ describe('inspector utilities', () => {
     expect(validateParamValue({ name: 'payload', label: 'Payload', type: 'json' }, '{bad')).toBe('Enter valid JSON.');
   });
 
+  it('allows complete expressions in typed fields but validates invalid literals', () => {
+    const expression = '{{json_1.value}}';
+    [
+      { name: 'amount', label: 'Amount', type: 'number' },
+      { name: 'count', label: 'Count', type: 'integer' },
+      { name: 'url', label: 'URL', type: 'url' },
+      { name: 'payload', label: 'Payload', type: 'json' },
+      { name: 'message', label: 'Message', type: 'text' },
+    ].forEach((param) => {
+      expect(validateParamValue(param, expression)).toBe('');
+    });
+
+    expect(validateParamValue({ name: 'amount', type: 'number' }, 'abc')).toBe('Enter a valid number.');
+    expect(validateParamValue({ name: 'count', type: 'integer' }, '1.5')).toBe('Enter a valid integer.');
+    expect(validateParamValue({ name: 'url', type: 'url' }, 'not-a-url')).toBe('Enter a valid URL.');
+    expect(validateParamValue({ name: 'payload', type: 'json' }, '{bad')).toBe('Enter valid JSON.');
+    expect(validateParamValue({ name: 'method', type: 'select', options: ['GET'] }, 'POST')).toBe('Choose a valid option.');
+  });
+
   it('truncates large raw payloads intentionally', () => {
     const result = safeJSONStringify({ data: 'x'.repeat(21000) });
     expect(result.truncated).toBe(true);

@@ -17,11 +17,20 @@ var secretValuePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`https://discord\.com/api/webhooks/[^\s"'<>]+`),
 	regexp.MustCompile(`https://hooks\.slack\.com/services/[^\s"'<>]+`),
 	regexp.MustCompile(`(?i)bearer\s+[a-z0-9._\-]+`),
+	regexp.MustCompile(`(?i)(access_token|refresh_token|auth_token|bot_token|client_secret|api_key|apikey|password|passwd|secret)=([^\s&"'<>]+)`),
 	regexp.MustCompile(`(?i)sk-[a-z0-9_\-]{12,}`),
+	regexp.MustCompile(`(?i)ghp_[a-z0-9_]{12,}`),
+	regexp.MustCompile(`(?i)github_pat_[a-z0-9_]{12,}`),
+	regexp.MustCompile(`(?i)xoxb-[a-z0-9\-]{12,}`),
+	regexp.MustCompile(`(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----`),
 }
 
 func redactSensitive(value interface{}) interface{} {
 	return redactSensitiveValue(value, 0, map[uintptr]bool{})
+}
+
+func RedactSensitive(value interface{}) interface{} {
+	return redactSensitive(value)
 }
 
 func redactSensitiveValue(value interface{}, depth int, seen map[uintptr]bool) interface{} {
@@ -120,6 +129,10 @@ func redactSensitiveString(value string) string {
 	return redacted
 }
 
+func RedactSensitiveString(value string) string {
+	return redactSensitiveString(value)
+}
+
 func isSensitiveKey(key string) bool {
 	normalized := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
 	sensitiveParts := []string{
@@ -129,13 +142,18 @@ func isSensitiveKey(key string) bool {
 		"bot_token",
 		"client_secret",
 		"connection_string",
+		"cookie",
 		"credential",
 		"data_encrypted",
 		"idempotency_key",
 		"notion_token",
 		"password",
+		"passwd",
 		"private_key",
 		"refresh_token",
+		"auth_token",
+		"access_token",
+		"set_cookie",
 		"secret",
 		"token",
 		"webhook_url",

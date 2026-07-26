@@ -26,9 +26,9 @@ Latest local verification output:
 
 | Graph size | Editor ready | Picker open | Picker search | Auto-layout |
 |---:|---:|---:|---:|---:|
-| 10 nodes | 677 ms | 92 ms | 71 ms | 96 ms |
-| 50 nodes | 366 ms | 84 ms | 85 ms | 205 ms |
-| 100 nodes | 561 ms | 145 ms | 109 ms | 316 ms |
+| 10 nodes | 599 ms | 112 ms | 88 ms | 119 ms |
+| 50 nodes | 412 ms | 95 ms | 91 ms | 217 ms |
+| 100 nodes | 584 ms | 131 ms | 108 ms | 341 ms |
 
 The automated thresholds are intentionally broad:
 
@@ -52,7 +52,7 @@ Latest local verification output:
 
 | Fixture | Inspector open | Input JSON tree | Input search | Expression preview |
 |---|---:|---:|---:|---:|
-| 12 upstream JSON sources | 154 ms | 116 ms | 52 ms | 201 ms |
+| 12 upstream JSON sources | 187 ms | 142 ms | 55 ms | 248 ms |
 
 The automated thresholds are intentionally broad:
 

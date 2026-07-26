@@ -284,6 +284,9 @@ func (e *Engine) executeWorkflow(runCtx context.Context, wf *storage.Workflow, t
 	executionID := execRecord.ID
 
 	ctx := nodes.NewExecutionContextWithContext(runCtx, wf.ID, execRecord.ID)
+	if triggerPayload != nil {
+		ctx.SetOutput("$trigger", triggerPayload)
+	}
 	ctx.RefreshCredential = func(credID string) (string, error) {
 		cred, err := e.credStore.GetByID(credID)
 		if err != nil {
@@ -458,6 +461,12 @@ schedulerLoop:
 
 			if state == StateSkipped {
 				nodeStates[nid] = StateSkipped
+				nodeLogs = append(nodeLogs, NodeLog{
+					NodeID:     nid,
+					Status:     "SKIPPED",
+					DurationMs: 0,
+					Attempts:   0,
+				})
 				remainingCount--
 				if remainingCount == 0 {
 					close(doneChan)
@@ -475,6 +484,13 @@ schedulerLoop:
 					}
 				}
 				stateMu.Unlock()
+				e.eventBus.Publish(ExecutionEvent{
+					WorkflowID:  wf.ID,
+					ExecutionID: executionID,
+					NodeID:      nid,
+					Status:      "SKIPPED",
+					Timestamp:   time.Now(),
+				})
 				continue
 			}
 

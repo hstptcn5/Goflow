@@ -431,32 +431,19 @@ func TestExecuteWorkflowWithSkipLogic(t *testing.T) {
 		t.Fatalf("failed to unmarshal logs: %v", err)
 	}
 
-	// We expect 5 logs (since all 5 nodes are processed and logged, but some as skipped)
-	// Actually, wait! Did we append skipped nodes to logs?
-	// Let's check in engine.go: when a node is StateSkipped:
-	// We decrement remainingCount and continue. We don't append to nodeLogs for skipped nodes!
-	// Wait, is that true? Let's check:
-	// Yes! In engine.go, when state is StateSkipped, it just continues:
-	// `remainingCount--`
-	// `continue`
-	// It doesn't append to nodeLogs!
-	// So skipped nodes are not listed in NodeLog, meaning they are skipped from logs too!
-	// That is fine, or if they are listed? The executed nodes list will only contain executed ones.
-	// Let's check the number of logged nodes:
-	// trigger_1: success (executed)
-	// condition_1: success (executed)
-	// node_true: skipped (not logged)
-	// node_false: success (executed)
-	// node_merge: success (executed)
-	// So we expect exactly 4 logs!
-	expectedLogCount := 4
+	expectedLogCount := 5
 	var loggedNodeIDs []string
+	statusByNode := map[string]string{}
 	for _, l := range logs {
 		loggedNodeIDs = append(loggedNodeIDs, l.NodeID)
+		statusByNode[l.NodeID] = l.Status
 	}
 
 	if len(logs) != expectedLogCount {
 		t.Errorf("Expected %d logged steps, got %d. Logged: %s", expectedLogCount, len(logs), strings.Join(loggedNodeIDs, ", "))
+	}
+	if statusByNode["node_true"] != "SKIPPED" {
+		t.Errorf("Expected node_true to be logged as SKIPPED, got %q. Logs: %s", statusByNode["node_true"], strings.Join(loggedNodeIDs, ", "))
 	}
 }
 

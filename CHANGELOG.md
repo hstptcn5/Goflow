@@ -13,6 +13,7 @@ All notable changes to Goflow are tracked here.
 - UX Milestone 2 closure coverage for save-before-run behavior, incomplete draft saves, activation blocking, node picker focus trap, stable graph fingerprints, robust graph ID generation, visual regression baselines, and separated editor performance measurements.
 - UX Milestone 3 inspector with Parameters/Input/Output/Logs tabs, inline field validation, data picker, runtime placeholder expression preview, JSON tree/table/raw views, output/log inspection, visual baselines, and inspector performance smoke.
 - `docs/ADR_EXPRESSION_AND_MAPPING_MODEL.md` documenting the existing `{{node.path}}` / `{{$trigger.path}}` expression contract, Fixed/Expression mode storage, preview behavior, compatibility, and security model.
+- Server-redacted execution inspector DTOs for UI/debug surfaces, including redacted trigger input, node logs, node output, errors, and attempts.
 - `scripts/goal-smoke-test.ps1` to run a reusable Windows smoke test for CLI, MCP stdio, MCP HTTP, scoped tokens, cancellation, audit, and concurrent idempotency against a temporary local instance.
 - `GOFLOW_MCP_RATE_LIMIT_PER_MINUTE` for HTTP MCP request rate limiting per token/principal.
 - `goflow_reload_tools` MCP tool to tell clients when dynamic workflow tools require reconnect/reload.
@@ -55,6 +56,11 @@ All notable changes to Goflow are tracked here.
 - Fixed saved/unsaved state after undo and redo by comparing the current graph to a saved graph fingerprint.
 - Fixed Activate behavior for dirty valid workflows so the current graph is saved before activation.
 - Fixed inspector rendering to redact common secret keys and bearer-like values from visible input/output/log/preview data.
+- Fixed Fixed/Expression mode switching so converting back to Fixed uses the resolved primitive preview instead of showing contradictory mode state.
+- Fixed pre-run validation so JSON, URL, number, integer, select, and expression field errors block Test/Activate while Save draft remains allowed.
+- Fixed data picker source discovery to include transitive upstream nodes and exclude downstream or unrelated nodes.
+- Fixed runtime expression parity for `$trigger` references by exposing trigger input through the shared execution context.
+- Fixed branch debugging by recording skipped branch nodes as `SKIPPED` in execution logs.
 
 ## 0.5.0-http-mcp-beta - 2026-07-26
 

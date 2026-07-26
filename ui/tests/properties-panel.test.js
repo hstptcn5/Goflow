@@ -19,8 +19,19 @@ const nodeDefs = [
     description: 'Send request',
     params: [
       { name: 'method', label: 'HTTP Method', type: 'select', default: 'GET', options: ['GET', 'POST'] },
-      { name: 'url', label: 'Target URL', type: 'text', required: true, default: '' },
+      { name: 'url', label: 'Target URL', type: 'url', required: true, default: '' },
       { name: 'headers', label: 'Headers (JSON)', type: 'json', default: '{}' },
+    ],
+  },
+  {
+    type: 'conditionIf',
+    name: 'IF / ELSE Condition',
+    category: 'LOGIC',
+    description: 'Branch',
+    params: [
+      { name: 'field', label: 'Input Value', type: 'text', required: true, default: '' },
+      { name: 'operator', label: 'Operator', type: 'select', required: true, default: 'equals', options: ['equals', 'contains'] },
+      { name: 'value', label: 'Compare Value', type: 'text', required: true, default: '' },
     ],
   },
   {
@@ -131,5 +142,113 @@ describe('PropertiesPanel', () => {
     root.querySelector('[aria-label="Target URL"]').dispatchEvent(new Event('input'));
     await nextFrame();
     expect(calls).toBe(1);
+  });
+
+  it('keeps Fixed and Expression mode state consistent when converting back to a literal', async () => {
+    const selectedNode = { id: 'http_1', type: 'httpRequest', name: 'HTTP Request', params: { method: 'GET', url: 'https://old.example', headers: '{}' } };
+    const nodes = [
+      { id: 'json_1', data: { id: 'json_1', type: 'jsonTransform', name: 'JSON Transform', params: {} } },
+      { id: 'http_1', data: selectedNode },
+    ];
+    const edges = [{ id: 'e1', source: 'json_1', target: 'http_1' }];
+    let updated = selectedNode.params;
+    const { root } = await mountWithApp(PropertiesPanel, {
+      props: {
+        selectedNode,
+        nodes,
+        edges,
+        onUpdateNodeParams: (_id, params) => { updated = params; selectedNode.params = params; },
+      },
+    });
+    const store = useWorkflowStore();
+    const executionStore = useExecutionStore();
+    store.nodeDefinitions = nodeDefs;
+    executionStore.executionLogs = [{
+      id: 'exec_1',
+      node_logs: [
+        { node_id: 'json_1', status: 'SUCCESS', output: { transformed: { url: 'https://api.example.test/users' } }, attempts: 1, duration_ms: 3 },
+      ],
+    }];
+    await nextFrame();
+
+    const toggle = root.querySelector('[data-param-name="url"]');
+    toggle.querySelectorAll('button')[1].click();
+    await nextFrame();
+    expect(root.textContent).toContain('Expression mode is active');
+    const urlRow = Array.from(root.querySelectorAll('.tree-row')).find((row) => row.textContent.includes('transformed.url'));
+    urlRow.click();
+    await nextFrame();
+    expect(updated.url).toBe('{{json_1.transformed.url}}');
+    expect(toggle.querySelectorAll('button')[1].classList.contains('active')).toBe(true);
+
+    toggle.querySelectorAll('button')[0].click();
+    await nextFrame();
+    expect(updated.url).toBe('https://api.example.test/users');
+    expect(toggle.querySelectorAll('button')[0].classList.contains('active')).toBe(true);
+  });
+
+  it('lists transitive upstream sources but not downstream or unrelated nodes', async () => {
+    const selectedNode = { id: 'if_1', type: 'conditionIf', name: 'IF / ELSE Condition', params: { field: '', operator: 'equals', value: 'ok' } };
+    const nodes = [
+      { id: 'json_a', data: { id: 'json_a', type: 'jsonTransform', name: 'JSON A', params: {} } },
+      { id: 'json_b', data: { id: 'json_b', type: 'jsonTransform', name: 'JSON B', params: {} } },
+      { id: 'if_1', data: selectedNode },
+      { id: 'downstream', data: { id: 'downstream', type: 'jsonTransform', name: 'Downstream', params: {} } },
+      { id: 'unrelated', data: { id: 'unrelated', type: 'jsonTransform', name: 'Unrelated', params: {} } },
+    ];
+    const edges = [
+      { id: 'a-b', source: 'json_a', target: 'json_b' },
+      { id: 'b-if', source: 'json_b', target: 'if_1' },
+      { id: 'if-down', source: 'if_1', target: 'downstream' },
+    ];
+    const { root } = await mountWithApp(PropertiesPanel, { props: { selectedNode, nodes, edges } });
+    const store = useWorkflowStore();
+    const executionStore = useExecutionStore();
+    store.nodeDefinitions = nodeDefs;
+    executionStore.executionLogs = [{
+      id: 'exec_1',
+      node_logs: [
+        { node_id: 'json_a', status: 'SUCCESS', output: { a: 1 } },
+        { node_id: 'json_b', status: 'SUCCESS', output: { b: 2 } },
+        { node_id: 'downstream', status: 'SUCCESS', output: { down: 3 } },
+        { node_id: 'unrelated', status: 'SUCCESS', output: { unrelated: 4 } },
+      ],
+    }];
+    await nextFrame();
+
+    const options = Array.from(root.querySelectorAll('[aria-label="Source node selector"] option')).map((option) => option.textContent);
+    expect(options.some((text) => text.includes('JSON B'))).toBe(true);
+    expect(options.some((text) => text.includes('JSON A'))).toBe(true);
+    expect(options.some((text) => text.includes('Downstream'))).toBe(false);
+    expect(options.some((text) => text.includes('Unrelated'))).toBe(false);
+  });
+
+  it('supports semantic tab keyboard navigation and redacts rendered errors', async () => {
+    const selectedNode = { id: 'json_1', type: 'jsonTransform', name: 'JSON Transform', params: { json_template: '{}' } };
+    const { root } = await mountWithApp(PropertiesPanel, { props: { selectedNode } });
+    const store = useWorkflowStore();
+    const executionStore = useExecutionStore();
+    store.nodeDefinitions = nodeDefs;
+    executionStore.executionLogs = [{
+      id: 'exec_1',
+      node_logs: [
+        { node_id: 'json_1', status: 'FAILED', error: 'Authorization: Bearer raw-token access_token=secret-token', attempts: 1 },
+      ],
+    }];
+    await nextFrame();
+
+    const tabs = root.querySelectorAll('[role="tab"]');
+    expect(tabs).toHaveLength(4);
+    tabs[0].click();
+    await nextFrame();
+    root.querySelector('.panel-tabs').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    await nextFrame();
+    expect(root.querySelector('[aria-selected="true"]').textContent).toContain('Input');
+
+    tabs[3].click();
+    await nextFrame();
+    expect(root.textContent).toContain('[REDACTED]');
+    expect(root.textContent).not.toContain('raw-token');
+    expect(root.textContent).not.toContain('secret-token');
   });
 });

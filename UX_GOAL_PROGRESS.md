@@ -5,7 +5,7 @@ North Star: `UX_GOAL.md`. Runtime contract: `GOAL.md`.
 Current UX status: `IN_PROGRESS`.
 Milestone 1 status: `DONE`.
 Milestone 2 status: `MANUAL_VERIFICATION_REQUIRED`.
-Milestone 3 status: `DONE` for automated implementation; manual usability evidence remains `MANUAL_VERIFICATION_REQUIRED`.
+Milestone 3 status: `DONE` for automated closure and hardening; manual usability evidence remains `MANUAL_VERIFICATION_REQUIRED`.
 
 Allowed status values: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `MANUAL_VERIFICATION_REQUIRED`, `DONE`.
 
@@ -53,16 +53,19 @@ Allowed status values: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `MANUAL_VERIFICA
 | Advanced options collapse | DONE | `showAdvanced` advanced parameter group | Component/render coverage through inspector tests | Local browser smoke | More node metadata can improve classification |
 | Input JSON tree/table/raw/search/copy/source selector | DONE | `buildJsonTree()`, `rowsForTable()`, Input tab | Utility tests, E2E data mapping and visual baseline `m3-input-json-tree` | Local browser smoke | Large payload virtualization beyond truncation remains later |
 | Data mapping picker | DONE | Data picker uses upstream execution outputs and trigger payload; click inserts `{{node.path}}` expression | Component test and E2E data mapping save/reload | Local browser smoke | Drag/drop mapping not implemented |
-| Fixed/Expression mode | DONE | Mode derived from value; params remain plain JSON | Component tests, E2E data mapping | Local browser smoke | Mixed text interpolation preview is documented limitation |
+| Fixed/Expression mode | DONE | Temporary component state keeps Fixed/Expression state clear without writing UI metadata; Expression to Fixed converts safe primitive preview to literal | `ui/tests/properties-panel.test.js`, Milestone 3 E2E save/reload/switch-back test | Local browser smoke | Complex preview conversion asks for confirmation |
 | Expression preview success/error | DONE | `resolveExpression()` frontend preview using runtime placeholder contract | Utility tests, E2E preview success and invalid reference flow | Local browser smoke | No backend preview endpoint yet |
 | Output JSON/table/raw/copy/download | DONE | Output tab redacted tree/table/raw plus copy/download controls | Component tests, E2E output/log flow, visual baseline `m3-output-json` | Local browser smoke | Download is browser-only smoke covered visually |
 | Logs status/error/attempts/execution ID | DONE | Logs tab with status, duration, attempts, execution ID, error, raw redacted log DTO | Component tests, E2E logs flow, visual baseline `m3-logs-error` | Local browser smoke | Redacted resolved parameters await backend storage |
 | Execution/sample context clarity | DONE | Inspector context label shows latest/live/no execution | Component and E2E coverage | Local browser smoke | Full selector remains Milestone 4 |
-| Security/redaction in inspector display | DONE | `redactValue()` display guard for password/api key/authorization/cookie/private key/access token/secret/bearer-like strings | Utility/component/E2E tests assert secrets absent | Local browser smoke | Backend redaction remains source of truth |
+| Security/redaction in inspector display | DONE | Server-redacted execution inspector DTO plus frontend display redaction defense in depth | `internal/api/execution_handler_test.go`, `ui/tests/properties-panel.test.js`, Milestone 3 E2E server DTO/redacted error tests | Local browser smoke | Backend remains source of truth |
 | Dirty valid Activate saves before activation | DONE | `toggleWorkflowActive()` saves dirty graph before activating | `workflow-editor.test.js`, Milestone 3 E2E | Local browser smoke | None |
 | ADR for expression/mapping model | DONE | `docs/ADR_EXPRESSION_AND_MAPPING_MODEL.md` | Documentation review | Not required | Revisit if backend preview endpoint is added |
 | Visual regression baselines | DONE | Seven M3 screenshot baselines | `npm run test:e2e` | Local visual review | Cross-platform baselines only if CI adds screenshot tests |
 | Inspector performance smoke | DONE | `ui/tests/e2e/performance.spec.js` second smoke | `npm run test:e2e` logs inspector timings | Local Windows Chromium run | Low-end Windows profiling remains manual |
+| Runtime expression parity | DONE | Backend now exposes `$trigger` in shared execution context and logs skipped branch nodes | Engine tests and Milestone 3 E2E branch parity | Local browser smoke | Broader type preservation cases can expand later |
+| Transitive upstream picker | DONE | Data picker uses graph ancestor traversal shared with validation | Component test and Milestone 3 E2E A -> B -> C coverage | Local browser smoke | Drag/drop mapping not implemented |
+| Tab accessibility automation | DONE | Inspector tabs use tablist/tab/tabpanel semantics, roving focus, Arrow/Home/End handling | Component keyboard test | Manual screen-reader remains pending | NVDA/Narrator pass |
 | Usability timing for mapping data | MANUAL_VERIFICATION_REQUIRED | Automated flow exists | E2E mapping passes | Pending target user timing | Run UX_GOAL tester tasks |
 | Screen-reader pass for inspector | MANUAL_VERIFICATION_REQUIRED | Labels and tabs implemented | Component/E2E focus/label coverage | Pending NVDA/Narrator pass | Manual accessibility pass |
 
@@ -118,7 +121,8 @@ Allowed status values: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `MANUAL_VERIFICA
 ## Milestone 3 Automated Gate Evidence
 
 - Passed before implementation: `cd ui && npm run test`; `cd ui && npm run test:e2e`; `go test ./...`; `go vet ./...`; `go build ./...`.
-- Passed: `cd ui && npm run test` - 9 files, 33 tests.
+- Passed: `cd ui && npm run test` - 9 files, 38 tests.
 - Passed: `cd ui && npx playwright test --update-snapshots` - 13 tests during baseline generation.
-- Passed: `cd ui && npm run test:e2e` - 14 Chromium tests.
-- Latest inspector performance smoke: `{"upstreamCount":12,"inspectorOpenMs":154,"inputTreeMs":116,"inputSearchMs":52,"expressionPreviewMs":201}`.
+- Passed: `cd ui && npm run test:e2e` - 18 Chromium tests.
+- Passed closure focused gate: `cd ui && npx playwright test tests/e2e/milestone3-inspector.spec.js` - 9 Chromium tests.
+- Latest inspector performance smoke: `{"upstreamCount":12,"inspectorOpenMs":187,"inputTreeMs":142,"inputSearchMs":55,"expressionPreviewMs":248}`.

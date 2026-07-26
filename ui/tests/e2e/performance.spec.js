@@ -94,7 +94,7 @@ test('Milestone 3 inspector performance smoke with data mapping measurements', a
   const inspectorOpenMs = Date.now() - openStart;
 
   const treeStart = Date.now();
-  await page.locator('.panel-tabs').getByRole('button', { name: 'Input' }).click();
+  await page.locator('.panel-tabs').getByRole('tab', { name: 'Input' }).click();
   await expect(page.getByText('user.email').first()).toBeVisible();
   const inputTreeMs = Date.now() - treeStart;
 
@@ -104,7 +104,7 @@ test('Milestone 3 inspector performance smoke with data mapping measurements', a
   const inputSearchMs = Date.now() - searchStart;
 
   const previewStart = Date.now();
-  await page.locator('.panel-tabs').getByRole('button', { name: 'Parameters' }).click();
+  await page.locator('.panel-tabs').getByRole('tab', { name: 'Parameters' }).click();
   await page.locator('[data-param-name="field"]').getByRole('button', { name: 'Expression' }).click();
   await page.getByRole('button', { name: /user.email/ }).first().click();
   await expect(page.getByText('{{json_0.transformed.user.email}}')).toBeVisible();

@@ -42,7 +42,7 @@ timeline
 | GOAL hardening | North Star audit items for security, idempotency, source tracking, exposure, validator, MCP safety, sub-workflow safety, and smoke coverage | Local unit and Windows smoke verification pass; release still requires final full gate and clean-machine checks |
 | UX Milestone 1 | UX audit, app shell, durable Workflows/Editor/Executions/Credentials pages, design tokens, save state, frontend test foundation | Implemented and covered by frontend unit tests, Playwright smoke, and embedded route fallback test |
 | UX Milestone 2 | Editor usability: searchable picker, quick-add, node cards, validation, undo/redo, duplicate/copy/paste, auto-layout, shortcuts, save-before-run, draft saves, focus trap, visual baselines, and separated performance smoke | Code complete for automated scope; manual usability and cross-machine evidence remain |
-| UX Milestone 3 | Inspector and data mapping: Parameters/Input/Output/Logs tabs, inline validation, credential action, JSON tree/table/raw views, upstream data picker, expression preview, redacted output/log rendering, and dirty save-before-activate | Automated implementation complete; manual usability evidence remains |
+| UX Milestone 3 | Inspector and data mapping: Parameters/Input/Output/Logs tabs, inline validation, credential action, JSON tree/table/raw views, transitive upstream data picker, Fixed/Expression switching, expression preview, runtime parity, server-redacted output/log rendering, and dirty save-before-activate | Automated closure complete; manual usability evidence remains |
 
 ## P0 Checklist
 
@@ -165,10 +165,14 @@ timeline
 [x] Input JSON tree, table, raw JSON, search, copy value, copy path
 [x] Data picker source selection and expression insertion
 [x] Runtime-compatible Fixed/Expression mode
+[x] Fixed/Expression switch-back converts safe resolved primitive preview to literal without saving UI metadata
 [x] Expression preview success and error states
 [x] Output JSON tree, table, raw, copy, download
 [x] Logs status, duration, attempts, execution ID, and error
-[x] Frontend redaction guard for inspector input/output/log/preview rendering
+[x] Server-redacted execution inspector DTO and frontend redaction guard for inspector input/output/log/preview rendering
+[x] Runtime expression parity for mapped node output and `$trigger`
+[x] Transitive upstream picker for A -> B -> C graphs
+[x] Semantic tab keyboard navigation
 [x] Dirty valid Activate saves graph before activation
 [x] ADR for expression and mapping data model
 [x] Component tests

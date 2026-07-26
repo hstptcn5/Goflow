@@ -1,3 +1,10 @@
+import {
+  parseSingleExpression,
+  upstreamNodeIds,
+  validateExpressionSyntax,
+  validateParamValue,
+} from './inspector';
+
 export const categoryLabels = {
   TRIGGER: 'Triggers',
   ACTION: 'Actions',
@@ -192,6 +199,15 @@ export function validateWorkflowGraph(nodes, edges, nodeDefinitions) {
           message: `${node.data?.name || def.name} is missing ${param.label || param.name}.`,
         });
       }
+      const fieldError = param.type === 'credential' ? '' : validateParamValue(param, value, []);
+      if (fieldError && !missing) {
+        issues.push({
+          type: fieldValidationIssueType(param, fieldError),
+          nodeId: node.id,
+          param: param.name,
+          message: `${node.data?.name || def.name} has invalid ${param.label || param.name}: ${fieldError}`,
+        });
+      }
       if (typeof value === 'string' && value.includes('{{')) {
         const expressionIssue = validateExpressionReference(value, node.id, nodes, edges);
         if (expressionIssue) {
@@ -263,42 +279,39 @@ export function validateWorkflowGraph(nodes, edges, nodeDefinitions) {
 
 function validateExpressionReference(value, nodeId, nodes, edges) {
   const trimmed = String(value || '').trim();
-  const match = trimmed.match(/^\{\{\s*([^{}]+?)\s*\}\}$/);
-  if (!match) {
-    if (trimmed.startsWith('{{') && trimmed.endsWith('}}')) {
-      return { type: 'invalid_expression', nodeId, message: 'expression syntax is invalid.' };
-    }
-    return null;
-  }
-  const sourceId = match[1].trim().split('.')[0];
+  const syntaxError = validateExpressionSyntax(trimmed);
+  if (syntaxError) return { type: 'invalid_expression', nodeId, message: syntaxError.charAt(0).toLowerCase() + syntaxError.slice(1) };
+  const parsed = parseSingleExpression(trimmed);
+  if (!parsed) return null;
+  const sourceId = parsed.sourceId;
   if (!sourceId) return { type: 'invalid_expression', nodeId, message: 'expression source is missing.' };
   if (sourceId === '$trigger') return null;
   const ids = new Set((nodes || []).map((node) => node.id));
   if (!ids.has(sourceId)) {
     return { type: 'invalid_expression_reference', nodeId, message: `source "${sourceId}" does not exist.` };
   }
-  const upstream = upstreamIds(nodeId, edges);
+  const upstream = upstreamNodeIds(nodeId, edges);
   if (!upstream.has(sourceId)) {
     return { type: 'invalid_expression_reference', nodeId, message: `source "${sourceId}" is not upstream of this node.` };
   }
   return null;
 }
 
-function upstreamIds(nodeId, edges) {
-  const reverse = new Map();
-  (edges || []).forEach((edge) => {
-    if (!reverse.has(edge.target)) reverse.set(edge.target, []);
-    reverse.get(edge.target).push(edge.source);
-  });
-  const found = new Set();
-  const stack = [...(reverse.get(nodeId) || [])];
-  while (stack.length) {
-    const id = stack.pop();
-    if (found.has(id)) continue;
-    found.add(id);
-    stack.push(...(reverse.get(id) || []));
+function fieldValidationIssueType(param, message) {
+  if (String(message).toLowerCase().includes('expression')) return 'invalid_expression';
+  switch (param.type) {
+    case 'json':
+      return 'invalid_json';
+    case 'url':
+      return 'invalid_url';
+    case 'number':
+    case 'integer':
+      return 'invalid_number';
+    case 'select':
+      return 'invalid_select';
+    default:
+      return 'invalid_param';
   }
-  return found;
 }
 
 export function validationStateForNode(nodeId, issues) {

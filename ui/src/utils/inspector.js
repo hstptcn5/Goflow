@@ -1,10 +1,10 @@
-const SECRET_KEY_PATTERN = /(password|api[_-]?key|authorization|cookie|private[_-]?key|access[_-]?token|refresh[_-]?token|secret|bearer)/i;
+const SECRET_KEY_PATTERN = /(password|passwd|api[_-]?key|apikey|authorization|cookie|set-cookie|private[_-]?key|access[_-]?token|refresh[_-]?token|bot[_-]?token|auth[_-]?token|client[_-]?secret|secret|bearer)/i;
 const MAX_TREE_CHILDREN = 80;
 const MAX_RAW_CHARS = 20000;
 
 export function redactValue(value, key = '') {
   if (SECRET_KEY_PATTERN.test(String(key))) return '[REDACTED]';
-  if (typeof value === 'string' && /(bearer\s+[a-z0-9._-]+|sk-[a-z0-9._-]+)/i.test(value)) return '[REDACTED]';
+  if (typeof value === 'string' && /(bearer\s+[a-z0-9._-]+|(access_token|refresh_token|auth_token|bot_token|client_secret|api_key|apikey|password|passwd|secret)=[^\s&"'<>]+|sk-[a-z0-9._-]+|ghp_[a-z0-9_]+|github_pat_[a-z0-9_]+|xoxb-[a-z0-9-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)/i.test(value)) return '[REDACTED]';
   if (Array.isArray(value)) return value.map((item) => redactValue(item));
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([childKey, childValue]) => [childKey, redactValue(childValue, childKey)]));
@@ -50,6 +50,18 @@ export function parseSingleExpression(expression) {
   const parts = match[1].trim().split('.');
   const sourceId = parts.shift();
   return sourceId ? { sourceId, path: parts.join('.') } : null;
+}
+
+export function isCompleteExpression(value) {
+  return Boolean(parseSingleExpression(value));
+}
+
+export function validateExpressionSyntax(value) {
+  const text = String(value ?? '').trim();
+  if (!text.includes('{{')) return '';
+  if (parseSingleExpression(text)) return '';
+  if (text.startsWith('{{') && text.endsWith('}}')) return 'Expression syntax is invalid.';
+  return 'Only one complete placeholder expression is supported for this field.';
 }
 
 export function resolveExpression(expression, sources) {
@@ -134,7 +146,13 @@ export function validateParamValue(param, value, credentials = []) {
     return param.type === 'credential' ? 'Select a credential before testing or activating this workflow.' : `${param.label || param.name} is required.`;
   }
   if (param.type === 'credential' && value && !credentials.some((cred) => cred.id === value)) return 'Selected credential is not available.';
+  if (typeof value === 'string' && value.includes('{{')) {
+    const expressionError = validateExpressionSyntax(value);
+    if (expressionError) return expressionError;
+    if (isCompleteExpression(value)) return '';
+  }
   if ((param.type === 'number' || param.type === 'integer') && !empty && Number.isNaN(Number(value))) return 'Enter a valid number.';
+  if (param.type === 'integer' && !empty && !Number.isInteger(Number(value))) return 'Enter a valid integer.';
   if (param.type === 'select' && !empty && Array.isArray(param.options) && !param.options.includes(value)) return 'Choose a valid option.';
   if (param.type === 'json' && !empty) {
     try {
@@ -150,11 +168,38 @@ export function validateParamValue(param, value, credentials = []) {
       return 'Enter a valid URL.';
     }
   }
-  if (typeof value === 'string' && value.includes('{{')) {
-    const preview = parseSingleExpression(value);
-    if (!preview && value.trim().startsWith('{{') && value.trim().endsWith('}}')) return 'Expression syntax is invalid.';
-  }
   return '';
+}
+
+export function upstreamNodeIds(nodeId, edges = []) {
+  const reverse = new Map();
+  edges.forEach((edge) => {
+    if (!reverse.has(edge.target)) reverse.set(edge.target, []);
+    reverse.get(edge.target).push(edge.source);
+  });
+  const found = new Set();
+  const stack = [...(reverse.get(nodeId) || [])];
+  while (stack.length) {
+    const id = stack.pop();
+    if (!id || found.has(id) || id === nodeId) continue;
+    found.add(id);
+    stack.push(...(reverse.get(id) || []));
+  }
+  return found;
+}
+
+export function orderedUpstreamNodes(selectedNodeId, nodes = [], edges = []) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const directIds = new Set(edges.filter((edge) => edge.target === selectedNodeId).map((edge) => edge.source));
+  const allIds = upstreamNodeIds(selectedNodeId, edges);
+  const direct = [];
+  const previous = [];
+  nodes.forEach((node) => {
+    if (!allIds.has(node.id)) return;
+    if (directIds.has(node.id)) direct.push(node);
+    else previous.push(node);
+  });
+  return [...direct, ...previous].filter((node, index, all) => byId.has(node.id) && all.findIndex((item) => item.id === node.id) === index);
 }
 
 export function credentialsForParam(credentials, param, nodeType = '') {

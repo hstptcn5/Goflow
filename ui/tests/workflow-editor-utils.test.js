@@ -29,6 +29,18 @@ const defs = [
     ],
   },
   {
+    type: 'httpRequest',
+    name: 'HTTP Request',
+    category: 'ACTION',
+    description: 'Send HTTP',
+    params: [
+      { name: 'url', label: 'URL', type: 'url', required: true, default: '' },
+      { name: 'timeout', label: 'Timeout', type: 'number', default: '30' },
+      { name: 'method', label: 'Method', type: 'select', default: 'GET', options: ['GET', 'POST'] },
+      { name: 'headers', label: 'Headers', type: 'json', default: '{}' },
+    ],
+  },
+  {
     type: 'telegramBot',
     name: 'Telegram Bot',
     category: 'COMMUNICATION',
@@ -58,7 +70,7 @@ describe('workflow editor utilities', () => {
   it('validates missing fields, credentials, unknown nodes, bad edges, duplicate ids, and cycles', () => {
     const nodes = [
       createWorkflowNode(defs[1], { x: 0, y: 0 }, 'a'),
-      createWorkflowNode(defs[2], { x: 0, y: 0 }, 'b'),
+      createWorkflowNode(defs[3], { x: 0, y: 0 }, 'b'),
       { id: 'b', type: 'custom', data: { id: 'b', type: 'missingNode', name: 'Missing', params: {} } },
     ];
     const edges = [
@@ -113,5 +125,23 @@ describe('workflow editor utilities', () => {
     branch.data.params.left = '{{start.payload.email}}';
     const valid = validateWorkflowGraph([start, branch], [{ id: 'e1', source: 'start', target: 'branch' }], defs);
     expect(valid.map((issue) => issue.type)).not.toContain('invalid_expression_reference');
+  });
+
+  it('uses inspector field validation contract for pre-run soft errors', () => {
+    const http = createWorkflowNode(defs[2], { x: 0, y: 0 }, 'http');
+    http.data.params = { url: 'not-a-url', timeout: 'abc', method: 'PATCH', headers: '{bad' };
+    const issues = validateWorkflowGraph([http], [], defs);
+    expect(issues.map((issue) => issue.type)).toEqual(expect.arrayContaining([
+      'invalid_url',
+      'invalid_number',
+      'invalid_select',
+      'invalid_json',
+    ]));
+    expect(splitValidationIssues(issues).hard).toHaveLength(0);
+
+    http.data.params = { url: '{{start.url}}', timeout: '{{start.timeout}}', method: 'GET', headers: '{{start.headers}}' };
+    const start = createWorkflowNode(defs[0], { x: 0, y: 0 }, 'start');
+    const valid = validateWorkflowGraph([start, http], [{ id: 'e', source: 'start', target: 'http' }], defs);
+    expect(valid.map((issue) => issue.type)).not.toEqual(expect.arrayContaining(['invalid_url', 'invalid_number', 'invalid_json']));
   });
 });

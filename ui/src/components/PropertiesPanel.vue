@@ -10,6 +10,8 @@ import {
   classifyParams,
   credentialsForParam,
   expressionForPath,
+  isCompleteExpression,
+  orderedUpstreamNodes,
   parseSingleExpression,
   redactValue,
   resolveExpression,
@@ -38,6 +40,7 @@ const activeInputView = ref('tree');
 const showAdvanced = ref(false);
 const showHelp = ref(false);
 const mappingField = ref('');
+const paramModes = ref({});
 const selectedSourceId = ref('');
 const treeSearch = ref('');
 const aiHelperPrompt = ref('');
@@ -69,6 +72,7 @@ const latestExecution = computed(() => executionStore.executionLogs[0] || null);
 
 const executionLogs = computed(() => {
   if (!latestExecution.value) return [];
+  if (Array.isArray(latestExecution.value.node_logs)) return latestExecution.value.node_logs;
   try {
     return JSON.parse(latestExecution.value.logs_json || '[]');
   } catch {
@@ -88,24 +92,18 @@ const selectedNodeStatus = computed(() => {
   return executionStore.nodeStatuses[props.selectedNode.id] || nodeExecutionResult.value?.status || null;
 });
 
-const selectedNodeError = computed(() => nodeExecutionResult.value?.error || null);
+const selectedNodeError = computed(() => redactValue(nodeExecutionResult.value?.error || ''));
 const inspectorContextLabel = computed(() => {
   if (nodeExecutionResult.value?.realtime) return `Live execution ${nodeExecutionResult.value.execution_id || ''}`.trim();
   if (latestExecution.value?.id) return `Latest execution ${latestExecution.value.id}`;
   return 'No execution selected';
 });
 
-const upstreamNodeIds = computed(() => {
-  if (!props.selectedNode) return [];
-  const incoming = props.edges.filter((edge) => edge.target === props.selectedNode.id).map((edge) => edge.source);
-  return Array.from(new Set(incoming));
-});
-
 const sourceNodes = computed(() => {
   const logByNode = new Map(executionLogs.value.map((log) => [log.node_id, log]));
   const sources = [];
-  upstreamNodeIds.value.forEach((nodeId) => {
-    const node = props.nodes.find((item) => item.id === nodeId);
+  orderedUpstreamNodes(props.selectedNode?.id, props.nodes, props.edges).forEach((node) => {
+    const nodeId = node.id;
     const log = logByNode.get(nodeId);
     if (log?.output !== undefined) {
       sources.push({
@@ -113,11 +111,13 @@ const sourceNodes = computed(() => {
         name: node?.data?.name || node?.label || nodeId,
         data: log.output,
         status: log.status,
-        kind: 'upstream',
+        kind: props.edges.some((edge) => edge.source === nodeId && edge.target === props.selectedNode?.id) ? 'direct' : 'previous',
       });
     }
   });
-  if (latestExecution.value?.input_json) {
+  if (latestExecution.value?.input !== undefined) {
+    sources.push({ id: '$trigger', name: 'Trigger payload', data: latestExecution.value.input, kind: 'trigger' });
+  } else if (latestExecution.value?.input_json) {
     try {
       sources.push({ id: '$trigger', name: 'Trigger payload', data: JSON.parse(latestExecution.value.input_json), kind: 'trigger' });
     } catch {
@@ -165,6 +165,16 @@ const expressionPreview = computed(() => {
   return resolveExpression(value, sourceNodes.value);
 });
 
+function syncParamModes() {
+  const next = {};
+  (nodeDef.value?.params || []).forEach((param) => {
+    if (supportsExpression(param)) {
+      next[param.name] = isCompleteExpression(currentValue(param)) ? 'expression' : 'fixed';
+    }
+  });
+  paramModes.value = next;
+}
+
 watch(
   () => props.selectedNode?.id,
   async () => {
@@ -173,9 +183,15 @@ watch(
     showHelp.value = false;
     aiHelperError.value = null;
     mappingField.value = '';
+    syncParamModes();
     await nextTick();
     selectedSourceId.value = sourceNodes.value[0]?.id || '';
   }
+);
+
+watch(
+  () => nodeDef.value?.type,
+  () => syncParamModes()
 );
 
 watch(selectedNodeStatus, (status) => {
@@ -205,19 +221,41 @@ function supportsExpression(param) {
 }
 
 function isExpressionValue(param) {
-  return Boolean(supportsExpression(param) && parseSingleExpression(currentValue(param)));
+  return Boolean(supportsExpression(param) && paramMode(param) === 'expression');
+}
+
+function paramMode(param) {
+  return paramModes.value[param.name] || (parseSingleExpression(currentValue(param)) ? 'expression' : 'fixed');
+}
+
+function expressionModeHint(param) {
+  if (!supportsExpression(param) || paramMode(param) !== 'expression') return '';
+  const value = currentValue(param);
+  if (!String(value).trim()) return 'Choose a source value to create an expression.';
+  if (!parseSingleExpression(value)) return 'Expression mode is active. Pick a source value to replace the current literal.';
+  return '';
 }
 
 function switchParamMode(param, mode) {
   const value = currentValue(param);
   if (mode === 'expression') {
+    paramModes.value = { ...paramModes.value, [param.name]: 'expression' };
     mappingField.value = param.name;
-    if (!String(value).trim() && activeSource.value) {
-      handleParamChange(param.name, expressionForPath(activeSource.value.id, ''));
-    }
     return;
   }
-  mappingField.value = '';
+  if (parseSingleExpression(value)) {
+    const preview = resolveExpression(value, sourceNodes.value);
+    if (preview.ok && (preview.value == null || typeof preview.value !== 'object')) {
+      handleParamChange(param.name, preview.value == null ? '' : String(preview.value));
+      paramModes.value = { ...paramModes.value, [param.name]: 'fixed' };
+      mappingField.value = '';
+      return;
+    }
+    const ok = window.confirm('This expression cannot be converted to a simple literal from the selected execution. Keep Expression mode?');
+    if (ok) return;
+  }
+  paramModes.value = { ...paramModes.value, [param.name]: 'fixed' };
+  mappingField.value = mappingField.value === param.name ? '' : mappingField.value;
 }
 
 function handleParamChange(paramName, value) {
@@ -238,6 +276,38 @@ function handleDeleteNode() {
 function insertExpression(row) {
   if (!mappingField.value || !activeSource.value || row.truncated) return;
   handleParamChange(mappingField.value, expressionForPath(activeSource.value.id, row.path));
+  paramModes.value = { ...paramModes.value, [mappingField.value]: 'expression' };
+}
+
+function tabId(tab) {
+  return `inspector-tab-${tab}`;
+}
+
+function panelId(tab) {
+  return `inspector-panel-${tab}`;
+}
+
+async function focusActiveTab() {
+  await nextTick();
+  document.getElementById(tabId(activeTab.value))?.focus();
+}
+
+function handleTabKeydown(event) {
+  const index = tabs.indexOf(activeTab.value);
+  if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+    event.preventDefault();
+    const delta = event.key === 'ArrowRight' ? 1 : -1;
+    activeTab.value = tabs[(index + delta + tabs.length) % tabs.length];
+    focusActiveTab();
+  } else if (event.key === 'Home') {
+    event.preventDefault();
+    activeTab.value = tabs[0];
+    focusActiveTab();
+  } else if (event.key === 'End') {
+    event.preventDefault();
+    activeTab.value = tabs[tabs.length - 1];
+    focusActiveTab();
+  }
 }
 
 async function copyText(text, label = 'Copied') {
@@ -316,8 +386,20 @@ async function runAIHelper() {
       <span>{{ inspectorContextLabel }}</span>
     </div>
 
-    <div class="panel-tabs" role="tablist" aria-label="Inspector tabs">
-      <button v-for="tab in tabs" :key="tab" type="button" class="tab-btn" :class="{ active: activeTab === tab }" @click="activeTab = tab">
+    <div class="panel-tabs" role="tablist" aria-label="Inspector tabs" @keydown="handleTabKeydown">
+      <button
+        v-for="tab in tabs"
+        :id="tabId(tab)"
+        :key="tab"
+        type="button"
+        role="tab"
+        class="tab-btn"
+        :class="{ active: activeTab === tab }"
+        :aria-selected="activeTab === tab"
+        :aria-controls="panelId(tab)"
+        :tabindex="activeTab === tab ? 0 : -1"
+        @click="activeTab = tab"
+      >
         {{ tab[0].toUpperCase() + tab.slice(1) }}
       </button>
     </div>
@@ -328,7 +410,7 @@ async function runAIHelper() {
         <pre class="node-error-message">{{ selectedNodeError || 'No error details were reported for this node.' }}</pre>
       </div>
 
-      <section v-if="activeTab === 'parameters'" class="inspector-tab">
+      <section v-if="activeTab === 'parameters'" :id="panelId('parameters')" class="inspector-tab" role="tabpanel" :aria-labelledby="tabId('parameters')">
         <div class="form-group">
           <label for="node-name">Node Name</label>
           <input
@@ -420,6 +502,7 @@ async function runAIHelper() {
                 <pre v-if="expressionPreview?.ok">{{ safeJSONStringify(expressionPreview.value).text }}</pre>
                 <p v-else class="field-error">{{ expressionPreview?.error || 'Choose a data path below.' }}</p>
               </div>
+              <p v-if="expressionModeHint(param)" class="param-desc">{{ expressionModeHint(param) }}</p>
             </div>
           </section>
 
@@ -429,7 +512,13 @@ async function runAIHelper() {
             </button>
             <div v-if="showAdvanced">
               <div v-for="param in paramGroups.advanced" :key="param.name" class="form-group" :class="{ invalid: fieldErrors[param.name] }">
-                <label :for="`param-${param.name}`">{{ param.label || param.name }}</label>
+                <div class="field-heading">
+                  <label :for="`param-${param.name}`">{{ param.label || param.name }}</label>
+                  <div v-if="supportsExpression(param)" class="mode-toggle" aria-label="Field value mode" :data-param-name="param.name">
+                    <button type="button" :class="{ active: !isExpressionValue(param) }" @click="switchParamMode(param, 'fixed')">Fixed</button>
+                    <button type="button" :class="{ active: isExpressionValue(param) }" @click="switchParamMode(param, 'expression')">Expression</button>
+                  </div>
+                </div>
                 <textarea
                   v-if="param.type === 'textarea' || param.type === 'json'"
                   :id="`param-${param.name}`"
@@ -447,7 +536,12 @@ async function runAIHelper() {
                   :aria-label="param.label || param.name"
                   @input="handleParamChange(param.name, $event.target.value)"
                 />
+                <div class="field-actions">
+                  <button v-if="param.type === 'json'" type="button" class="mini-btn" @click="formatJSON(param)">Format JSON</button>
+                  <button v-if="supportsExpression(param)" type="button" class="mini-btn" @click="mappingField = param.name">Pick data</button>
+                </div>
                 <p v-if="fieldErrors[param.name]" class="field-error" role="alert">{{ fieldErrors[param.name] }}</p>
+                <p v-if="expressionModeHint(param)" class="param-desc">{{ expressionModeHint(param) }}</p>
               </div>
             </div>
           </section>
@@ -459,7 +553,7 @@ async function runAIHelper() {
           <div class="picker-header">
             <strong>Data picker</strong>
             <select v-model="selectedSourceId" class="form-select compact" aria-label="Source node selector">
-              <option v-for="source in sourceNodes" :key="source.id" :value="source.id">{{ source.name }}</option>
+              <option v-for="source in sourceNodes" :key="source.id" :value="source.id">{{ source.kind === 'direct' ? 'Direct input' : source.kind === 'previous' ? 'Previous node' : 'Trigger payload' }} - {{ source.name }}</option>
             </select>
           </div>
           <input v-model="treeSearch" class="form-input" type="search" aria-label="Search input data" placeholder="Search paths or values..." />
@@ -496,11 +590,11 @@ async function runAIHelper() {
         <button class="btn btn-danger btn-full" type="button" @click="handleDeleteNode">Delete Node</button>
       </section>
 
-      <section v-if="activeTab === 'input'" class="inspector-tab">
+      <section v-if="activeTab === 'input'" :id="panelId('input')" class="inspector-tab" role="tabpanel" :aria-labelledby="tabId('input')">
         <div class="view-toolbar">
           <strong>{{ activeSource?.name || 'No input data' }}</strong>
           <select v-model="selectedSourceId" class="form-select compact" aria-label="Source node selector">
-            <option v-for="source in sourceNodes" :key="source.id" :value="source.id">{{ source.name }}</option>
+            <option v-for="source in sourceNodes" :key="source.id" :value="source.id">{{ source.kind === 'direct' ? 'Direct input' : source.kind === 'previous' ? 'Previous node' : 'Trigger payload' }} - {{ source.name }}</option>
           </select>
         </div>
         <div v-if="!sourceNodes.length" class="empty-state">
@@ -530,7 +624,7 @@ async function runAIHelper() {
         </template>
       </section>
 
-      <section v-if="activeTab === 'output'" class="inspector-tab">
+      <section v-if="activeTab === 'output'" :id="panelId('output')" class="inspector-tab" role="tabpanel" :aria-labelledby="tabId('output')">
         <div v-if="!nodeExecutionResult" class="empty-state">This node has not produced output in the selected execution.</div>
         <template v-else>
           <div class="run-meta">
@@ -562,7 +656,7 @@ async function runAIHelper() {
         </template>
       </section>
 
-      <section v-if="activeTab === 'logs'" class="inspector-tab">
+      <section v-if="activeTab === 'logs'" :id="panelId('logs')" class="inspector-tab" role="tabpanel" :aria-labelledby="tabId('logs')">
         <div v-if="!nodeExecutionResult" class="empty-state">No logs are available for this node in the selected execution.</div>
         <template v-else>
           <dl class="log-grid">
@@ -575,7 +669,7 @@ async function runAIHelper() {
           </dl>
           <div v-if="nodeExecutionResult.error" class="node-error-summary">
             <div class="node-error-title">Error</div>
-            <pre class="node-error-message">{{ nodeExecutionResult.error }}</pre>
+            <pre class="node-error-message">{{ redactValue(nodeExecutionResult.error) }}</pre>
           </div>
           <p class="param-desc">Resolved parameters are shown only when the backend records redacted resolved parameters for this node.</p>
           <pre class="json-code"><code>{{ logsJSON.text }}</code></pre>
