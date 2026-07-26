@@ -114,6 +114,8 @@ func requiredScope(r *http.Request) (string, bool) {
 	path := r.URL.Path
 	method := r.Method
 	switch {
+	case path == "/mcp" || strings.HasPrefix(path, "/mcp/"):
+		return "workflow:read", false
 	case strings.HasPrefix(path, "/api/v1/audit-events"):
 		return "admin:audit", true
 	case strings.HasPrefix(path, "/api/v1/tokens"):

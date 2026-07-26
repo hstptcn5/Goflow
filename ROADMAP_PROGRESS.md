@@ -22,7 +22,7 @@ timeline
       Scoped Tokens : Token scopes, workflow allowlists, audit metadata
 
     section Next
-      Streamable HTTP MCP : Remote/local HTTP MCP beta with auth and Origin validation
+      Streamable HTTP MCP : HTTP beta endpoint, smoke test, client compatibility hardening
 ```
 
 ## Phase Status
@@ -34,7 +34,7 @@ timeline
 | `v0.4.0-mcp-stdio-alpha` | MCP stdio static tools | Released |
 | `v0.5.0-mcp-dynamic-preview` | Workflow MCP exposure, dynamic tools, input schema validation | Dynamic workflow tools and input validation implemented |
 | Hardening | Concurrency, cancellation, scoped token, audit | Complete for P1 |
-| Streamable HTTP MCP | `/mcp` HTTP transport | Deferred |
+| Streamable HTTP MCP | `/mcp` HTTP transport | Beta foundation implemented; needs real-client testing |
 
 ## P0 Checklist
 
@@ -68,6 +68,17 @@ timeline
 [x] Audit metadata
 ```
 
+## P2 Checklist
+
+```text
+[x] Streamable HTTP MCP endpoint at /mcp
+[x] Bearer auth through scoped tokens/API key
+[x] Origin allowlist for browser/remote clients
+[x] HTTP MCP smoke test script
+[ ] Real-client compatibility testing
+[ ] Production deployment notes for reverse proxies/TLS
+```
+
 ## Remaining Timeline
 
 ```mermaid
@@ -93,13 +104,17 @@ gantt
     Node/sub-workflow hardening    :done, hard1, 2026-07-26, 1d
     Scoped tokens and audit        :done, sec1, 2026-07-26, 1d
 
+    section In Progress
+    Streamable HTTP MCP foundation :active, http1, 2026-07-26, 1d
+
     section Next
-    Streamable HTTP MCP            :http1, after sec1, 5d
+    HTTP MCP real-client testing   :http2, after http1, 3d
+    Reverse proxy/TLS notes        :http3, after http2, 2d
 ```
 
 ## Next Priorities
 
 1. Test cancellation against a real long-running workflow.
 2. Test dynamic MCP tool calls against a real exposed workflow.
-3. Test scoped tokens against CLI/MCP using a workflow allowlist.
-4. Start Streamable HTTP MCP beta design.
+3. Test HTTP MCP against a real scoped token and exposed workflow.
+4. Add deployment notes for reverse proxy/TLS before calling HTTP MCP release-ready.

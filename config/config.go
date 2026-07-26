@@ -24,6 +24,9 @@ type Config struct {
 	WebhookRateLimitPerMinute int
 	ExecutionRetentionDays    int
 	MaxExecutionsPerWorkflow  int
+	MCPBaseURL                string
+	MCPAllowedOrigins         []string
+	MCPMaxInflightPerClient   int
 }
 
 func LoadConfig() *Config {
@@ -71,6 +74,9 @@ func LoadConfig() *Config {
 		WebhookRateLimitPerMinute: getEnvInt("GOFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE", 60),
 		ExecutionRetentionDays:    getEnvInt("GOFLOW_EXECUTION_RETENTION_DAYS", 30),
 		MaxExecutionsPerWorkflow:  getEnvInt("GOFLOW_MAX_EXECUTIONS_PER_WORKFLOW", 1000),
+		MCPBaseURL:                os.Getenv("GOFLOW_MCP_BASE_URL"),
+		MCPAllowedOrigins:         getEnvCSV("GOFLOW_MCP_ALLOWED_ORIGINS", defaultMCPAllowedOrigins(host, port)),
+		MCPMaxInflightPerClient:   getEnvInt("GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT", 2),
 	}
 }
 
@@ -133,4 +139,29 @@ func getEnvInt(name string, fallback int) int {
 		return fallback
 	}
 	return value
+}
+
+func getEnvCSV(name string, fallback []string) []string {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	parts := strings.Split(raw, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
+}
+
+func defaultMCPAllowedOrigins(host, port string) []string {
+	return []string{
+		"http://localhost:5173",
+		"http://127.0.0.1:5173",
+		"http://localhost:" + port,
+		"http://127.0.0.1:" + port,
+	}
 }

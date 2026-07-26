@@ -329,9 +329,9 @@ goflow token create mcp-runner \
   --workflow <workflow-id>
 ```
 
-### 6. MCP stdio Alpha
+### 6. MCP stdio Alpha and HTTP Beta
 
-Goflow can expose static MCP tools over stdio. The MCP server is a local bridge: it calls the configured Goflow REST API and does not execute workflows directly.
+Goflow can expose MCP tools over stdio or Streamable HTTP. Both transports call the configured Goflow REST API; they do not execute workflows directly.
 
 ```bash
 goflow mcp stdio
@@ -370,11 +370,33 @@ Use `--workflow <workflow-id>` while creating a token to restrict it to specific
 
 The stdio transport writes MCP protocol messages to stdout. Diagnostic logs should go to stderr.
 
-MCP smoke test:
+MCP stdio smoke test:
 
 ```bash
 node scripts/mcp-smoke-test.mjs --url http://127.0.0.1:8080
 ```
+
+The HTTP MCP endpoint is mounted at `/mcp` on the same Goflow server:
+
+```bash
+node scripts/mcp-http-smoke-test.mjs \
+  --url http://127.0.0.1:8080/mcp \
+  --api-key your-scoped-token \
+  --origin http://127.0.0.1:8080
+```
+
+For HTTP MCP clients, use `Authorization: Bearer <scoped-token>`. The recommended scoped token for CLI/MCP runners is:
+
+```bash
+goflow token create mcp-runner \
+  --scope workflow:list \
+  --scope workflow:read \
+  --scope workflow:run \
+  --scope execution:read \
+  --workflow <workflow-id>
+```
+
+If the client needs to cancel executions, add `--scope execution:cancel`.
 
 If the Goflow server is not running yet, test only the MCP stdio handshake and tool registration:
 
@@ -437,7 +459,9 @@ Goflow includes conservative defaults for local/self-hosted use. Override them w
 | :--- | :---: | :--- |
 | `GOFLOW_MAX_CONCURRENT_EXECUTIONS` | `10` | Maximum workflows executing at the same time. Returns HTTP 429 when full. |
 | `GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION` | `0` | Maximum concurrently executing nodes inside one execution. `0` disables the per-execution node limit. |
-| `GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT` | `2` | Maximum concurrent MCP workflow run calls per stdio client process. |
+| `GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT` | `2` | Maximum concurrent MCP workflow run calls per stdio client process or HTTP request session. |
+| `GOFLOW_MCP_BASE_URL` | derived from host/port | Internal base URL used by `/mcp` when it calls the Goflow REST API. |
+| `GOFLOW_MCP_ALLOWED_ORIGINS` | local UI origins | Comma-separated Origin allowlist for `/mcp` browser/remote clients. |
 | `GOFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE` | `60` | Maximum webhook requests per minute per workflow/IP. Set `0` to disable. |
 | `GOFLOW_EXECUTION_RETENTION_DAYS` | `30` | Deletes execution records older than this many days. Set `0` to disable age cleanup. |
 | `GOFLOW_MAX_EXECUTIONS_PER_WORKFLOW` | `1000` | Keeps only the newest N executions per workflow. Set `0` to disable count cleanup. |
@@ -465,6 +489,7 @@ On startup, any execution left in `RUNNING` from a previous crash or shutdown is
 - `POST /api/v1/tokens`: Create a scoped token. The raw token is returned once. Admin API key required.
 - `DELETE /api/v1/tokens/{id}`: Delete a scoped token. Admin API key required.
 - `GET /api/v1/audit-events`: List recent audit events. Admin API key required.
+- `POST /mcp`: Streamable HTTP MCP endpoint. Bearer token required when `GOFLOW_API_KEY` is set.
 - `GET /api/v1/oauth2/authorize`: Initiates OAuth2 authorization code flow redirect.
 - `GET /api/v1/oauth2/callback`: Handle external OAuth2 provider redirection callback.
 - `GET /api/v1/nodes/definitions`: Retrieve available node metadata definitions.

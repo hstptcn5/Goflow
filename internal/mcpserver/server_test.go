@@ -1,8 +1,10 @@
 package mcpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -130,6 +132,48 @@ func TestDynamicWorkflowHandlerRunsWorkflow(t *testing.T) {
 	output, ok := result.StructuredContent.(runWorkflowOutput)
 	if !ok || output.ExecutionID != "exec-1" {
 		t.Fatalf("unexpected structured output: %#v", result.StructuredContent)
+	}
+}
+
+func TestHTTPHandlerServesStreamableInitialize(t *testing.T) {
+	restServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/workflows" {
+			_, _ = w.Write([]byte(`[]`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(restServer.Close)
+
+	handler := NewHTTPHandler(HTTPOptions{BaseURL: restServer.URL, AllowedOrigins: []string{"http://127.0.0.1:8080"}})
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Origin", "http://127.0.0.1:8080")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	data, _ := io.ReadAll(rec.Body)
+	if !strings.Contains(string(data), `"serverInfo":{"name":"goflow"`) {
+		t.Fatalf("unexpected initialize response: %s", data)
+	}
+}
+
+func TestHTTPHandlerRejectsDisallowedOrigin(t *testing.T) {
+	handler := NewHTTPHandler(HTTPOptions{BaseURL: "http://127.0.0.1:1", AllowedOrigins: []string{"http://127.0.0.1:8080"}})
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Origin", "http://evil.example")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

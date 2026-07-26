@@ -16,6 +16,7 @@ All notable changes to Goflow are tracked here.
 - Scoped API tokens with per-token scopes and optional workflow allowlists.
 - Audit event metadata for authenticated API requests and token management.
 - Admin token management endpoints and CLI commands.
+- Streamable HTTP MCP beta endpoint at `/mcp` with Bearer auth, origin allowlist, and HTTP smoke test script.
 
 ## 0.4.0-mcp-stdio-alpha - 2026-07-26
 
@@ -51,4 +52,4 @@ All notable changes to Goflow are tracked here.
 
 - This is a preview release intended for local, homelab, and small internal deployments.
 - Goflow is not yet positioned as a multi-user SaaS automation platform.
-- CLI and MCP stdio support are alpha features; dynamic MCP workflow tools, cancellation, scoped tokens, and Streamable HTTP MCP are not included yet.
+- CLI and MCP stdio support are alpha features; dynamic MCP workflow tools, cancellation, scoped tokens, and Streamable HTTP MCP arrive after this release in `Unreleased`.

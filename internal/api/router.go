@@ -8,6 +8,7 @@ import (
 
 	"goflow/internal/application"
 	"goflow/internal/engine"
+	"goflow/internal/mcpserver"
 	"goflow/internal/nodes"
 	"goflow/internal/storage"
 
@@ -28,6 +29,9 @@ func NewRouter(
 	uiFS fs.FS,
 	apiKey string,
 	webhookRateLimitPerMinute int,
+	mcpBaseURL string,
+	mcpAllowedOrigins []string,
+	mcpMaxInflight int,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -44,8 +48,8 @@ func NewRouter(
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		ExposedHeaders:   []string{"Link"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "MCP-Protocol-Version", "Mcp-Session-Id", "Last-Event-ID"},
+		ExposedHeaders:   []string{"Link", "Mcp-Session-Id"},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
@@ -100,11 +104,16 @@ func NewRouter(
 
 	r.Post("/webhook/{workflowId}", wfHandler.TriggerWebhook)
 	r.Get("/ws", wsHandler.ServeHTTP)
+	r.With(authMiddleware(apiKey, tokenStore, auditStore, false)).Mount("/mcp", mcpserver.NewHTTPHandler(mcpserver.HTTPOptions{
+		BaseURL:        mcpBaseURL,
+		MaxInflight:    mcpMaxInflight,
+		AllowedOrigins: mcpAllowedOrigins,
+	}))
 
 	if uiFS != nil {
 		fileServer := http.FileServer(http.FS(uiFS))
 		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/api") || strings.HasPrefix(r.URL.Path, "/ws") || strings.HasPrefix(r.URL.Path, "/webhook") {
+			if strings.HasPrefix(r.URL.Path, "/api") || strings.HasPrefix(r.URL.Path, "/ws") || strings.HasPrefix(r.URL.Path, "/webhook") || strings.HasPrefix(r.URL.Path, "/mcp") {
 				http.NotFound(w, r)
 				return
 			}

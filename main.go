@@ -242,7 +242,22 @@ func main() {
 
 	// 6. Initialize REST API Router & Serve Static Embedded Web UI
 	uiFS := getEmbeddedUI()
-	router := api.NewRouter(wfStore, execStore, credStore, tokenStore, auditStore, registry, eng, eventBus, uiFS, cfg.APIKey, cfg.WebhookRateLimitPerMinute)
+	router := api.NewRouter(
+		wfStore,
+		execStore,
+		credStore,
+		tokenStore,
+		auditStore,
+		registry,
+		eng,
+		eventBus,
+		uiFS,
+		cfg.APIKey,
+		cfg.WebhookRateLimitPerMinute,
+		mcpBaseURL(cfg),
+		cfg.MCPAllowedOrigins,
+		cfg.MCPMaxInflightPerClient,
+	)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
@@ -276,4 +291,15 @@ func main() {
 		log.Printf("[WARN] Server forced shutdown: %v", err)
 	}
 	log.Println("[INFO] Goflow stopped successfully.")
+}
+
+func mcpBaseURL(cfg *config.Config) string {
+	if cfg.MCPBaseURL != "" {
+		return cfg.MCPBaseURL
+	}
+	host := cfg.Host
+	if host == "" || host == "0.0.0.0" || host == "::" || host == "*" {
+		host = "127.0.0.1"
+	}
+	return fmt.Sprintf("http://%s:%s", host, cfg.Port)
 }
