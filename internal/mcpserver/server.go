@@ -2,8 +2,10 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -40,6 +42,7 @@ func RunStdio(ctx context.Context, opts Options) error {
 		Version: readVersion(),
 	}, nil)
 	server.registerTools(mcpServer)
+	server.registerDynamicWorkflowTools(mcpServer)
 	return mcpServer.Run(ctx, &mcp.StdioTransport{})
 }
 
@@ -73,6 +76,38 @@ func (s *Server) registerTools(server *mcp.Server) {
 		Title:       "List Goflow executions",
 		Description: "List recent executions for a workflow ID, slug, or exact name.",
 	}, s.listExecutions)
+}
+
+func (s *Server) registerDynamicWorkflowTools(server *mcp.Server) {
+	workflows, err := s.client.ListWorkflows()
+	if err != nil {
+		return
+	}
+	registered := map[string]bool{
+		"goflow_list_workflows":  true,
+		"goflow_get_workflow":    true,
+		"goflow_run_workflow":    true,
+		"goflow_get_execution":   true,
+		"goflow_list_executions": true,
+	}
+	for _, workflow := range workflows {
+		workflow := workflow
+		if !workflow.ExposeMCP || !workflow.IsActive || workflow.RequiresApproval {
+			continue
+		}
+		toolName := dynamicToolName(workflow)
+		if toolName == "" || registered[toolName] {
+			continue
+		}
+		registered[toolName] = true
+		server.AddTool(&mcp.Tool{
+			Name:         toolName,
+			Title:        workflow.Name,
+			Description:  dynamicToolDescription(workflow),
+			InputSchema:  schemaOrEmptyObject(workflow.InputSchemaJSON),
+			OutputSchema: dynamicWorkflowOutputSchema(),
+		}, s.dynamicWorkflowHandler(workflow))
+	}
 }
 
 type listWorkflowsInput struct {
@@ -157,6 +192,44 @@ func (s *Server) runWorkflow(ctx context.Context, req *mcp.CallToolRequest, inpu
 	}, nil
 }
 
+func (s *Server) dynamicWorkflowHandler(workflow client.Workflow) mcp.ToolHandler {
+	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		release, err := s.acquireRunSlot(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+
+		var input map[string]interface{}
+		if len(req.Params.Arguments) > 0 {
+			if err := json.Unmarshal(req.Params.Arguments, &input); err != nil {
+				return toolErrorResult("workflow input must be a JSON object: " + err.Error()), nil
+			}
+		}
+		if input == nil {
+			input = map[string]interface{}{}
+		}
+		idempotencyKey := ""
+		if value, ok := input["idempotency_key"].(string); ok {
+			idempotencyKey = value
+			delete(input, "idempotency_key")
+		}
+
+		accepted, err := s.client.RunWorkflow(workflow.ID, input, idempotencyKey)
+		if err != nil {
+			return toolErrorResult(err.Error()), nil
+		}
+		output := runWorkflowOutput{
+			ExecutionID:  accepted.ExecutionID,
+			WorkflowID:   accepted.WorkflowID,
+			Status:       accepted.Status,
+			Deduplicated: accepted.Deduplicated,
+			StatusTool:   "goflow_get_execution",
+		}
+		return toolSuccessResult(output), nil
+	}
+}
+
 type executionRefInput struct {
 	ExecutionID string `json:"execution_id" jsonschema:"Goflow execution ID"`
 }
@@ -206,6 +279,88 @@ func (s *Server) resolveAllowedWorkflow(ref string) (*client.Workflow, error) {
 		return nil, fmt.Errorf("workflow requires approval and cannot be run through MCP alpha")
 	}
 	return workflow, nil
+}
+
+var toolNameUnsafeChars = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
+
+func dynamicToolName(workflow client.Workflow) string {
+	base := strings.TrimSpace(workflow.MCPToolName)
+	if base == "" {
+		base = strings.TrimSpace(workflow.Slug)
+	}
+	if base == "" {
+		base = strings.TrimSpace(workflow.Name)
+	}
+	base = toolNameUnsafeChars.ReplaceAllString(base, "_")
+	base = strings.Trim(base, "_-")
+	if base == "" {
+		return ""
+	}
+	return "goflow." + base
+}
+
+func dynamicToolDescription(workflow client.Workflow) string {
+	if strings.TrimSpace(workflow.MCPDescription) != "" {
+		return workflow.MCPDescription
+	}
+	if strings.TrimSpace(workflow.Description) != "" {
+		return workflow.Description
+	}
+	return "Run the " + workflow.Name + " workflow asynchronously in Goflow."
+}
+
+func schemaOrEmptyObject(raw string) json.RawMessage {
+	var decoded map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &decoded); err == nil {
+		if schemaType, ok := decoded["type"].(string); !ok {
+			decoded["type"] = "object"
+			data, _ := json.Marshal(decoded)
+			return json.RawMessage(data)
+		} else if schemaType == "object" {
+			data, _ := json.Marshal(decoded)
+			return json.RawMessage(data)
+		}
+	}
+	return json.RawMessage(`{"type":"object"}`)
+}
+
+func dynamicWorkflowOutputSchema() json.RawMessage {
+	return json.RawMessage(`{
+		"type":"object",
+		"properties":{
+			"execution_id":{"type":"string"},
+			"workflow_id":{"type":"string"},
+			"status":{"type":"string"},
+			"deduplicated":{"type":"boolean"},
+			"status_tool":{"type":"string"}
+		},
+		"required":["execution_id","workflow_id","status","deduplicated","status_tool"],
+		"additionalProperties":false
+	}`)
+}
+
+func toolSuccessResult(output runWorkflowOutput) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Content:           []mcp.Content{&mcp.TextContent{Text: mustJSON(output)}},
+		StructuredContent: output,
+	}
+}
+
+func toolErrorResult(message string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: message},
+		},
+		IsError: true,
+	}
+}
+
+func mustJSON(value interface{}) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }
 
 func (s *Server) acquireRunSlot(ctx context.Context) (func(), error) {

@@ -2,6 +2,13 @@
 
 All notable changes to Goflow are tracked here.
 
+## Unreleased
+
+### Added
+
+- Dynamic MCP workflow tools for active workflows explicitly exposed through the Interface settings.
+- MCP smoke test options for asserting and calling dynamic workflow tools.
+
 ## 0.4.0-mcp-stdio-alpha - 2026-07-26
 
 ### Added

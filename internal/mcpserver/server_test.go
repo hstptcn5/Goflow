@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"goflow/internal/client"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestListWorkflowsFiltersToActiveMCPExposed(t *testing.T) {
@@ -66,6 +68,79 @@ func TestOptionsFromEnvReadsMCPInflightLimit(t *testing.T) {
 	opts := OptionsFromEnv()
 	if opts.MaxInflight != 7 {
 		t.Fatalf("expected max inflight 7, got %d", opts.MaxInflight)
+	}
+}
+
+func TestDynamicToolNameUsesMCPToolNameSlugThenName(t *testing.T) {
+	cases := []struct {
+		workflow client.Workflow
+		want     string
+	}{
+		{workflow: client.Workflow{MCPToolName: "daily_report", Slug: "ignored", Name: "Ignored"}, want: "goflow.daily_report"},
+		{workflow: client.Workflow{Slug: "release-check", Name: "Ignored"}, want: "goflow.release-check"},
+		{workflow: client.Workflow{Name: "Release Check!"}, want: "goflow.Release_Check"},
+	}
+	for _, tc := range cases {
+		if got := dynamicToolName(tc.workflow); got != tc.want {
+			t.Fatalf("dynamicToolName(%#v) = %q, want %q", tc.workflow, got, tc.want)
+		}
+	}
+}
+
+func TestDynamicWorkflowHandlerRunsWorkflow(t *testing.T) {
+	var runPath string
+	var runBody map[string]interface{}
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/workflows/wf-1/executions" {
+			http.NotFound(w, r)
+			return
+		}
+		runPath = r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&runBody)
+		_ = json.NewEncoder(w).Encode(client.ExecutionAccepted{
+			ExecutionID:  "exec-1",
+			WorkflowID:   "wf-1",
+			Status:       "RUNNING",
+			Deduplicated: false,
+		})
+	}))
+	t.Cleanup(httpServer.Close)
+
+	server := New(Options{BaseURL: httpServer.URL})
+	handler := server.dynamicWorkflowHandler(client.Workflow{ID: "wf-1", Name: "Daily", IsActive: true, ExposeMCP: true})
+	args := json.RawMessage(`{"date":"2026-07-26","idempotency_key":"idem-1"}`)
+	result, err := handler(context.Background(), &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Arguments: args}})
+	if err != nil {
+		t.Fatalf("dynamic workflow handler returned protocol error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("dynamic workflow handler returned tool error: %#v", result)
+	}
+	if runPath != "/api/v1/workflows/wf-1/executions" {
+		t.Fatalf("unexpected run path: %s", runPath)
+	}
+	if runBody["idempotency_key"] != "idem-1" {
+		t.Fatalf("idempotency key was not forwarded: %#v", runBody)
+	}
+	input, ok := runBody["input"].(map[string]interface{})
+	if !ok || input["date"] != "2026-07-26" {
+		t.Fatalf("workflow input was not forwarded correctly: %#v", runBody)
+	}
+	output, ok := result.StructuredContent.(runWorkflowOutput)
+	if !ok || output.ExecutionID != "exec-1" {
+		t.Fatalf("unexpected structured output: %#v", result.StructuredContent)
+	}
+}
+
+func TestSchemaOrEmptyObjectAddsObjectType(t *testing.T) {
+	schema := schemaOrEmptyObject(`{}`)
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(schema, &decoded); err != nil {
+		t.Fatalf("schema was not valid JSON: %v", err)
+	}
+	if decoded["type"] != "object" {
+		t.Fatalf("expected object schema, got %#v", decoded)
 	}
 }
 

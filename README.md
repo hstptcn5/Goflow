@@ -329,6 +329,8 @@ Available static tools:
 
 MCP workflow access is opt-in. Open **Workflows > Interface** and enable **Expose to MCP** for each workflow that an MCP client may see or run. The stdio MCP bridge only lists active workflows with MCP exposure enabled, and the alpha blocks workflows marked **Requires Approval**.
 
+When MCP stdio starts while the Goflow server is reachable, each active exposed workflow is also registered as a dynamic tool named `goflow.<mcp_tool_name>`. If `mcp_tool_name` is empty, Goflow falls back to the workflow slug or sanitized workflow name. Dynamic workflow tools start executions asynchronously and return an `execution_id` for `goflow_get_execution`.
+
 For MCP clients, set the environment used by the launched process:
 
 ```bash
@@ -358,6 +360,16 @@ node scripts/mcp-smoke-test.mjs \
   --workflow prepare-daily-report \
   --input '{"date":"2026-07-25"}' \
   --idempotency-key mcp-smoke-2026-07-25
+```
+
+To assert and call a dynamic workflow tool:
+
+```bash
+node scripts/mcp-smoke-test.mjs \
+  --url http://127.0.0.1:8080 \
+  --expect-tool goflow.prepare_daily_report \
+  --dynamic-tool goflow.prepare_daily_report \
+  --input '{"date":"2026-07-25"}'
 ```
 
 #### Option B: Running with API Key Authentication (Secure Mode)

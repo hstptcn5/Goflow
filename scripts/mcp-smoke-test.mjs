@@ -8,6 +8,8 @@ const url = args.url || process.env.GOFLOW_URL || "http://127.0.0.1:8080";
 const apiKey = args.apiKey || process.env.GOFLOW_API_KEY || "";
 const timeoutMs = Number(args.timeoutMs || 15000);
 const workflow = args.workflow || "";
+const dynamicTool = args.dynamicTool || "";
+const expectTool = args.expectTool || "";
 const input = parseInput(args.input || "{}");
 const idempotencyKey = args.idempotencyKey || `mcp-smoke-${Date.now()}`;
 const toolsOnly = args.toolsOnly === "true";
@@ -57,6 +59,9 @@ try {
   assertIncludes(toolNames, "goflow_run_workflow");
   assertIncludes(toolNames, "goflow_get_execution");
   assertIncludes(toolNames, "goflow_list_executions");
+  if (expectTool) {
+    assertIncludes(toolNames, expectTool);
+  }
   console.log(`MCP tools/list passed (${toolNames.length} tools)`);
 
   if (!toolsOnly) {
@@ -67,7 +72,17 @@ try {
     const workflowCount = readStructuredContent(workflowList).count;
     console.log(`MCP goflow_list_workflows passed (${workflowCount} workflows)`);
 
-    if (workflow) {
+    if (dynamicTool) {
+      const run = await request(4, "tools/call", {
+        name: dynamicTool,
+        arguments: input,
+      });
+      const runOutput = readStructuredContent(run);
+      if (!runOutput.execution_id) {
+        throw new Error(`${dynamicTool} did not return execution_id`);
+      }
+      console.log(`MCP ${dynamicTool} passed (${runOutput.execution_id}, ${runOutput.status})`);
+    } else if (workflow) {
       const run = await request(4, "tools/call", {
         name: "goflow_run_workflow",
         arguments: {
