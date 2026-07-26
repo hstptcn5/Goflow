@@ -1,10 +1,21 @@
+import { ref } from 'vue';
+
 export class WSClient {
   constructor() {
     this.ws = null;
     this.listeners = [];
+    this.status = ref('disconnected');
+    this.reconnectTimer = null;
+    this.shouldReconnect = true;
   }
 
   connect() {
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+    this.shouldReconnect = true;
+    this.status.value = 'connecting';
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
     const wsUrl = `${protocol}//${host}/ws`;
@@ -20,7 +31,7 @@ export class WSClient {
     }
 
     this.ws.onopen = () => {
-      console.log('⚡ Connected to Goflow Real-time WebSocket');
+      this.status.value = 'connected';
     };
 
     this.ws.onmessage = (event) => {
@@ -33,12 +44,16 @@ export class WSClient {
     };
 
     this.ws.onclose = () => {
-      console.log('🔌 WebSocket disconnected, reconnecting in 3s...');
-      setTimeout(() => this.connect(), 3000);
+      this.status.value = 'disconnected';
+      this.ws = null;
+      if (this.shouldReconnect) {
+        this.reconnectTimer = setTimeout(() => this.connect(), 3000);
+      }
     };
 
     this.ws.onerror = (err) => {
       console.error('WebSocket error', err);
+      this.status.value = 'error';
     };
   }
 
@@ -50,9 +65,16 @@ export class WSClient {
   }
 
   disconnect() {
+    this.shouldReconnect = false;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.ws) {
       this.ws.close();
+      this.ws = null;
     }
+    this.status.value = 'disconnected';
   }
 }
 

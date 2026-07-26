@@ -23,6 +23,8 @@ ui/yarn-debug.log*
 ui/yarn-error.log*
 ui/pnpm-debug.log*
 ui/.pnpm-debug.log*
+ui/test-results/
+ui/playwright-report/
 
 # Environment & Secret Files
 .env

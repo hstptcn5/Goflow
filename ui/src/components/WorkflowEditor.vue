@@ -1,11 +1,13 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { VueFlow, useVueFlow, Handle, Position } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
 
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { useExecutionStore } from '@/stores/executionStore';
+import { api } from '@/services/api';
 
 import NodePalette from './NodePalette.vue';
 import PropertiesPanel from './PropertiesPanel.vue';
@@ -19,8 +21,11 @@ import '@vue-flow/controls/dist/style.css';
 
 const workflowStore = useWorkflowStore();
 const executionStore = useExecutionStore();
+const router = useRouter();
 const showAIDrawer = ref(false);
 const showTemplateGallery = ref(false);
+const runError = ref('');
+const triggering = ref(false);
 
 function getNodeIcon(type) {
   const icons = {
@@ -128,8 +133,8 @@ function loadCurrentWorkflow() {
       sourceHandle: e.sourceHandle || null,
       target: e.target,
       targetHandle: e.targetHandle || null,
-      animated: true,
-      style: { stroke: '#38bdf8', strokeWidth: 3 },
+      animated: false,
+      style: { stroke: 'var(--color-border-strong)', strokeWidth: 2 },
     }));
   } catch (err) {
     console.error('Failed to parse nodes/edges JSON', err);
@@ -144,11 +149,11 @@ onConnect((connection) => {
     sourceHandle: connection.sourceHandle || null,
     target: connection.target,
     targetHandle: connection.targetHandle || null,
-    animated: true,
-    style: { stroke: '#38bdf8', strokeWidth: 3 },
+    animated: false,
+    style: { stroke: 'var(--color-border-strong)', strokeWidth: 2 },
   };
   edges.value.push(newEdge);
-  workflowStore.isDirty = true;
+  workflowStore.markDirty();
 });
 
 function onDragOver(event) {
@@ -191,7 +196,27 @@ function onDrop(event) {
 
   nodes.value.push(newNode);
   selectedNodeId.value = nodeId;
-  workflowStore.isDirty = true;
+  workflowStore.markDirty();
+}
+
+function addDelayStep() {
+  const nodeId = `node_${Date.now()}`;
+  nodes.value.push({
+    id: nodeId,
+    type: 'custom',
+    position: { x: 260 + nodes.value.length * 220, y: 180 },
+    label: 'Delay / Sleep',
+    data: {
+      id: nodeId,
+      type: 'delaySleep',
+      name: 'Delay / Sleep',
+      params: { seconds: '1' },
+      categoryClass: getNodeCategory('delaySleep'),
+      icon: getNodeIcon('delaySleep'),
+    },
+  });
+  selectedNodeId.value = nodeId;
+  workflowStore.markDirty();
 }
 
 function onNodeClick(event) {
@@ -212,7 +237,7 @@ function handleUpdateNodeParams(nodeId, newParams, newName) {
       n.data.name = newName;
       n.label = newName;
     }
-    workflowStore.isDirty = true;
+    workflowStore.markDirty();
   }
 }
 
@@ -222,10 +247,10 @@ function handleDeleteNode(nodeId) {
   if (selectedNodeId.value === nodeId) {
     selectedNodeId.value = null;
   }
-  workflowStore.isDirty = true;
+  workflowStore.markDirty();
 }
 
-function saveCanvas() {
+async function saveCanvas() {
   const serializableNodes = nodes.value.map((n) => ({
     id: n.id,
     type: n.data.type,
@@ -242,7 +267,24 @@ function saveCanvas() {
     targetHandle: e.targetHandle || null,
   }));
 
-  workflowStore.saveCurrentWorkflow(serializableNodes, serializableEdges);
+  await workflowStore.saveCurrentWorkflow(serializableNodes, serializableEdges);
+}
+
+async function runWorkflow() {
+  if (!workflowStore.currentWorkflow) return;
+  triggering.value = true;
+  runError.value = '';
+  executionStore.resetNodeStatuses();
+  try {
+    const execution = await api.triggerWorkflow(workflowStore.currentWorkflow.id, {}, false);
+    await executionStore.fetchExecutionHistory(workflowStore.currentWorkflow.id);
+    await router.push('/executions');
+    return execution;
+  } catch (err) {
+    runError.value = err.message;
+  } finally {
+    triggering.value = false;
+  }
 }
 
 function handleLoadAIWorkflow(aiWorkflow) {
@@ -309,13 +351,13 @@ function handleLoadAIWorkflow(aiWorkflow) {
     sourceHandle: e.sourceHandle || null,
     target: e.target,
     targetHandle: e.targetHandle || null,
-    animated: true,
-    style: { stroke: '#38bdf8', strokeWidth: 3 },
+    animated: false,
+    style: { stroke: 'var(--color-border-strong)', strokeWidth: 2 },
   }));
 
   nodes.value = finalNodes;
   edges.value = mappedAIEdges;
-  workflowStore.isDirty = true;
+  workflowStore.markDirty();
   showAIDrawer.value = false;
 
   // Select the first new/updated node
@@ -369,6 +411,49 @@ defineExpose({ saveCanvas, exportCanvas });
 
 <template>
   <div class="workflow-editor-container">
+    <header class="workflow-topbar" aria-label="Workflow actions">
+      <button class="btn btn-secondary" type="button" @click="router.push('/workflows')">Back</button>
+      <div class="workflow-title-group">
+        <strong>{{ workflowStore.currentWorkflow?.name || 'Workflow' }}</strong>
+        <span class="save-state" :class="`save-${workflowStore.saveState}`">
+          <template v-if="workflowStore.saveState === 'dirty'">Unsaved changes</template>
+          <template v-else-if="workflowStore.saveState === 'saving'">Saving</template>
+          <template v-else-if="workflowStore.saveState === 'failed'">Save failed</template>
+          <template v-else>Saved</template>
+        </span>
+      </div>
+      <label class="active-toggle">
+        <input
+          type="checkbox"
+          :checked="workflowStore.currentWorkflow?.is_active"
+          @change="workflowStore.toggleActive(workflowStore.currentWorkflow.id, $event.target.checked)"
+        />
+        <span>{{ workflowStore.currentWorkflow?.is_active ? 'Active' : 'Inactive' }}</span>
+      </label>
+      <button class="btn btn-primary" type="button" :disabled="triggering" @click="runWorkflow">
+        {{ triggering ? 'Testing...' : 'Test Workflow' }}
+      </button>
+      <button class="btn btn-secondary" type="button" :disabled="workflowStore.saveState === 'saving'" @click="saveCanvas">
+        Save
+      </button>
+      <details class="more-actions">
+        <summary class="btn btn-secondary">More actions</summary>
+        <div class="more-menu">
+          <button type="button" @click="exportCanvas">Export</button>
+          <RouterLink to="/workflows">Workflow settings</RouterLink>
+          <RouterLink to="/workflows">Interface settings</RouterLink>
+          <button class="danger" type="button" @click="workflowStore.deleteWorkflow(workflowStore.currentWorkflow.id); router.push('/workflows')">Delete</button>
+        </div>
+      </details>
+    </header>
+
+    <div v-if="workflowStore.saveState === 'failed'" class="inline-error" role="alert">
+      {{ workflowStore.saveError || 'Save failed. Check the API connection and try again.' }}
+    </div>
+    <div v-if="runError" class="inline-error" role="alert">
+      {{ runError }}
+    </div>
+
     <NodePalette />
 
     <div class="canvas-area" @dragover="onDragOver" @drop="onDrop">
@@ -388,6 +473,7 @@ defineExpose({ saveCanvas, exportCanvas });
         <p>Templates give you a working node layout first. Replace placeholder credentials, URLs, chat IDs, and secrets before running.</p>
         <div class="empty-actions">
           <button class="btn btn-primary" @click="showTemplateGallery = true">Browse Templates</button>
+          <button class="btn btn-secondary" @click="addDelayStep">Add Delay Step</button>
           <button class="btn btn-secondary" @click="showAIDrawer = true">Open AI Assistant</button>
         </div>
       </div>
@@ -460,11 +546,132 @@ defineExpose({ saveCanvas, exportCanvas });
 <style scoped>
 .workflow-editor-container {
   display: flex;
-  width: 100vw;
-  height: calc(100vh - 60px);
+  width: 100%;
+  height: 100%;
   position: relative;
   overflow: hidden;
   background-color: #f1f5f9;
+  padding-top: var(--workflow-topbar-height);
+}
+
+.workflow-topbar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: var(--workflow-topbar-height);
+  display: grid;
+  grid-template-columns: auto minmax(160px, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  z-index: var(--z-topbar);
+}
+
+.workflow-title-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workflow-title-group strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.save-state {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.save-dirty,
+.save-failed {
+  color: var(--color-danger);
+}
+
+.save-saving {
+  color: var(--color-warning);
+}
+
+.save-saved {
+  color: var(--color-success);
+}
+
+.active-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.more-actions {
+  position: relative;
+}
+
+.more-actions summary {
+  list-style: none;
+}
+
+.more-actions summary::-webkit-details-marker {
+  display: none;
+}
+
+.more-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 190px;
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-menu);
+}
+
+.more-menu button,
+.more-menu a {
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.more-menu button:hover,
+.more-menu a:hover {
+  background: var(--color-surface-muted);
+}
+
+.more-menu .danger {
+  color: var(--color-danger);
+}
+
+.inline-error {
+  position: absolute;
+  top: calc(var(--workflow-topbar-height) + var(--space-3));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  max-width: min(640px, calc(100% - 48px));
+  padding: 10px 14px;
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-surface);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  box-shadow: var(--shadow-md);
 }
 
 .canvas-area {
@@ -666,6 +873,13 @@ defineExpose({ saveCanvas, exportCanvas });
 }
 
 @media (max-width: 720px) {
+  .workflow-topbar {
+    grid-template-columns: auto 1fr auto;
+    height: auto;
+    min-height: var(--workflow-topbar-height);
+    flex-wrap: wrap;
+  }
+
   .canvas-empty-state {
     width: calc(100% - 32px);
     padding: 18px;

@@ -11,6 +11,7 @@ The project is best treated as a production-capable preview for trusted, single-
 Goflow is in secure preview for self-hosted workflow automation. The core workflow engine, credential vault, embedded UI, webhook execution, and common integration nodes are implemented, with ongoing work focused on documentation, release packaging, examples, and operational polish.
 
 Key achievements in the current version include:
+- UX Milestone 1 Foundation: Added a routed app shell with dedicated Workflows, Workflow Editor, Executions, Credentials, Templates, Nodes, Settings, and Help pages, plus visible workflow save states and frontend unit/E2E test coverage.
 - Core DAG Engine Optimization: Implemented Node Skip Logic where non-matching conditional branches are marked as skipped to prevent execution waste.
 - Sub-workflow Execution (Looping and Batching): Added a Sub-workflow Runner node that executes a child workflow by iterating over a list of items, supporting both sequential looping and concurrent parallel execution using Goroutines.
 - Centralized Credentials Vault with AES-256-GCM: Implemented secure credentials storage utilizing authenticated encryption.
@@ -141,6 +142,7 @@ graph TD
 - **Built-in Auto-Retry Engine**: Automatic retry loop (up to 3 attempts with exponential backoff) for resilient network calls.
 - **Common Trigger Path for API, CLI, and MCP**: CLI and MCP call the REST API and share the same `TriggerService`, idempotency, concurrency, execution history, scoped token checks, and audit trail.
 - **Scoped Runtime Controls**: Workflow allowlists, redacted scoped workflow lists, server-enforced CLI/MCP exposure, cancellation, and per-workflow reject concurrency are enforced by the backend.
+- **Routed Web UI Foundation**: Workflows, editor, executions, credentials, templates, node catalog, settings, and help have durable frontend routes with embedded-server refresh support.
 
 ---
 

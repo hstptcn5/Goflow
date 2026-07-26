@@ -32,6 +32,11 @@ Status values: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `MANUAL_VERIFICA
 - Passed: `go test ./...`
 - Passed: `go vet ./...`
 - Passed: `go build ./...`
+- Passed: `cd ui && npm ci`
+- Passed: `cd ui && npm run build`
+- Passed: `cd ui && npm run test` with 5 files and 8 tests passing
+- Passed: `cd ui && npm run test:e2e` with 1 Playwright smoke passing
+- Passed: embedded route refresh smoke for `/workflows`, `/workflows/test-refresh`, `/executions`, `/credentials`, and `/NODES.md`
 
 ## Remaining Blockers
 

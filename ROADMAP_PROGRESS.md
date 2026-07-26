@@ -24,6 +24,7 @@ timeline
     section Done
       Streamable HTTP MCP : HTTP beta endpoint, smoke test, client compatibility hardening
       GOAL Hardening Pass : security, idempotency, limits, validator, MCP safety
+      UX Milestone 1 : app shell, routed pages, save state, frontend test foundation
 ```
 
 ## Phase Status
@@ -37,6 +38,7 @@ timeline
 | Hardening | Concurrency, cancellation, scoped token, audit | Complete for P1 |
 | Streamable HTTP MCP | `/mcp` HTTP transport | P2 complete and smoke tested |
 | GOAL hardening | North Star audit items for security, idempotency, source tracking, exposure, validator, MCP safety, sub-workflow safety, and smoke coverage | Local unit and Windows smoke verification pass; release still requires final full gate and clean-machine checks |
+| UX Milestone 1 | UX audit, app shell, durable Workflows/Editor/Executions/Credentials pages, design tokens, save state, frontend test foundation | Implemented and covered by frontend unit tests, Playwright smoke, and embedded route fallback test |
 
 ## P0 Checklist
 
@@ -97,6 +99,25 @@ timeline
 [x] MCP dynamic tool reload/reconnect command
 ```
 
+## UX Milestone 1 Checklist
+
+```text
+[x] UI audit and user journey documentation
+[x] Component inventory and reuse decisions
+[x] Design token foundation
+[x] App shell with clear primary navigation
+[x] Dedicated Workflows page
+[x] Dedicated Workflow Editor route
+[x] Dedicated Executions page
+[x] Dedicated Credentials page
+[x] Templates, Nodes, Settings, and Help route foundation
+[x] Workflow saved/unsaved/saving/save-failed state
+[x] Standard loading, empty, and error state component
+[x] Frontend Vitest foundation
+[x] Playwright E2E smoke foundation
+[x] Embedded SPA route refresh fallback
+```
+
 ## Remaining Timeline
 
 ```mermaid
@@ -128,6 +149,7 @@ gantt
     HTTP MCP client compatibility  :done, http3, 2026-07-26, 1d
     Release candidate polish       :done, rc1, 2026-07-26, 1d
     GOAL local verification        :done, goal1, 2026-07-26, 1d
+    UX Milestone 1 foundation      :done, ux1, 2026-07-26, 1d
     Release clean-machine checks   :active, goal2, 2026-07-26, 1d
 ```
 
@@ -135,4 +157,4 @@ gantt
 
 1. Rebuild release artifacts from the current commit.
 2. Run the release checklist against the packaged archive on a clean Windows machine.
-3. Publish the next patch/beta release after packaged smoke tests pass.
+3. Continue UX Milestone 2: node picker search, quick-add, undo/redo, auto-layout, validation badges, and template flow.

@@ -9,6 +9,8 @@ export const useWorkflowStore = defineStore('workflow', {
     credentials: [],
     selectedNodeId: null,
     isDirty: false,
+    saveState: 'saved',
+    saveError: '',
     loading: false,
     error: null,
   }),
@@ -30,10 +32,12 @@ export const useWorkflowStore = defineStore('workflow', {
   actions: {
     async fetchWorkflows() {
       this.loading = true;
+      this.error = null;
       try {
         this.workflows = await api.getWorkflows();
       } catch (err) {
         this.error = err.message;
+        throw err;
       } finally {
         this.loading = false;
       }
@@ -43,7 +47,8 @@ export const useWorkflowStore = defineStore('workflow', {
       try {
         this.nodeDefinitions = await api.getNodeDefinitions();
       } catch (err) {
-        console.error('Failed to fetch node defs', err);
+        this.error = err.message;
+        throw err;
       }
     },
 
@@ -51,7 +56,8 @@ export const useWorkflowStore = defineStore('workflow', {
       try {
         this.credentials = await api.getCredentials();
       } catch (err) {
-        console.error('Failed to fetch credentials', err);
+        this.error = err.message;
+        throw err;
       }
     },
 
@@ -60,9 +66,10 @@ export const useWorkflowStore = defineStore('workflow', {
       try {
         this.currentWorkflow = await api.getWorkflow(id);
         this.selectedNodeId = null;
-        this.isDirty = false;
+        this.markSaved();
       } catch (err) {
         this.error = err.message;
+        throw err;
       } finally {
         this.loading = false;
       }
@@ -78,6 +85,7 @@ export const useWorkflowStore = defineStore('workflow', {
         });
         this.workflows.unshift(newWf);
         this.currentWorkflow = newWf;
+        this.markSaved();
         return newWf;
       } catch (err) {
         this.error = err.message;
@@ -87,6 +95,8 @@ export const useWorkflowStore = defineStore('workflow', {
 
     async saveCurrentWorkflow(nodes, edges) {
       if (!this.currentWorkflow) return;
+      this.saveState = 'saving';
+      this.saveError = '';
       try {
         const payload = {
           name: this.currentWorkflow.name,
@@ -97,11 +107,26 @@ export const useWorkflowStore = defineStore('workflow', {
         };
         const updated = await api.updateWorkflow(this.currentWorkflow.id, payload);
         this.currentWorkflow = updated;
-        this.isDirty = false;
+        this.markSaved();
+        return updated;
       } catch (err) {
         this.error = err.message;
+        this.saveState = 'failed';
+        this.saveError = err.message;
         throw err;
       }
+    },
+
+    markDirty() {
+      this.isDirty = true;
+      this.saveState = 'dirty';
+      this.saveError = '';
+    },
+
+    markSaved() {
+      this.isDirty = false;
+      this.saveState = 'saved';
+      this.saveError = '';
     },
 
     async updateWorkflowMetadata(id, name, description) {

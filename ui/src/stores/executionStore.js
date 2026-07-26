@@ -8,14 +8,17 @@ export const useExecutionStore = defineStore('execution', {
     nodeEvents: {}, // nodeID -> latest realtime execution event
     currentExecution: null,
     isExecuting: false,
+    error: '',
   }),
 
   actions: {
     async fetchExecutionHistory(workflowId) {
+      this.error = '';
       try {
         this.executionLogs = await api.getExecutions(workflowId);
       } catch (err) {
-        console.error('Failed to fetch execution logs', err);
+        this.error = err.message;
+        throw err;
       }
     },
 

@@ -20,6 +20,8 @@ This guide describes how to prepare a Goflow preview release.
    cd ui
    npm ci
    npm run build
+   npm run test
+   npm run test:e2e
    ```
 
 5. Build the binary:
@@ -52,6 +54,7 @@ This guide describes how to prepare a Goflow preview release.
 9. Start Goflow locally and check:
 
    - UI loads at `http://127.0.0.1:8080`.
+   - Direct frontend route refresh works for `/workflows`, `/executions`, and `/credentials`.
    - `NODES.md` opens from the Docs button.
    - Workflow templates can be imported or loaded.
    - A simple workflow can run.

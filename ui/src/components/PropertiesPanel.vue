@@ -314,14 +314,14 @@ async function runAIHelper() {
 <style scoped>
 .properties-panel {
   width: 320px;
-  height: calc(100vh - 60px);
+  height: calc(100% - var(--workflow-topbar-height));
   position: absolute;
   right: 0;
-  top: 0;
+  top: var(--workflow-topbar-height);
   border-radius: 0;
   border-left: 1px solid var(--border-color);
   background: var(--bg-secondary);
-  z-index: 100;
+  z-index: 50;
   display: flex;
   flex-direction: column;
   box-shadow: -10px 0 30px rgba(15, 23, 42, 0.16);

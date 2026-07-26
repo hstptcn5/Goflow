@@ -123,10 +123,22 @@ func NewRouter(
 				http.NotFound(w, r)
 				return
 			}
+			if path := strings.TrimPrefix(r.URL.Path, "/"); path != "" {
+				if file, err := uiFS.Open(path); err == nil {
+					stat, statErr := file.Stat()
+					_ = file.Close()
+					if statErr == nil && !stat.IsDir() {
+						fileServer.ServeHTTP(w, r)
+						return
+					}
+				}
+			}
 			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 			w.Header().Set("Pragma", "no-cache")
 			w.Header().Set("Expires", "0")
-			fileServer.ServeHTTP(w, r)
+			indexReq := r.Clone(r.Context())
+			indexReq.URL.Path = "/"
+			fileServer.ServeHTTP(w, indexReq)
 		})
 	}
 

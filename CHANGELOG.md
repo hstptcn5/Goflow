@@ -6,6 +6,9 @@ All notable changes to Goflow are tracked here.
 
 ### Added
 
+- Vue Router app shell with durable pages for Workflows, Workflow Editor, Executions, Credentials, Templates, Nodes, Settings, and Help.
+- `UX_GOAL_PROGRESS.md`, `docs/UX_AUDIT.md`, and `docs/UX_MILESTONE_1_TEST_PLAN.md` for UX Milestone 1 tracking and verification.
+- Frontend Vitest and Playwright test foundations covering navigation, workflow save state, API auth prompt behavior, empty/error states, and a browser smoke path.
 - `scripts/goal-smoke-test.ps1` to run a reusable Windows smoke test for CLI, MCP stdio, MCP HTTP, scoped tokens, cancellation, audit, and concurrent idempotency against a temporary local instance.
 - `GOFLOW_MCP_RATE_LIMIT_PER_MINUTE` for HTTP MCP request rate limiting per token/principal.
 - `goflow_reload_tools` MCP tool to tell clients when dynamic workflow tools require reconnect/reload.
@@ -13,6 +16,9 @@ All notable changes to Goflow are tracked here.
 
 ### Changed
 
+- The primary Web UI navigation now uses a sidebar app shell; workflow run/save/export actions moved into the workflow editor topbar.
+- Workflow save UX now exposes `Saved`, `Unsaved changes`, `Saving`, and `Save failed` states.
+- Embedded frontend serving now falls back to the Vue app for direct frontend route refresh while still serving real embedded assets such as `NODES.md`.
 - `GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION` now defaults to `4` instead of unlimited.
 - Server-side workflow execution now rejects inactive workflows and enforces CLI/MCP exposure flags for CLI and MCP trigger sources.
 - MCP dynamic workflow tools now use `_goflow.idempotency_key` as control metadata instead of consuming a business input field named `idempotency_key`.
@@ -26,6 +32,7 @@ All notable changes to Goflow are tracked here.
 
 ### Fixed
 
+- Fixed the node properties panel overlapping workflow topbar actions after selecting a node.
 - Fixed unknown node types causing async executions to hang instead of reaching `FAILED`.
 - Fixed Web UI execution requests so they persist trigger source as `ui` instead of `api`.
 - Fixed principal spoofing by ignoring caller-provided `X-Goflow-Principal` and deriving the principal from authentication context.
