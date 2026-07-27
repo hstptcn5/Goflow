@@ -17,6 +17,7 @@ import TemplateGallery from './TemplateGallery.vue';
 import { getNodeIconSVG, getNavIconSVG } from './NodeIcons';
 import {
   autoLayoutGraph,
+  buildExecutionPathState,
   cloneGraph,
   createWorkflowEdge,
   createWorkflowNode,
@@ -106,6 +107,8 @@ function getNodeCategory(type) {
 
 function getNodeStatusClass(nodeId) {
   const status = nodeStatus(nodeId);
+  if (status === 'FAILED') return 'status-failed';
+  if (executionPathState.value.failedAncestryNodes.has(nodeId)) return 'status-failed-ancestor';
   if (!status) return '';
   return `status-${status.toLowerCase()}`;
 }
@@ -130,9 +133,27 @@ const validationIssuesByNode = computed(() => {
   }, {});
 });
 const splitIssues = computed(() => splitValidationIssues(validationIssues.value));
+const executionContextMode = computed(() => selectedExecutionId.value ? 'selected' : executionStore.liveExecutionId ? 'live' : 'latest');
+const activeLiveExecutionId = computed(() => executionStore.liveExecutionId || '');
+const activeLiveExecutionStatus = computed(() => {
+  if (!activeLiveExecutionId.value) return '';
+  const events = Object.values(executionStore.nodeEventsByExecution[activeLiveExecutionId.value] || {});
+  if (events.some((event) => String(event.status || '').toUpperCase() === 'RUNNING')) return 'RUNNING';
+  if (events.some((event) => String(event.status || '').toUpperCase() === 'FAILED')) return 'FAILED';
+  if (events.length && events.every((event) => ['SUCCESS', 'SKIPPED'].includes(String(event.status || '').toUpperCase()))) return 'SUCCESS';
+  return 'RUNNING';
+});
 const selectedExecution = computed(() => {
-  if (!selectedExecutionId.value) return executionStore.executionLogs[0] || null;
-  return executionStore.executionLogs.find((exec) => exec.id === selectedExecutionId.value) || null;
+  if (selectedExecutionId.value) return executionStore.executionLogs.find((exec) => exec.id === selectedExecutionId.value) || null;
+  if (activeLiveExecutionId.value) {
+    return executionStore.executionLogs.find((exec) => exec.id === activeLiveExecutionId.value) || {
+      id: activeLiveExecutionId.value,
+      status: activeLiveExecutionStatus.value || 'RUNNING',
+      node_logs: Object.values(executionStore.nodeEventsByExecution[activeLiveExecutionId.value] || {}),
+      trigger_source: 'live',
+    };
+  }
+  return executionStore.executionLogs[0] || null;
 });
 const selectedExecutionLogs = computed(() => {
   const exec = selectedExecution.value;
@@ -145,11 +166,21 @@ const selectedExecutionLogs = computed(() => {
   }
 });
 const selectedLogByNode = computed(() => new Map(selectedExecutionLogs.value.map((log) => [log.node_id, log])));
-const hasLiveNodeEvents = computed(() => Object.keys(executionStore.nodeStatuses || {}).length > 0);
-const selectedExecutionIsRunning = computed(() => selectedExecution.value && ['RUNNING', 'QUEUED'].includes(String(selectedExecution.value.status || '').toUpperCase()));
+const executionPathState = computed(() => buildExecutionPathState(edges.value, selectedExecutionLogs.value));
+function isRunningExecution(exec) {
+  return Boolean(exec && ['RUNNING', 'QUEUED'].includes(String(exec.status || '').toUpperCase()));
+}
+const selectedExecutionIsRunning = computed(() => isRunningExecution(selectedExecution.value));
+const cancellableExecution = computed(() => {
+  if (selectedExecutionId.value) return selectedExecutionIsRunning.value ? selectedExecution.value : null;
+  if (selectedExecutionIsRunning.value) return selectedExecution.value;
+  return executionStore.executionLogs.find((exec) => isRunningExecution(exec)) || null;
+});
 const executionSelectorLabel = computed(() => {
+  if (executionContextMode.value === 'live' && activeLiveExecutionId.value) return `Live execution ${String(activeLiveExecutionId.value).slice(0, 8)}`;
   if (!selectedExecution.value) return 'No executions yet';
-  return `${selectedExecution.value.status || 'UNKNOWN'} ${String(selectedExecution.value.id || '').slice(0, 8)}`;
+  if (executionContextMode.value === 'selected') return `Selected execution ${String(selectedExecution.value.id || '').slice(0, 8)}`;
+  return `Latest execution ${String(selectedExecution.value.id || '').slice(0, 8)}`;
 });
 
 const canUndo = computed(() => undoStack.value.length > 0);
@@ -168,13 +199,13 @@ function nodeOperationSummary(data) {
 }
 
 function nodeExecutionLog(nodeId) {
-  if (selectedExecutionId.value || !hasLiveNodeEvents.value) return selectedLogByNode.value.get(nodeId) || null;
-  return executionStore.nodeEvents[nodeId] || selectedLogByNode.value.get(nodeId) || null;
+  if (executionContextMode.value !== 'live') return selectedLogByNode.value.get(nodeId) || null;
+  const liveEvents = executionStore.nodeEventsByExecution[activeLiveExecutionId.value] || {};
+  return liveEvents[nodeId] || selectedLogByNode.value.get(nodeId) || null;
 }
 
 function nodeStatus(nodeId) {
-  if (selectedExecutionId.value || !hasLiveNodeEvents.value) return selectedLogByNode.value.get(nodeId)?.status || '';
-  return executionStore.nodeStatuses[nodeId] || selectedLogByNode.value.get(nodeId)?.status || '';
+  return nodeExecutionLog(nodeId)?.status || '';
 }
 
 function executionOptionLabel(exec) {
@@ -276,17 +307,11 @@ function loadCurrentWorkflow() {
 }
 
 function edgeExecutionState(edge) {
-  const sourceStatus = nodeStatus(edge.source);
-  const targetStatus = nodeStatus(edge.target);
-  if (targetStatus === 'FAILED' || sourceStatus === 'FAILED') return 'failed';
-  if (targetStatus === 'SKIPPED') return 'skipped';
-  if (targetStatus === 'RUNNING' || sourceStatus === 'RUNNING') return 'running';
-  if (targetStatus === 'SUCCESS' && sourceStatus === 'SUCCESS') return 'success';
-  return '';
+  return executionPathState.value.edgeStates[edge.id] || 'not-run';
 }
 
 function edgeStyleForState(state) {
-  if (state === 'failed') return { stroke: 'var(--color-danger)', strokeWidth: 3 };
+  if (state === 'failed-path') return { stroke: 'var(--color-danger)', strokeWidth: 3 };
   if (state === 'skipped') return { stroke: 'var(--color-text-muted)', strokeWidth: 2, strokeDasharray: '6 4' };
   if (state === 'running') return { stroke: 'var(--color-primary)', strokeWidth: 3 };
   if (state === 'success') return { stroke: 'var(--color-success)', strokeWidth: 2.5 };
@@ -299,7 +324,7 @@ function applyExecutionOverlay() {
     return {
       ...edge,
       animated: state === 'running',
-      class: state ? `execution-edge-${state}` : '',
+      class: state && state !== 'not-run' ? `execution-edge-${state}` : '',
       style: edgeStyleForState(state),
     };
   });
@@ -638,7 +663,7 @@ async function runWorkflow() {
 }
 
 async function retryFullWorkflow() {
-  return runWorkflow();
+  return replaySelectedExecution();
 }
 
 async function replaySelectedExecution() {
@@ -656,10 +681,11 @@ async function replaySelectedExecution() {
 }
 
 async function cancelSelectedExecution() {
-  if (!selectedExecution.value) return null;
+  const targetExecution = cancellableExecution.value;
+  if (!targetExecution) return null;
   runError.value = '';
   try {
-    const result = await api.cancelExecution(selectedExecution.value.id);
+    const result = await api.cancelExecution(targetExecution.id);
     await executionStore.fetchExecutionHistory(workflowStore.currentWorkflow.id);
     return result;
   } catch (err) {
@@ -689,15 +715,19 @@ async function copyDebugBundle() {
     edges: serializableGraph().edges,
     validation_issues: validationIssues.value,
   };
-  const text = safeJSONStringify(bundle).text;
-  debugBundleText.value = text;
+  const fullText = JSON.stringify(bundle, null, 2);
+  const preview = safeJSONStringify(bundle);
+  debugBundleText.value = preview.truncated
+    ? JSON.stringify({ truncated: true, omitted_sections: ['debug_bundle_preview_tail'], preview: preview.text }, null, 2)
+    : fullText;
+  if (typeof window !== 'undefined') window.__goflowLastDebugBundle = fullText;
   try {
-    await navigator.clipboard?.writeText(text);
+    await navigator.clipboard?.writeText(fullText);
     debugBundleMessage.value = 'Debug bundle copied';
   } catch {
     debugBundleMessage.value = 'Debug bundle ready';
   }
-  return text;
+  return fullText;
 }
 
 function handleLoadAIWorkflow(aiWorkflow) {
@@ -941,14 +971,14 @@ function handleEditorShortcut(event) {
       </label>
       <div class="execution-toolbar" aria-label="Execution debugger controls">
         <select v-model="selectedExecutionId" class="form-select compact" aria-label="Execution selector">
-          <option value="">Live/latest - {{ executionSelectorLabel }}</option>
+          <option value="">{{ executionSelectorLabel }}</option>
           <option v-for="exec in executionStore.executionLogs" :key="exec.id" :value="exec.id">
             {{ executionOptionLabel(exec) }}
           </option>
         </select>
-        <button class="btn btn-secondary" type="button" :disabled="triggering" @click="retryFullWorkflow">Retry workflow</button>
-        <button class="btn btn-secondary" type="button" :disabled="!selectedExecution" @click="replaySelectedExecution">Replay execution</button>
-        <button class="btn btn-secondary" type="button" :disabled="!selectedExecutionIsRunning" @click="cancelSelectedExecution">Cancel execution</button>
+        <button class="btn btn-secondary" type="button" :disabled="!selectedExecution || !['FAILED', 'CANCELLED', 'INTERRUPTED'].includes(String(selectedExecution.status || '').toUpperCase())" @click="retryFullWorkflow">Retry selected execution</button>
+        <button class="btn btn-secondary" type="button" :disabled="!selectedExecution" @click="replaySelectedExecution">Replay on current workflow</button>
+        <button class="btn btn-secondary" type="button" :disabled="!cancellableExecution" @click="cancelSelectedExecution">Cancel execution</button>
         <button class="btn btn-secondary" type="button" :disabled="!selectedExecution" @click="copyDebugBundle">Copy debug bundle</button>
       </div>
       <button class="btn btn-primary" type="button" :disabled="triggering" @click="runWorkflow">
@@ -1107,6 +1137,8 @@ function handleEditorShortcut(event) {
       :edges="edges"
       :validationIssues="validationIssuesByNode[selectedNodeId] || []"
       :selectedExecution="selectedExecution"
+      :executionContextMode="executionContextMode"
+      :activeLiveExecutionId="activeLiveExecutionId"
       @updateNodeParams="handleUpdateNodeParams"
       @deleteNode="handleDeleteNode"
       @close="selectedNodeId = null"
@@ -1453,7 +1485,7 @@ function handleEditorShortcut(event) {
   color: var(--color-text-muted);
 }
 
-:deep(.execution-edge-failed .vue-flow__edge-path) {
+:deep(.execution-edge-failed-path .vue-flow__edge-path) {
   stroke: var(--color-danger);
 }
 
@@ -1527,6 +1559,11 @@ function handleEditorShortcut(event) {
 .custom-node-card.status-failed {
   border-color: #dc2626 !important; /* Red */
   box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.25), 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+}
+
+.custom-node-card.status-failed-ancestor {
+  border-color: #f97316 !important;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2), 0 4px 12px rgba(0, 0, 0, 0.05) !important;
 }
 
 @keyframes pulse-border {

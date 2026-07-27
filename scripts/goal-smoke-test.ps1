@@ -105,8 +105,8 @@ try {
   }
   "SMOKE server ready"
 
-  $workflow = New-SmokeWorkflow -Id "wf-goal-smoke" -Name "GOAL Smoke" -Seconds 0 -ToolName "goal_smoke"
-  $otherWorkflow = New-SmokeWorkflow -Id "wf-goal-other" -Name "GOAL Other" -Seconds 0 -ToolName "goal_other"
+  $workflow = New-SmokeWorkflow -Id "wf-goal-smoke" -Name "GOAL Smoke" -Seconds 1 -ToolName "goal_smoke"
+  $otherWorkflow = New-SmokeWorkflow -Id "wf-goal-other" -Name "GOAL Other" -Seconds 1 -ToolName "goal_other"
   $cancelWorkflow = New-SmokeWorkflow -Id "wf-goal-cancel" -Name "GOAL Cancel" -Seconds 5 -ToolName "goal_cancel"
   $cronWorkflow = New-CronSmokeWorkflow
   "SMOKE workflows created: $($workflow.id), $($otherWorkflow.id), $($cancelWorkflow.id), $($cronWorkflow.id)"

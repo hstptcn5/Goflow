@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   autoLayoutGraph,
+  buildExecutionPathState,
   createWorkflowEdge,
   createWorkflowNode,
   generateGraphId,
@@ -143,5 +144,33 @@ describe('workflow editor utilities', () => {
     const start = createWorkflowNode(defs[0], { x: 0, y: 0 }, 'start');
     const valid = validateWorkflowGraph([start, http], [{ id: 'e', source: 'start', target: 'http' }], defs);
     expect(valid.map((issue) => issue.type)).not.toEqual(expect.arrayContaining(['invalid_url', 'invalid_number', 'invalid_json']));
+  });
+
+  it('marks only the true multi-hop failed path through branching executions', () => {
+    const state = buildExecutionPathState([
+      { id: 'a-b', source: 'A', target: 'B' },
+      { id: 'b-c', source: 'B', target: 'C' },
+      { id: 'a-x', source: 'A', target: 'X' },
+      { id: 'b-y', source: 'B', target: 'Y' },
+      { id: 'z-q', source: 'Z', target: 'Q' },
+    ], [
+      { node_id: 'A', status: 'SUCCESS' },
+      { node_id: 'B', status: 'SUCCESS' },
+      { node_id: 'C', status: 'FAILED' },
+      { node_id: 'X', status: 'SKIPPED' },
+      { node_id: 'Y', status: 'SUCCESS' },
+      { node_id: 'Z', status: 'SUCCESS' },
+    ]);
+
+    expect(state.edgeStates['a-b']).toBe('failed-path');
+    expect(state.edgeStates['b-c']).toBe('failed-path');
+    expect(state.edgeStates['a-x']).toBe('skipped');
+    expect(state.edgeStates['b-y']).toBe('success');
+    expect(state.edgeStates['z-q']).toBe('not-run');
+    expect(state.failedNodes.has('C')).toBe(true);
+    expect(state.failedAncestryNodes.has('A')).toBe(true);
+    expect(state.failedAncestryNodes.has('B')).toBe(true);
+    expect(state.failedAncestryNodes.has('X')).toBe(false);
+    expect(state.failedAncestryNodes.has('Y')).toBe(false);
   });
 });

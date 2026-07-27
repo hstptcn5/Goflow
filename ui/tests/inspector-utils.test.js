@@ -66,4 +66,51 @@ describe('inspector utilities', () => {
     expect(result.truncated).toBe(true);
     expect(result.text).toContain('truncated');
   });
+
+  it('redacts debug bundle secret fixture shapes', () => {
+    const value = {
+      url_userinfo: 'https://user:password@example.com/path',
+      discord: 'https://discord.com/api/webhooks/123456789/rawsecret',
+      slack: 'https://hooks.slack.com/services/T000/B000/secret',
+      query: 'https://example.com/callback?token=query-token&api_key=query-key&ok=1',
+      token: 'plain-token',
+      credential: 'credential-value',
+      webhook_url: 'https://discord.com/api/webhooks/999/raw',
+      connection_string: 'postgres://user:password@localhost/db',
+      headers: {
+        Authorization: 'Bearer bearer-secret-token',
+        Cookie: 'sid=session-secret',
+      },
+      private_key: '-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----',
+      nested_json: JSON.stringify({
+        access_token: 'nested-token',
+        array: ['sk-1234567890abcdef', { api_key: 'array-key' }],
+      }),
+      formats: [
+        'Bearer abcdefghijklmnop',
+        'ghp_abcdefghijklmnopqrstuvwxyz',
+        'github_pat_abcdefghijklmnopqrstuvwxyz',
+        'sk-abcdefghijklmnopqrstuvwxyz',
+        'xoxb-123456789012-abcdef',
+      ],
+    };
+
+    const redacted = JSON.stringify(redactValue(value));
+    [
+      'password@example.com',
+      'rawsecret',
+      'query-token',
+      'query-key',
+      'plain-token',
+      'credential-value',
+      'session-secret',
+      'BEGIN PRIVATE KEY',
+      'nested-token',
+      'array-key',
+      'abcdefghijklmnopqrstuvwxyz',
+    ].forEach((secret) => {
+      expect(redacted).not.toContain(secret);
+    });
+    expect(redacted).toContain('[REDACTED]');
+  });
 });

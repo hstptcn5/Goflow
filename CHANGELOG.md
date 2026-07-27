@@ -13,6 +13,7 @@ All notable changes to Goflow are tracked here.
 - UX Milestone 2 closure coverage for save-before-run behavior, incomplete draft saves, activation blocking, node picker focus trap, stable graph fingerprints, robust graph ID generation, visual regression baselines, and separated editor performance measurements.
 - UX Milestone 3 inspector with Parameters/Input/Output/Logs tabs, inline field validation, data picker, runtime placeholder expression preview, JSON tree/table/raw views, output/log inspection, visual baselines, and inspector performance smoke.
 - UX Milestone 4 execution debugger controls in the editor: execution selector, canvas execution overlay, failed-path edge highlight, retry workflow, replay execution, cancel execution, contextual node error actions, and a redacted debug bundle preview/copy action.
+- Windows-safe Playwright E2E runner (`ui/tests/run-e2e.mjs`) that starts a temporary local Goflow server and cleans up the Go process tree after tests.
 - `docs/ADR_EXPRESSION_AND_MAPPING_MODEL.md` documenting the existing `{{node.path}}` / `{{$trigger.path}}` expression contract, Fixed/Expression mode storage, preview behavior, compatibility, and security model.
 - Server-redacted execution inspector DTOs for UI/debug surfaces, including redacted trigger input, node logs, node output, errors, and attempts.
 - `scripts/goal-smoke-test.ps1` to run a reusable Windows smoke test for CLI, MCP stdio, MCP HTTP, scoped tokens, cancellation, audit, and concurrent idempotency against a temporary local instance.
@@ -66,6 +67,12 @@ All notable changes to Goflow are tracked here.
 - Fixed runtime expression parity for `$trigger` references by exposing trigger input through the shared execution context.
 - Fixed runtime expression parity for complete placeholders so backend execution preserves string, number, boolean, object, array, and `$trigger` types while mixed interpolation stringifies values.
 - Fixed branch debugging by recording skipped branch nodes as `SKIPPED` in execution logs.
+- Fixed `delaySleep.seconds` runtime parsing so numeric expressions and integer literals are accepted as typed values instead of falling back to one second; invalid, fractional, zero, negative, NaN/Infinity, and oversized values are rejected.
+- Fixed editor execution context isolation so selected execution, latest execution, and live execution views do not overwrite each other's canvas status, inspector output/logs, or debug bundle.
+- Fixed failed-path highlighting to traverse the actual ancestry path to a failed node while keeping successful sibling branches, skipped branches, and not-run edges distinct.
+- Fixed replay semantics so replay uses stored raw input through `TriggerService`, records authenticated principal/request ID, creates a new execution without old idempotency, enforces scoped workflow allowlists, and returns trigger status codes.
+- Fixed Retry behavior so `Retry selected execution` uses stored input via replay instead of triggering the workflow with `{}`.
+- Fixed debug bundle copy/export so copied content is valid JSON while large previews remain valid truncated JSON envelopes; redaction now covers URL userinfo, webhook URLs, token query parameters, generic secret keys, nested JSON strings, arrays, bearer/GitHub/OpenAI/Slack token shapes, cookies, authorization values, and private keys.
 
 ## 0.5.0-http-mcp-beta - 2026-07-26
 

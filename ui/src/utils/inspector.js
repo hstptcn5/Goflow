@@ -1,15 +1,43 @@
-const SECRET_KEY_PATTERN = /(password|passwd|api[_-]?key|apikey|authorization|cookie|set-cookie|private[_-]?key|access[_-]?token|refresh[_-]?token|bot[_-]?token|auth[_-]?token|client[_-]?secret|secret|bearer)/i;
+const SECRET_KEY_PATTERN = /(password|passwd|api[_-]?key|apikey|authorization|cookie|set-cookie|private[_-]?key|access[_-]?token|refresh[_-]?token|bot[_-]?token|auth[_-]?token|client[_-]?secret|connection[_-]?string|credential|secret|token|webhook[_-]?url|bearer)/i;
+const SECRET_VALUE_PATTERN = /(https:\/\/discord\.com\/api\/webhooks\/[^\s"'<>]+|https:\/\/hooks\.slack\.com\/services\/[^\s"'<>]+|bearer\s+[a-z0-9._-]+|(access_token|refresh_token|auth_token|bot_token|client_secret|api_key|apikey|password|passwd|secret|token|credential|webhook_url|connection_string)=[^\s&"'<>]+|sk-[a-z0-9._-]{12,}|ghp_[a-z0-9_]{12,}|github_pat_[a-z0-9_]{12,}|xoxb-[a-z0-9-]{12,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----)/ig;
 const MAX_TREE_CHILDREN = 80;
 const MAX_RAW_CHARS = 20000;
 
 export function redactValue(value, key = '') {
   if (SECRET_KEY_PATTERN.test(String(key))) return '[REDACTED]';
-  if (typeof value === 'string' && /(bearer\s+[a-z0-9._-]+|(access_token|refresh_token|auth_token|bot_token|client_secret|api_key|apikey|password|passwd|secret)=[^\s&"'<>]+|sk-[a-z0-9._-]+|ghp_[a-z0-9_]+|github_pat_[a-z0-9_]+|xoxb-[a-z0-9-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)/i.test(value)) return '[REDACTED]';
+  if (typeof value === 'string') return redactString(value);
   if (Array.isArray(value)) return value.map((item) => redactValue(item));
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([childKey, childValue]) => [childKey, redactValue(childValue, childKey)]));
   }
   return value;
+}
+
+export function redactString(value) {
+  const trimmed = String(value ?? '').trim();
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      return JSON.stringify(redactValue(JSON.parse(trimmed)));
+    } catch {
+      // Fall through to string redaction.
+    }
+  }
+  let redacted = String(value ?? '').replace(SECRET_VALUE_PATTERN, '[REDACTED]');
+  try {
+    const parsed = new URL(redacted);
+    if (parsed.username || parsed.password) {
+      parsed.username = '[REDACTED]';
+      parsed.password = '[REDACTED]';
+    }
+    ['token', 'api_key', 'apikey', 'access_token', 'refresh_token', 'auth_token', 'bot_token', 'client_secret', 'password', 'secret', 'credential', 'webhook_url', 'connection_string'].forEach((name) => {
+      if (parsed.searchParams.has(name)) parsed.searchParams.set(name, '[REDACTED]');
+    });
+    redacted = parsed.toString();
+  } catch {
+    // Not a URL.
+  }
+  SECRET_VALUE_PATTERN.lastIndex = 0;
+  return SECRET_VALUE_PATTERN.test(redacted) ? '[REDACTED]' : redacted;
 }
 
 export function safeJSONStringify(value, space = 2, maxChars = MAX_RAW_CHARS) {

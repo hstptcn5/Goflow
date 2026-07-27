@@ -26,6 +26,8 @@ const props = defineProps({
   edges: { type: Array, default: () => [] },
   validationIssues: { type: Array, default: () => [] },
   selectedExecution: { type: Object, default: null },
+  executionContextMode: { type: String, default: 'latest' },
+  activeLiveExecutionId: { type: String, default: '' },
 });
 
 const emit = defineEmits(['updateNodeParams', 'deleteNode', 'close']);
@@ -84,8 +86,10 @@ const executionLogs = computed(() => {
 
 const nodeExecutionResult = computed(() => {
   if (!props.selectedNode) return null;
-  const realtimeEvent = executionStore.nodeEvents[props.selectedNode.id];
-  if (realtimeEvent) return realtimeEvent;
+  if (props.executionContextMode === 'live' && props.activeLiveExecutionId) {
+    const realtimeEvent = executionStore.nodeEventsByExecution[props.activeLiveExecutionId]?.[props.selectedNode.id];
+    if (realtimeEvent) return realtimeEvent;
+  }
   return executionLogs.value.find((log) => log.node_id === props.selectedNode.id) || null;
 });
 
@@ -96,7 +100,8 @@ const selectedNodeStatus = computed(() => {
 
 const selectedNodeError = computed(() => redactValue(nodeExecutionResult.value?.error || ''));
 const inspectorContextLabel = computed(() => {
-  if (nodeExecutionResult.value?.realtime) return `Live execution ${nodeExecutionResult.value.execution_id || ''}`.trim();
+  if (props.executionContextMode === 'live' && props.activeLiveExecutionId) return `Live execution ${props.activeLiveExecutionId}`;
+  if (props.executionContextMode === 'selected' && latestExecution.value?.id) return `Selected execution ${latestExecution.value.id}`;
   if (latestExecution.value?.id) return `Latest execution ${latestExecution.value.id}`;
   return 'No execution selected';
 });

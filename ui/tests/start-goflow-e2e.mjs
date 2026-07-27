@@ -22,7 +22,18 @@ const child = spawn(command, args, {
   stdio: 'inherit',
 });
 
+let stopping = false;
+
 function stop() {
+  if (stopping) return;
+  stopping = true;
+  const forceExit = setTimeout(() => process.exit(0), 1000);
+  forceExit.unref?.();
+  if (child.killed) return;
+  if (process.platform === 'win32' && child.pid) {
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    return;
+  }
   if (!child.killed) {
     child.kill('SIGTERM');
   }

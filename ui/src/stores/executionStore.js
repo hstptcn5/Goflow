@@ -6,6 +6,8 @@ export const useExecutionStore = defineStore('execution', {
     executionLogs: [],
     nodeStatuses: {}, // nodeID -> 'RUNNING' | 'SUCCESS' | 'FAILED'
     nodeEvents: {}, // nodeID -> latest realtime execution event
+    nodeEventsByExecution: {}, // executionID -> nodeID -> realtime execution event
+    liveExecutionId: '',
     currentExecution: null,
     isExecuting: false,
     error: '',
@@ -24,8 +26,7 @@ export const useExecutionStore = defineStore('execution', {
 
     handleWSEvent(event) {
       if (!event.node_id) return;
-      this.nodeStatuses[event.node_id] = event.status;
-      this.nodeEvents[event.node_id] = {
+      const normalized = {
         node_id: event.node_id,
         execution_id: event.execution_id,
         workflow_id: event.workflow_id,
@@ -36,6 +37,15 @@ export const useExecutionStore = defineStore('execution', {
         timestamp: event.timestamp,
         realtime: true,
       };
+      if (event.execution_id) {
+        this.liveExecutionId = event.execution_id;
+        this.nodeEventsByExecution[event.execution_id] = {
+          ...(this.nodeEventsByExecution[event.execution_id] || {}),
+          [event.node_id]: normalized,
+        };
+      }
+      this.nodeStatuses[event.node_id] = event.status;
+      this.nodeEvents[event.node_id] = normalized;
 
       if (event.status === 'RUNNING') {
         this.isExecuting = true;
@@ -47,6 +57,8 @@ export const useExecutionStore = defineStore('execution', {
     resetNodeStatuses() {
       this.nodeStatuses = {};
       this.nodeEvents = {};
+      this.nodeEventsByExecution = {};
+      this.liveExecutionId = '';
       this.isExecuting = false;
     },
   },

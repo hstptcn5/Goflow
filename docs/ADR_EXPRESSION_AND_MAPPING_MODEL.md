@@ -28,6 +28,8 @@ Switching to Expression mode opens the data picker and keeps the existing litera
 
 Switching back to Fixed converts a complete expression only when the current resolved preview is a primitive value. Object and array previews stay in Expression mode by default. JSON fields expose an explicit `Convert to JSON literal` action for object and array previews; canceling that action by not invoking it leaves both mode and value unchanged. The UI must not enter a `Fixed` mode with a `{{...}}` expression value.
 
+Numeric node parameters that support only whole numbers should use the `integer` ParamDefinition type. At runtime, complete expressions can resolve to typed numbers rather than strings. Executors must parse accepted numeric shapes explicitly instead of silently falling back to defaults. For example, `delaySleep.seconds` accepts integer string, int/int32/int64, integer float32/float64, and `json.Number`, rejects fractional, zero, negative, NaN/Infinity, and oversized values, and preserves the configured numeric delay.
+
 ## Preview
 
 Expression preview is frontend-only for Milestone 3 and uses the same placeholder contract:
@@ -71,6 +73,8 @@ Backend redaction remains the source of truth for inspector API responses. Front
 - `$trigger` is resolved by the backend through the shared execution context.
 - Backend execution preserves the resolved type for complete expressions over strings, numbers, booleans, objects, arrays, and `$trigger` values. Mixed interpolation stringifies non-string values according to the current runtime placeholder contract.
 - Skipped branch nodes are logged as `SKIPPED` so inspector/runtime parity tests can distinguish the executed path.
+- Execution debugging views must use one active execution context at a time. Canvas status, edge overlays, inspector tabs, and debug bundles read from the selected execution, latest execution, or matching live execution consistently; WebSocket events from other executions must not override a selected historical execution.
+- Replay uses stored execution input with the current saved workflow definition. It is not an exact historical replay because workflow snapshots are not stored yet.
 
 ## Migration
 

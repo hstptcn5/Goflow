@@ -116,10 +116,11 @@ func (h *ExecutionHandler) ReplayExecution(w http.ResponseWriter, r *http.Reques
 		Input:      input,
 		Mode:       application.ModeAsync,
 		Source:     application.SourceUI,
-		Principal:  r.RemoteAddr,
+		Principal:  requestPrincipal(r),
+		RequestID:  r.Header.Get("X-Request-ID"),
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeExecutionError(w, err)
 		return
 	}
 	renderJSON(w, http.StatusAccepted, map[string]interface{}{

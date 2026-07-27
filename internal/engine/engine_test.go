@@ -81,11 +81,12 @@ type typedSourceAction struct{}
 
 func (m *typedSourceAction) Execute(ctx *nodes.ExecutionContext, node *nodes.Node) (interface{}, error) {
 	return map[string]interface{}{
-		"str":     "hello",
-		"num":     float64(42),
-		"bool":    true,
-		"profile": map[string]interface{}{"role": "admin"},
-		"items":   []interface{}{float64(1), "two"},
+		"str":           "hello",
+		"num":           float64(42),
+		"bool":          true,
+		"profile":       map[string]interface{}{"role": "admin"},
+		"items":         []interface{}{float64(1), "two"},
+		"delay_seconds": float64(1),
 	}, nil
 }
 func (m *typedSourceAction) Validate(node *nodes.Node) error { return nil }
@@ -328,6 +329,70 @@ func TestRuntimeCompleteExpressionsPreserveTypes(t *testing.T) {
 	if params["mixed"] != `count=3 profile={"role":"trigger"}` {
 		t.Fatalf("mixed interpolation should stringify values, got %#v", params["mixed"])
 	}
+}
+
+func TestDelaySleepAcceptsNumericExpressionRuntimeValue(t *testing.T) {
+	registry := nodes.NewPluginRegistry()
+	_ = registry.Register(&typedSourceAction{})
+	_ = registry.Register(nodes.NewDelaySleepExecutor())
+
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	execStore := storage.NewExecutionStore(db)
+	wfStore := storage.NewWorkflowStore(db)
+	eng := NewEngine(registry, execStore, storage.NewCredentialStore(db, nil), NewEventBus(), wfStore)
+
+	nodeList := []nodes.Node{
+		{ID: "source", Type: "typedSourceAction", Name: "Typed Source", Params: map[string]interface{}{}},
+		{ID: "delay", Type: nodes.TypeDelaySleep, Name: "Delay", Params: map[string]interface{}{
+			"seconds": "{{source.delay_seconds}}",
+		}},
+	}
+	edgeList := []nodes.Edge{{ID: "e1", Source: "source", Target: "delay"}}
+	nodesJSON, _ := json.Marshal(nodeList)
+	edgesJSON, _ := json.Marshal(edgeList)
+	wf := &storage.Workflow{
+		ID:        "wf-delay-expression",
+		Name:      "Delay Expression",
+		NodesJSON: string(nodesJSON),
+		EdgesJSON: string(edgesJSON),
+	}
+	if err := wfStore.Create(wf); err != nil {
+		t.Fatalf("create workflow: %v", err)
+	}
+
+	start := time.Now()
+	exec, err := eng.ExecuteWorkflow(wf, nil)
+	if err != nil {
+		t.Fatalf("execute workflow: %v", err)
+	}
+	elapsed := time.Since(start)
+	if exec.Status != "SUCCESS" {
+		t.Fatalf("expected SUCCESS, got %s: %s", exec.Status, exec.ErrorMessage)
+	}
+	if elapsed < 900*time.Millisecond {
+		t.Fatalf("delay expression did not wait for numeric value, elapsed %s", elapsed)
+	}
+
+	var logs []NodeLog
+	if err := json.Unmarshal([]byte(exec.LogsJSON), &logs); err != nil {
+		t.Fatalf("parse logs: %v", err)
+	}
+	for _, log := range logs {
+		if log.NodeID != "delay" {
+			continue
+		}
+		output, _ := log.Output.(map[string]interface{})
+		if output["delayed_seconds"] != float64(1) {
+			t.Fatalf("expected delayed_seconds 1, got %#v", output["delayed_seconds"])
+		}
+		return
+	}
+	t.Fatalf("delay node log not found")
 }
 
 func TestCancelAsyncWorkflow(t *testing.T) {

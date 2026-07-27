@@ -24,6 +24,8 @@ This guide describes how to prepare a Goflow preview release.
    npm run test:e2e
    ```
 
+   `npm run test:e2e` uses `tests/run-e2e.mjs`, which starts a temporary local Goflow server and kills the Windows process tree after Playwright exits. This avoids leaving `go run` cache binaries listening on the E2E port after interrupted tests.
+
 5. Build the binary:
 
    ```bash
@@ -58,7 +60,7 @@ This guide describes how to prepare a Goflow preview release.
    ```powershell
    cd ui
    $env:GOFLOW_E2E_BINARY = ".\goflow.exe"
-   npx playwright test tests/e2e/milestone2-closure.spec.js tests/e2e/milestone3-inspector.spec.js tests/e2e/milestone4-debugging.spec.js
+   node tests/run-e2e.mjs tests/e2e/milestone2-closure.spec.js tests/e2e/milestone3-inspector.spec.js tests/e2e/milestone4-debugging.spec.js
    Remove-Item Env:\GOFLOW_E2E_BINARY
    ```
 

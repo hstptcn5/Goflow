@@ -106,6 +106,49 @@ export function graphFingerprint(nodes, edges) {
   return JSON.stringify(normalized);
 }
 
+export function buildExecutionPathState(edges = [], logs = []) {
+  const statusByNode = new Map((logs || []).map((log) => [log.node_id, String(log.status || '').toUpperCase()]));
+  const incoming = new Map();
+  (edges || []).forEach((edge) => {
+    if (!incoming.has(edge.target)) incoming.set(edge.target, []);
+    incoming.get(edge.target).push(edge);
+  });
+
+  const failedNodes = new Set();
+  const failedAncestryNodes = new Set();
+  const failedPathEdges = new Set();
+  statusByNode.forEach((status, nodeId) => {
+    if (status === 'FAILED') failedNodes.add(nodeId);
+  });
+
+  const visit = (nodeId, seen = new Set()) => {
+    if (seen.has(nodeId)) return;
+    seen.add(nodeId);
+    for (const edge of incoming.get(nodeId) || []) {
+      const sourceStatus = statusByNode.get(edge.source) || 'NOT_RUN';
+      const targetStatus = statusByNode.get(edge.target) || 'NOT_RUN';
+      if (sourceStatus === 'SKIPPED' || sourceStatus === 'NOT_RUN' || targetStatus === 'SKIPPED' || targetStatus === 'NOT_RUN') continue;
+      failedPathEdges.add(edge.id);
+      if (!failedNodes.has(edge.source)) failedAncestryNodes.add(edge.source);
+      visit(edge.source, seen);
+    }
+  };
+  failedNodes.forEach((nodeId) => visit(nodeId));
+
+  const edgeStates = {};
+  (edges || []).forEach((edge) => {
+    const sourceStatus = statusByNode.get(edge.source) || 'NOT_RUN';
+    const targetStatus = statusByNode.get(edge.target) || 'NOT_RUN';
+    if (failedPathEdges.has(edge.id)) edgeStates[edge.id] = 'failed-path';
+    else if (sourceStatus === 'SKIPPED' || targetStatus === 'SKIPPED') edgeStates[edge.id] = 'skipped';
+    else if (sourceStatus === 'RUNNING' || targetStatus === 'RUNNING') edgeStates[edge.id] = 'running';
+    else if (sourceStatus === 'SUCCESS' && targetStatus === 'SUCCESS') edgeStates[edge.id] = 'success';
+    else edgeStates[edge.id] = 'not-run';
+  });
+
+  return { edgeStates, failedNodes, failedAncestryNodes };
+}
+
 const hardIssueTypes = new Set([
   'duplicate_node_id',
   'invalid_edge_reference',

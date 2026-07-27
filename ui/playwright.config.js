@@ -14,11 +14,12 @@ export default defineConfig({
     deviceScaleFactor: 1,
     colorScheme: 'light',
   },
-  webServer: {
+  webServer: process.env.GOFLOW_E2E_NO_WEBSERVER === '1' ? undefined : {
     command: 'node tests/start-goflow-e2e.mjs',
     url: 'http://127.0.0.1:18081/workflows',
     timeout: 60_000,
     reuseExistingServer: false,
+    gracefulShutdown: { signal: 'SIGKILL', timeout: 1000 },
   },
   projects: [
     {
