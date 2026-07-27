@@ -139,6 +139,37 @@ describe('PropertiesPanel', () => {
     expect(root.textContent).not.toContain('secret-token');
   });
 
+  it('uses the active execution result for header status instead of global realtime node status', async () => {
+    const selectedNode = { id: 'json_1', type: 'jsonTransform', name: 'JSON Transform', params: { json_template: '{}' } };
+    const { root } = await mountWithApp(PropertiesPanel, {
+      props: {
+        selectedNode,
+        selectedExecution: {
+          id: 'exec_failed',
+          node_logs: [
+            { node_id: 'json_1', status: 'FAILED', error: 'failed in selected execution', attempts: 1, duration_ms: 9 },
+          ],
+        },
+        executionContextMode: 'selected',
+      },
+    });
+    const store = useWorkflowStore();
+    const executionStore = useExecutionStore();
+    store.nodeDefinitions = nodeDefs;
+    executionStore.nodeStatuses = { json_1: 'SUCCESS' };
+    executionStore.nodeEventsByExecution = {
+      exec_live: {
+        json_1: { node_id: 'json_1', execution_id: 'exec_live', status: 'SUCCESS', output: { ok: true } },
+      },
+    };
+    await nextFrame();
+
+    expect(root.querySelector('.execution-context strong').textContent).toContain('FAILED');
+    expect(root.querySelector('.execution-context').textContent).toContain('Selected execution exec_failed');
+    expect(root.querySelector('[aria-selected="true"]').textContent).toContain('Logs');
+    expect(root.textContent).toContain('failed in selected execution');
+  });
+
   it('uses undoable parameter updates through the editor integration', async () => {
     const selectedNode = { id: 'http_1', type: 'httpRequest', name: 'HTTP Request', params: { method: 'GET', url: '', headers: '{}' } };
     let calls = 0;

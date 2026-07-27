@@ -88,7 +88,9 @@ test('Milestone 4 editor selector overlays failed path and replays selected exec
   await expect(page.locator('.execution-edge-skipped')).toHaveCount(1);
 
   await page.locator('.node-body-title', { hasText: 'Bad JSON' }).click();
-  await page.locator('.panel-tabs').getByRole('tab', { name: 'Logs' }).click();
+  await expect(page.locator('.execution-context strong')).toHaveText('FAILED');
+  await expect(page.locator('.execution-context')).toContainText(`Latest execution ${firstExecution.id}`);
+  await expect(page.locator('.panel-tabs').getByRole('tab', { name: 'Logs' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByText('Open Parameters')).toBeVisible();
   await page.getByRole('button', { name: 'Open Parameters' }).click();
   await expect(page.locator('.panel-tabs').getByRole('tab', { name: 'Parameters' })).toHaveAttribute('aria-selected', 'true');
@@ -149,6 +151,8 @@ test('Milestone 4 selected execution stays isolated from later live events', asy
   await expect(page.getByLabel('Execution selector')).toContainText('SUCCESS');
   await page.getByLabel('Execution selector').selectOption(executionA.id);
   await page.locator('.node-body-title', { hasText: 'Source JSON' }).click();
+  await expect(page.locator('.execution-context strong')).toHaveText('SUCCESS');
+  await expect(page.locator('.execution-context')).toContainText(`Selected execution ${executionA.id}`);
   await page.locator('.panel-tabs').getByRole('tab', { name: 'Output' }).click();
   await expect(page.locator('.json-tree code', { hasText: 'A' }).first()).toBeVisible();
 
@@ -174,9 +178,44 @@ test('Milestone 4 selected execution stays isolated from later live events', asy
   expect(JSON.stringify(bundle)).toContain('"label":"C"');
 });
 
-test('Milestone 4 editor can cancel a selected running execution', async ({ page }) => {
+test('Milestone 4 live execution is scoped to the current workflow', async ({ page }) => {
+  const workflowA = await createWorkflow(page, {
+    name: 'UX M4 Live Scope A',
+    description: '',
+    is_active: true,
+    nodes_json: JSON.stringify([
+      { id: 'delay_1', type: 'delaySleep', name: 'Delay A', position: { x: 200, y: 120 }, params: { seconds: '1' } },
+    ]),
+    edges_json: '[]',
+  });
+  const workflowB = await createWorkflow(page, {
+    name: 'UX M4 Live Scope B',
+    description: '',
+    is_active: true,
+    nodes_json: JSON.stringify([
+      { id: 'delay_1', type: 'delaySleep', name: 'Delay B', position: { x: 200, y: 120 }, params: { seconds: '120' } },
+    ]),
+    edges_json: '[]',
+  });
+
+  await page.goto(`/workflows/${workflowA.id}`);
+  await expect(page.getByLabel('Execution selector')).toContainText('No executions yet');
+  await page.request.post(`/api/v1/workflows/${workflowB.id}/trigger?async=true`, { data: { source: 'workflow-b' } });
+  await page.waitForTimeout(500);
+  await expect(page.getByLabel('Execution selector')).toContainText('No executions yet');
+  await expect(page.locator('.node-execution-state')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Cancel execution' })).toBeDisabled();
+
+  const runA = await page.request.post(`/api/v1/workflows/${workflowA.id}/trigger?async=true`, { data: { source: 'workflow-a' } });
+  expect(runA.ok()).toBeTruthy();
+  const runABody = await runA.json();
+  await expect(page.getByLabel('Execution selector')).toContainText(`Live execution ${runABody.execution_id.slice(0, 8)}`);
+  await expect(page.locator('.node-execution-state')).toContainText(/RUNNING|SUCCESS/);
+});
+
+test('Milestone 4 cancel targets only the displayed running execution', async ({ page }) => {
   const workflow = await createWorkflow(page, {
-    name: 'UX M4 Cancel',
+    name: 'UX M4 Exact Cancel',
     description: '',
     is_active: true,
     nodes_json: JSON.stringify([
@@ -189,18 +228,39 @@ test('Milestone 4 editor can cancel a selected running execution', async ({ page
   const running = await waitForLatestExecution(page, workflow.id, false);
   expect(['RUNNING', 'QUEUED']).toContain(running.status);
 
+  const currentWorkflow = await (await page.request.get(`/api/v1/workflows/${workflow.id}`)).json();
+  const quickNodes = JSON.stringify([
+    { id: 'json_1', type: 'jsonTransform', name: 'Quick JSON', position: { x: 200, y: 120 }, params: { json_template: '{"ok":true}' } },
+  ]);
+  const update = await page.request.put(`/api/v1/workflows/${workflow.id}`, {
+    data: { ...currentWorkflow, nodes_json: quickNodes, edges_json: '[]' },
+  });
+  expect(update.ok()).toBeTruthy();
+  await page.request.post(`/api/v1/workflows/${workflow.id}/trigger`, { data: { source: 'terminal' } });
+  const terminal = await waitForLatestExecution(page, workflow.id);
+  expect(terminal.status).toBe('SUCCESS');
+
   await page.goto(`/workflows/${workflow.id}`);
-  await expect(page.getByRole('button', { name: 'Cancel execution' })).toBeEnabled();
+  await expect(page.getByLabel('Execution selector')).toContainText('SUCCESS');
+  await expect(page.getByRole('button', { name: 'Cancel execution' })).toBeDisabled();
+  await page.getByLabel('Execution selector').selectOption(running.id);
+  await expect(page.getByRole('button', { name: `Cancel ${running.id.slice(0, 8)}` })).toBeEnabled();
   const [cancelResponse] = await Promise.all([
     page.waitForResponse((res) => res.url().includes(`/api/v1/executions/${running.id}/cancel`) && res.request().method() === 'POST'),
-    page.getByRole('button', { name: 'Cancel execution' }).click(),
+    page.getByRole('button', { name: `Cancel ${running.id.slice(0, 8)}` }).click(),
   ]);
   expect(cancelResponse.status()).toBe(202);
 
+  let cancelled = false;
   for (let i = 0; i < 20; i += 1) {
     const exec = await (await page.request.get(`/api/v1/executions/${running.id}`)).json();
-    if (['CANCEL_REQUESTED', 'CANCELLED', 'INTERRUPTED'].includes(exec.status)) return;
+    if (['CANCEL_REQUESTED', 'CANCELLED', 'INTERRUPTED'].includes(exec.status)) {
+      cancelled = true;
+      break;
+    }
     await page.waitForTimeout(250);
   }
-  throw new Error('Execution was not cancelled');
+  if (!cancelled) throw new Error('Execution was not cancelled');
+  const terminalAfterCancel = await (await page.request.get(`/api/v1/executions/${terminal.id}`)).json();
+  expect(terminalAfterCancel.status).toBe('SUCCESS');
 });

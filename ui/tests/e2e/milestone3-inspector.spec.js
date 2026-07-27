@@ -13,6 +13,15 @@ function visualOptions(page) {
   };
 }
 
+async function waitForVisualReady(page, { inspector = true } = {}) {
+  await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}' });
+  await page.evaluate(() => document.fonts?.ready);
+  await expect(page.getByTestId('workflow-editor-ready')).toBeVisible();
+  await expect(page.locator('.goflow-canvas')).toBeVisible();
+  if (inspector) await expect(page.getByTestId('inspector-ready')).toBeVisible();
+  await page.waitForFunction(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))));
+}
+
 async function createWorkflow(page, data) {
   const res = await page.request.post('/api/v1/workflows', { data });
   expect(res.ok()).toBeTruthy();
@@ -424,11 +433,13 @@ test('Milestone 3 inspector visual regression baseline states', async ({ page })
   await page.getByText('IF / ELSE Condition').click();
   await page.getByRole('button', { name: 'Test Workflow' }).click();
   await expect(page.getByText('Input Value is required.')).toBeVisible();
+  await waitForVisualReady(page);
   await expect(page).toHaveScreenshot('m3-parameters-inline-required.png', snapshot);
 
   await page.getByRole('button', { name: 'Close node inspector' }).click();
   await page.locator('.node-body-title', { hasText: 'Google Sheets' }).click();
   await expect(page.getByText('Create credential')).toBeVisible();
+  await waitForVisualReady(page);
   await expect(page).toHaveScreenshot('m3-missing-credential.png', snapshot);
 
   const mappingWorkflow = await createWorkflow(page, {
@@ -447,6 +458,7 @@ test('Milestone 3 inspector visual regression baseline states', async ({ page })
   await page.getByText('IF / ELSE Condition').click();
   await page.locator('.panel-tabs').getByRole('tab', { name: 'Input' }).click();
   await expect(page.getByText('transformed.user.email')).toBeVisible();
+  await waitForVisualReady(page);
   await expect(page).toHaveScreenshot('m3-input-json-tree.png', snapshot);
 
   await page.locator('.panel-tabs').getByRole('tab', { name: 'Parameters' }).click();
@@ -454,11 +466,13 @@ test('Milestone 3 inspector visual regression baseline states', async ({ page })
   await page.getByLabel('Search input data').first().fill('email');
   await page.getByRole('button', { name: /transformed.user.email/ }).first().click();
   await expect(page.getByText('{{json_1.transformed.user.email}}')).toBeVisible();
+  await waitForVisualReady(page);
   await expect(page).toHaveScreenshot('m3-data-picker-expression-preview.png', snapshot);
 
   await page.locator('.node-body-title', { hasText: 'JSON Transform' }).click();
   await page.locator('.panel-tabs').getByRole('tab', { name: 'Output' }).click();
   await expect(page.getByText('Status: SUCCESS')).toBeVisible();
+  await waitForVisualReady(page);
   await expect(page).toHaveScreenshot('m3-output-json.png', snapshot);
 
   const failedWorkflow = await createWorkflow(page, {
@@ -476,6 +490,8 @@ test('Milestone 3 inspector visual regression baseline states', async ({ page })
   await page.getByText('Bad JSON').click();
   await page.locator('.panel-tabs').getByRole('tab', { name: 'Logs' }).click();
   await expect(page.getByText('Node failed')).toBeVisible();
+  await waitForVisualReady(page);
   await expect(page).toHaveScreenshot('m3-logs-error.png', snapshot);
+  await waitForVisualReady(page);
   await expect(page).toHaveScreenshot('m3-inspector-1366.png', snapshot);
 });

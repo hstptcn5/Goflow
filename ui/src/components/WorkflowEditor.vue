@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { VueFlow, useVueFlow, Handle, Position } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
@@ -38,6 +38,7 @@ import '@vue-flow/controls/dist/style.css';
 
 const workflowStore = useWorkflowStore();
 const executionStore = useExecutionStore();
+const route = useRoute();
 const router = useRouter();
 const showAIDrawer = ref(false);
 const showTemplateGallery = ref(false);
@@ -133,11 +134,23 @@ const validationIssuesByNode = computed(() => {
   }, {});
 });
 const splitIssues = computed(() => splitValidationIssues(validationIssues.value));
-const executionContextMode = computed(() => selectedExecutionId.value ? 'selected' : executionStore.liveExecutionId ? 'live' : 'latest');
-const activeLiveExecutionId = computed(() => executionStore.liveExecutionId || '');
+const currentWorkflowId = computed(() => String(route.params.id || workflowStore.currentWorkflow?.id || ''));
+const activeLiveExecutionId = computed(() => executionStore.liveExecutionIdsByWorkflow[currentWorkflowId.value] || '');
+const activeLiveEvents = computed(() => executionStore.nodeEventsByWorkflow[currentWorkflowId.value]?.[activeLiveExecutionId.value] || {});
+const latestHistoryExecution = computed(() => executionStore.executionLogs[0] || null);
+const displayedLiveExecutionId = computed(() => {
+  if (selectedExecutionId.value || !activeLiveExecutionId.value) return '';
+  const liveEvents = Object.values(activeLiveEvents.value || {});
+  if (liveEvents.length && !liveEvents.some((event) => event.workflow_id === currentWorkflowId.value)) return '';
+  const latest = latestHistoryExecution.value;
+  if (!latest) return activeLiveExecutionId.value;
+  if (!executionStore.executionLogs.some((exec) => exec.id === activeLiveExecutionId.value)) return activeLiveExecutionId.value;
+  return latest.id === activeLiveExecutionId.value && isRunningExecution(latest) ? activeLiveExecutionId.value : '';
+});
+const executionContextMode = computed(() => selectedExecutionId.value ? 'selected' : displayedLiveExecutionId.value ? 'live' : 'latest');
 const activeLiveExecutionStatus = computed(() => {
-  if (!activeLiveExecutionId.value) return '';
-  const events = Object.values(executionStore.nodeEventsByExecution[activeLiveExecutionId.value] || {});
+  if (!displayedLiveExecutionId.value) return '';
+  const events = Object.values(activeLiveEvents.value || {});
   if (events.some((event) => String(event.status || '').toUpperCase() === 'RUNNING')) return 'RUNNING';
   if (events.some((event) => String(event.status || '').toUpperCase() === 'FAILED')) return 'FAILED';
   if (events.length && events.every((event) => ['SUCCESS', 'SKIPPED'].includes(String(event.status || '').toUpperCase()))) return 'SUCCESS';
@@ -145,15 +158,15 @@ const activeLiveExecutionStatus = computed(() => {
 });
 const selectedExecution = computed(() => {
   if (selectedExecutionId.value) return executionStore.executionLogs.find((exec) => exec.id === selectedExecutionId.value) || null;
-  if (activeLiveExecutionId.value) {
-    return executionStore.executionLogs.find((exec) => exec.id === activeLiveExecutionId.value) || {
-      id: activeLiveExecutionId.value,
+  if (displayedLiveExecutionId.value) {
+    return executionStore.executionLogs.find((exec) => exec.id === displayedLiveExecutionId.value) || {
+      id: displayedLiveExecutionId.value,
       status: activeLiveExecutionStatus.value || 'RUNNING',
-      node_logs: Object.values(executionStore.nodeEventsByExecution[activeLiveExecutionId.value] || {}),
+      node_logs: Object.values(activeLiveEvents.value || {}),
       trigger_source: 'live',
     };
   }
-  return executionStore.executionLogs[0] || null;
+  return latestHistoryExecution.value;
 });
 const selectedExecutionLogs = computed(() => {
   const exec = selectedExecution.value;
@@ -174,10 +187,11 @@ const selectedExecutionIsRunning = computed(() => isRunningExecution(selectedExe
 const cancellableExecution = computed(() => {
   if (selectedExecutionId.value) return selectedExecutionIsRunning.value ? selectedExecution.value : null;
   if (selectedExecutionIsRunning.value) return selectedExecution.value;
-  return executionStore.executionLogs.find((exec) => isRunningExecution(exec)) || null;
+  return null;
 });
+const cancelButtonLabel = computed(() => cancellableExecution.value ? `Cancel ${String(cancellableExecution.value.id || '').slice(0, 8)}` : 'Cancel execution');
 const executionSelectorLabel = computed(() => {
-  if (executionContextMode.value === 'live' && activeLiveExecutionId.value) return `Live execution ${String(activeLiveExecutionId.value).slice(0, 8)}`;
+  if (executionContextMode.value === 'live' && displayedLiveExecutionId.value) return `Live execution ${String(displayedLiveExecutionId.value).slice(0, 8)}`;
   if (!selectedExecution.value) return 'No executions yet';
   if (executionContextMode.value === 'selected') return `Selected execution ${String(selectedExecution.value.id || '').slice(0, 8)}`;
   return `Latest execution ${String(selectedExecution.value.id || '').slice(0, 8)}`;
@@ -200,8 +214,7 @@ function nodeOperationSummary(data) {
 
 function nodeExecutionLog(nodeId) {
   if (executionContextMode.value !== 'live') return selectedLogByNode.value.get(nodeId) || null;
-  const liveEvents = executionStore.nodeEventsByExecution[activeLiveExecutionId.value] || {};
-  return liveEvents[nodeId] || selectedLogByNode.value.get(nodeId) || null;
+  return activeLiveEvents.value[nodeId] || selectedLogByNode.value.get(nodeId) || null;
 }
 
 function nodeStatus(nodeId) {
@@ -250,6 +263,7 @@ watch(
   () => {
     loadCurrentWorkflow();
     if (workflowStore.currentWorkflow?.id) {
+      executionStore.clearExecutionHistory();
       executionStore.fetchExecutionHistory(workflowStore.currentWorkflow.id).catch((err) => {
         runError.value = err.message;
       });
@@ -258,9 +272,19 @@ watch(
 );
 
 watch(
-  [selectedExecutionId, selectedExecutionLogs, () => executionStore.nodeStatuses],
+  [selectedExecutionId, selectedExecutionLogs, activeLiveEvents],
   () => applyExecutionOverlay(),
   { deep: true }
+);
+
+watch(
+  () => workflowStore.currentWorkflow?.id,
+  (newId, oldId) => {
+    if (newId !== oldId) {
+      selectedExecutionId.value = '';
+      if (oldId) executionStore.resetWorkflowLiveState(oldId);
+    }
+  }
 );
 
 function loadCurrentWorkflow() {
@@ -949,7 +973,7 @@ function handleEditorShortcut(event) {
 </script>
 
 <template>
-  <div class="workflow-editor-container">
+  <div class="workflow-editor-container" data-testid="workflow-editor-ready">
     <header class="workflow-topbar" aria-label="Workflow actions">
       <button class="btn btn-secondary" type="button" @click="router.push('/workflows')">Back</button>
       <div class="workflow-title-group">
@@ -978,7 +1002,7 @@ function handleEditorShortcut(event) {
         </select>
         <button class="btn btn-secondary" type="button" :disabled="!selectedExecution || !['FAILED', 'CANCELLED', 'INTERRUPTED'].includes(String(selectedExecution.status || '').toUpperCase())" @click="retryFullWorkflow">Retry selected execution</button>
         <button class="btn btn-secondary" type="button" :disabled="!selectedExecution" @click="replaySelectedExecution">Replay on current workflow</button>
-        <button class="btn btn-secondary" type="button" :disabled="!cancellableExecution" @click="cancelSelectedExecution">Cancel execution</button>
+        <button class="btn btn-secondary" type="button" :disabled="!cancellableExecution" @click="cancelSelectedExecution">{{ cancelButtonLabel }}</button>
         <button class="btn btn-secondary" type="button" :disabled="!selectedExecution" @click="copyDebugBundle">Copy debug bundle</button>
       </div>
       <button class="btn btn-primary" type="button" :disabled="triggering" @click="runWorkflow">
@@ -1091,10 +1115,7 @@ function handleEditorShortcut(event) {
               <span class="node-config-state" :class="{ invalid: validationIssuesByNode[id]?.length }">
                 {{ nodeValidationState(id) }}
               </span>
-              <span v-if="executionStore.nodeStatuses[id]" class="node-execution-state">
-                {{ nodeStatus(id) }}
-              </span>
-              <span v-else-if="nodeStatus(id)" class="node-execution-state">
+              <span v-if="nodeStatus(id)" class="node-execution-state">
                 {{ nodeStatus(id) }}
               </span>
               <span v-if="nodeExecutionLog(id)?.duration_ms" class="node-execution-meta">
@@ -1138,7 +1159,7 @@ function handleEditorShortcut(event) {
       :validationIssues="validationIssuesByNode[selectedNodeId] || []"
       :selectedExecution="selectedExecution"
       :executionContextMode="executionContextMode"
-      :activeLiveExecutionId="activeLiveExecutionId"
+      :activeLiveExecutionId="displayedLiveExecutionId"
       @updateNodeParams="handleUpdateNodeParams"
       @deleteNode="handleDeleteNode"
       @close="selectedNodeId = null"

@@ -75,11 +75,11 @@ Allowed status values: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `MANUAL_VERIFICA
 | Requirement | Status | Implementation evidence | Test evidence | Manual evidence | Remaining work |
 |---|---|---|---|---|---|
 | Execution selector in editor | DONE | `ui/src/components/WorkflowEditor.vue` execution selector bound to workflow execution history | `ui/tests/e2e/milestone4-debugging.spec.js` | Local browser smoke | Manual screen-reader pass |
-| Canvas execution overlay | DONE | Node status/duration badges and selected/live execution state mapping in `WorkflowEditor.vue` | `ui/tests/e2e/milestone4-debugging.spec.js` | Local browser smoke | Manual visual review on low-end Windows |
+| Canvas execution overlay | DONE | Node status/duration badges and route-scoped selected/latest/live execution state mapping in `WorkflowEditor.vue`; workflow switches clear stale live/history state | `ui/tests/e2e/milestone4-debugging.spec.js` cross-workflow live isolation assertion | Local browser smoke | Manual visual review on low-end Windows |
 | Failed-path highlight | DONE | `buildExecutionPathState()` traverses execution logs and graph edges to distinguish failed ancestry, successful, skipped, running, and not-run paths | `ui/tests/workflow-editor-utils.test.js`, `ui/tests/e2e/milestone4-debugging.spec.js` multi-hop branch path assertion | Local browser smoke | Broader visual baselines can be added later |
 | Retry selected execution | DONE | `retryFullWorkflow()` delegates to replay and uses stored input from the selected failed/cancelled execution; Test Workflow remains the current-empty-input path | `ui/tests/e2e/milestone4-debugging.spec.js` required-input retry assertion | Local browser smoke | None |
 | Replay execution | DONE | `POST /api/v1/executions/{id}/replay` uses `TriggerService` with stored raw input, authenticated principal, request ID, current workflow definition, scoped allowlist, and async UI source | `internal/api/execution_handler_test.go`, `ui/tests/e2e/milestone4-debugging.spec.js` replay assertion | Local browser smoke | None |
-| Cancel execution | DONE | Editor Cancel action calls the REST cancellation API for the active running execution context without being blocked by synthetic live state | `ui/tests/e2e/milestone4-debugging.spec.js` cancellation assertion | Local browser smoke | None |
+| Cancel execution | DONE | Editor Cancel action calls the REST cancellation API only for the displayed running/queued execution; hidden running executions do not enable Cancel while latest/selected terminal execution is shown; button labels target the short execution ID | `ui/tests/e2e/milestone4-debugging.spec.js` exact-target cancellation assertion with concurrent executions | Local browser smoke | None |
 | Redacted debug bundle | DONE | Workflow params, selected execution, node logs, validation issues, nested JSON strings, URL userinfo, webhook URLs, query tokens, and token formats are redacted; preview can truncate as valid JSON while copy/export returns full valid JSON | `ui/tests/inspector-utils.test.js`, `ui/tests/e2e/milestone4-debugging.spec.js` large-bundle parse/no-secret assertion | Local browser smoke | None |
 | Contextual error actions | DONE | Logs tab shows Open Parameters and Copy error for failed node errors | `ui/tests/e2e/milestone4-debugging.spec.js` | Local browser smoke | Manual failed-node diagnosis timing |
 
@@ -145,15 +145,16 @@ Allowed status values: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `MANUAL_VERIFICA
 
 ## Milestone 4 Automated Gate Evidence
 
-- Milestone 4 integration hardening added: integer-safe delay runtime parsing for string/int/int32/int64/float32/float64/json.Number, active execution context isolation for live/latest/selected execution views, multi-hop failed-path traversal, replay security/status-code coverage, retry-selected-input behavior, hardened debug bundle redaction, large valid JSON bundle copy, and a Windows-safe custom Playwright E2E runner.
+- Milestone 4 integration hardening added: integer-safe delay runtime parsing for string/int/int32/int64/float32/float64/json.Number, active execution context isolation for live/latest/selected execution views, inspector status sourced from the same execution result as Input/Output/Logs, workflow-scoped live WebSocket state, exact-target cancellation behavior, multi-hop failed-path traversal, replay security/status-code coverage, retry-selected-input behavior, hardened debug bundle redaction, large valid JSON bundle copy, dynamic-port custom Playwright E2E runner with occupied-port smoke coverage, and stable screenshot readiness waits.
 - Passed focused hardening gates: `go test ./internal/api ./internal/engine ./internal/nodes`; `cd ui && npm run test -- --run tests/workflow-editor-utils.test.js tests/inspector-utils.test.js`; `cd ui && npm run build`; `cd ui && node tests/run-e2e.mjs tests/e2e/milestone4-debugging.spec.js --reporter=line --timeout=45000` - 3 Chromium tests.
 - Passed: `cd ui && npm ci` - 0 vulnerabilities.
 - Passed: `cd ui && npm run build`.
-- Passed: `cd ui && npm run test` - 9 files, 44 tests.
-- Passed: `cd ui && npm run test:e2e` - 23 Chromium tests via `tests/run-e2e.mjs`, deterministic with one worker and Windows process-tree cleanup.
+- Passed: `cd ui && npm run test` - 10 files, 46 tests.
+- Passed: `cd ui && npm run test:e2e:runner` - occupied-port runner smoke.
+- Passed: `cd ui && npm run test:e2e` - 24 Chromium tests via `tests/run-e2e.mjs`, deterministic with one worker, dynamic temp port, API-key readiness, and Windows process-tree cleanup.
 - Passed: `go test ./...`.
 - Passed: `go vet ./...`.
 - Passed: `go build ./...`.
 - Passed: `go build -trimpath -ldflags="-s -w" -o goflow.exe main.go static_embed.go`.
 - Passed: `.\scripts\goal-smoke-test.ps1 -Binary .\goflow.exe -Port 18080 -AdminKey goal-admin-key`.
-- Passed embedded binary UX gate: `cd ui; $env:GOFLOW_E2E_BINARY = "goflow.exe"; node tests/run-e2e.mjs tests/e2e/milestone2-closure.spec.js tests/e2e/milestone3-inspector.spec.js tests/e2e/milestone4-debugging.spec.js --reporter=line --timeout=45000` - 17 Chromium tests.
+- Passed embedded binary UX gate: `cd ui; $env:GOFLOW_E2E_BINARY = "goflow.exe"; node tests/run-e2e.mjs tests/e2e/milestone2-closure.spec.js tests/e2e/milestone2.spec.js tests/e2e/milestone3-inspector.spec.js tests/e2e/milestone4-debugging.spec.js --reporter=line --timeout=45000` - 21 Chromium tests.

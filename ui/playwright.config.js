@@ -8,11 +8,14 @@ export default defineConfig({
     timeout: 10_000,
   },
   use: {
-    baseURL: 'http://127.0.0.1:18081',
+    baseURL: process.env.GOFLOW_E2E_BASE_URL || 'http://127.0.0.1:18081',
     trace: 'retain-on-failure',
     viewport: { width: 1366, height: 768 },
     deviceScaleFactor: 1,
     colorScheme: 'light',
+    extraHTTPHeaders: process.env.GOFLOW_E2E_API_KEY
+      ? { Authorization: `Bearer ${process.env.GOFLOW_E2E_API_KEY}` }
+      : {},
   },
   webServer: process.env.GOFLOW_E2E_NO_WEBSERVER === '1' ? undefined : {
     command: 'node tests/start-goflow-e2e.mjs',

@@ -2,18 +2,22 @@
 import { onMounted, watch, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useWorkflowStore } from '@/stores/workflowStore';
+import { useExecutionStore } from '@/stores/executionStore';
 import WorkflowEditor from '@/components/WorkflowEditor.vue';
 import StateBlock from '@/components/StateBlock.vue';
 
 const route = useRoute();
 const router = useRouter();
 const workflowStore = useWorkflowStore();
+const executionStore = useExecutionStore();
 const loading = ref(false);
 const pageError = ref('');
 
 async function loadWorkflow(id) {
   loading.value = true;
   pageError.value = '';
+  executionStore.clearExecutionHistory();
+  executionStore.resetNodeStatuses();
   try {
     await workflowStore.selectWorkflow(id);
     if (workflowStore.error) pageError.value = workflowStore.error;

@@ -87,7 +87,8 @@ const executionLogs = computed(() => {
 const nodeExecutionResult = computed(() => {
   if (!props.selectedNode) return null;
   if (props.executionContextMode === 'live' && props.activeLiveExecutionId) {
-    const realtimeEvent = executionStore.nodeEventsByExecution[props.activeLiveExecutionId]?.[props.selectedNode.id];
+    const workflowId = workflowStore.currentWorkflow?.id || '';
+    const realtimeEvent = executionStore.nodeEventsByWorkflow[workflowId]?.[props.activeLiveExecutionId]?.[props.selectedNode.id];
     if (realtimeEvent) return realtimeEvent;
   }
   return executionLogs.value.find((log) => log.node_id === props.selectedNode.id) || null;
@@ -95,7 +96,7 @@ const nodeExecutionResult = computed(() => {
 
 const selectedNodeStatus = computed(() => {
   if (!props.selectedNode) return null;
-  return executionStore.nodeStatuses[props.selectedNode.id] || nodeExecutionResult.value?.status || null;
+  return nodeExecutionResult.value?.status || null;
 });
 
 const selectedNodeError = computed(() => redactValue(nodeExecutionResult.value?.error || ''));
@@ -203,7 +204,7 @@ watch(
 
 watch(selectedNodeStatus, (status) => {
   if (status === 'FAILED') activeTab.value = 'logs';
-});
+}, { immediate: true });
 
 watch(sourceNodes, () => {
   if (!sourceNodes.value.some((source) => source.id === selectedSourceId.value)) {
@@ -435,7 +436,7 @@ async function runAIHelper() {
 </script>
 
 <template>
-  <aside v-if="selectedNode" class="properties-panel glass-panel" aria-label="Node inspector">
+  <aside v-if="selectedNode" class="properties-panel glass-panel" aria-label="Node inspector" data-testid="inspector-ready">
     <div class="panel-header">
       <div class="header-left">
         <span class="node-type-badge">{{ nodeDef?.name || selectedNode.type }}</span>

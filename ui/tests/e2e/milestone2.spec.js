@@ -11,6 +11,15 @@ function visualSnapshotOptions(page) {
   };
 }
 
+async function waitForVisualReady(page, { inspector = false } = {}) {
+  await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}' });
+  await page.evaluate(() => document.fonts?.ready);
+  await expect(page.getByTestId('workflow-editor-ready')).toBeVisible();
+  await expect(page.locator('.goflow-canvas')).toBeVisible();
+  if (inspector) await expect(page.getByTestId('inspector-ready')).toBeVisible();
+  await page.waitForFunction(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))));
+}
+
 test('Milestone 2 editor usability flow', async ({ page }) => {
   await page.goto('/workflows');
   await page.getByLabel('Workflow name').fill('UX M2 Workflow');
@@ -80,18 +89,22 @@ test('Milestone 2 visual regression baseline states at 1366 editor', async ({ pa
   await page.getByLabel('Workflow name').fill('UX M2 Visual');
   await page.getByRole('button', { name: 'Create blank workflow' }).click();
   await expect(page.getByText('No nodes yet')).toBeVisible();
+  await waitForVisualReady(page);
   await expect(page).toHaveScreenshot('blank-canvas.png', snapshotOptions);
 
   await page.getByRole('button', { name: 'Add first step' }).click();
   await expect(page.getByRole('dialog', { name: 'Add step' })).toBeVisible();
+  await waitForVisualReady(page);
   await expect(page).toHaveScreenshot('node-picker.png', snapshotOptions);
   await page.getByLabel('Search nodes').fill('zzzzzz');
   await expect(page.getByText('No nodes match this search.')).toBeVisible();
+  await waitForVisualReady(page);
   await expect(page).toHaveScreenshot('node-picker-empty.png', snapshotOptions);
 
   await page.getByLabel('Search nodes').fill('Delay');
   await page.getByRole('option', { name: /Delay \/ Sleep/ }).first().click();
   await expect(page.getByText('Configured')).toBeVisible();
+  await waitForVisualReady(page, { inspector: true });
   await expect(page).toHaveScreenshot('configured-node.png', snapshotOptions);
 
   await page.getByRole('button', { name: 'Close node inspector' }).click();
@@ -101,6 +114,8 @@ test('Milestone 2 visual regression baseline states at 1366 editor', async ({ pa
   await expect(page.getByText('Missing required fields')).toBeVisible();
   await expect(page.getByText('true')).toBeVisible();
   await expect(page.getByText('false')).toBeVisible();
+  await waitForVisualReady(page, { inspector: true });
   await expect(page).toHaveScreenshot('invalid-node-if-handles.png', snapshotOptions);
+  await waitForVisualReady(page, { inspector: true });
   await expect(page).toHaveScreenshot('editor-1366.png', snapshotOptions);
 });
