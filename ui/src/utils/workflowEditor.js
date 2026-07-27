@@ -1,4 +1,5 @@
 import {
+  extractExpressions,
   parseSingleExpression,
   upstreamNodeIds,
   validateExpressionSyntax,
@@ -324,18 +325,19 @@ function validateExpressionReference(value, nodeId, nodes, edges) {
   const trimmed = String(value || '').trim();
   const syntaxError = validateExpressionSyntax(trimmed);
   if (syntaxError) return { type: 'invalid_expression', nodeId, message: syntaxError.charAt(0).toLowerCase() + syntaxError.slice(1) };
-  const parsed = parseSingleExpression(trimmed);
-  if (!parsed) return null;
-  const sourceId = parsed.sourceId;
-  if (!sourceId) return { type: 'invalid_expression', nodeId, message: 'expression source is missing.' };
-  if (sourceId === '$trigger') return null;
   const ids = new Set((nodes || []).map((node) => node.id));
-  if (!ids.has(sourceId)) {
-    return { type: 'invalid_expression_reference', nodeId, message: `source "${sourceId}" does not exist.` };
-  }
   const upstream = upstreamNodeIds(nodeId, edges);
-  if (!upstream.has(sourceId)) {
-    return { type: 'invalid_expression_reference', nodeId, message: `source "${sourceId}" is not upstream of this node.` };
+  const expressions = parseSingleExpression(trimmed) ? [parseSingleExpression(trimmed)] : extractExpressions(trimmed);
+  for (const parsed of expressions) {
+    const sourceId = parsed.sourceId;
+    if (!sourceId) return { type: 'invalid_expression', nodeId, message: 'expression source is missing.' };
+    if (sourceId === '$trigger') continue;
+    if (!ids.has(sourceId)) {
+      return { type: 'invalid_expression_reference', nodeId, message: `source "${sourceId}" does not exist.` };
+    }
+    if (!upstream.has(sourceId)) {
+      return { type: 'invalid_expression_reference', nodeId, message: `source "${sourceId}" is not upstream of this node.` };
+    }
   }
   return null;
 }

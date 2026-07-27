@@ -75,21 +75,35 @@ export function expressionForPath(sourceId, path) {
 export function parseSingleExpression(expression) {
   const match = String(expression || '').trim().match(/^\{\{\s*([^{}]+?)\s*\}\}$/);
   if (!match) return null;
-  const parts = match[1].trim().split('.');
-  const sourceId = parts.shift();
-  return sourceId ? { sourceId, path: parts.join('.') } : null;
+  return parseExpressionInner(match[1]);
 }
 
 export function isCompleteExpression(value) {
   return Boolean(parseSingleExpression(value));
 }
 
+function parseExpressionInner(inner) {
+  const parts = String(inner || '').trim().split('.');
+  const sourceId = parts.shift();
+  return sourceId ? { sourceId, path: parts.join('.') } : null;
+}
+
+export function extractExpressions(value) {
+  const text = String(value ?? '');
+  const matches = [...text.matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)];
+  return matches.map((match) => ({
+    raw: match[0],
+    ...parseExpressionInner(match[1]),
+  })).filter((item) => item.sourceId);
+}
+
 export function validateExpressionSyntax(value) {
   const text = String(value ?? '').trim();
-  if (!text.includes('{{')) return '';
+  if (!text.includes('{{') && !text.includes('}}')) return '';
   if (parseSingleExpression(text)) return '';
-  if (text.startsWith('{{') && text.endsWith('}}')) return 'Expression syntax is invalid.';
-  return 'Only one complete placeholder expression is supported for this field.';
+  const withoutValidPlaceholders = text.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, '');
+  if (withoutValidPlaceholders.includes('{{') || withoutValidPlaceholders.includes('}}')) return 'Expression syntax is invalid.';
+  return '';
 }
 
 export function resolveExpression(expression, sources) {

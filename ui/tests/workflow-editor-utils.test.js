@@ -128,6 +128,25 @@ describe('workflow editor utilities', () => {
     expect(valid.map((issue) => issue.type)).not.toContain('invalid_expression_reference');
   });
 
+  it('allows mixed placeholders in JSON fields and validates each referenced source', () => {
+    const source = createWorkflowNode(defs[0], { x: 0, y: 0 }, 'source');
+    const http = createWorkflowNode(defs[2], { x: 260, y: 0 }, 'http');
+    http.data.params = {
+      url: 'https://example.com',
+      timeout: '30',
+      method: 'POST',
+      headers: '{"Authorization":"Bearer {{source.token}}","X-Run":"{{$trigger.run_id}}"}',
+    };
+
+    const valid = validateWorkflowGraph([source, http], [{ id: 'e', source: 'source', target: 'http' }], defs);
+    expect(valid.map((issue) => issue.type)).not.toEqual(expect.arrayContaining(['invalid_expression', 'invalid_expression_reference', 'invalid_json']));
+
+    http.data.params.headers = '{"Authorization":"Bearer {{downstream.token}}"}';
+    const downstream = createWorkflowNode(defs[0], { x: 520, y: 0 }, 'downstream');
+    const invalid = validateWorkflowGraph([source, http, downstream], [{ id: 'e', source: 'source', target: 'http' }, { id: 'e2', source: 'http', target: 'downstream' }], defs);
+    expect(invalid.map((issue) => issue.type)).toContain('invalid_expression_reference');
+  });
+
   it('uses inspector field validation contract for pre-run soft errors', () => {
     const http = createWorkflowNode(defs[2], { x: 0, y: 0 }, 'http');
     http.data.params = { url: 'not-a-url', timeout: 'abc', method: 'PATCH', headers: '{bad' };

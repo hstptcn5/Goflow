@@ -61,6 +61,19 @@ describe('inspector utilities', () => {
     expect(validateParamValue({ name: 'method', type: 'select', options: ['GET'] }, 'POST')).toBe('Choose a valid option.');
   });
 
+  it('allows mixed placeholders in JSON and text fields', () => {
+    const jsonTemplate = JSON.stringify({
+      crawled_at: '{{cron_7am.triggered_at}}',
+      top_repos_count: 5,
+      top_repo_name: '{{fetch_trending.data.items.0.full_name}}',
+      summary: 'Repo {{fetch_trending.data.items.0.full_name}} at {{$trigger.request_id}}',
+    });
+
+    expect(validateParamValue({ name: 'json_template', label: 'JSON Structure', type: 'json', required: true }, jsonTemplate)).toBe('');
+    expect(validateParamValue({ name: 'message', label: 'Message', type: 'text' }, 'Hello {{user.name}}, score={{score.value}}')).toBe('');
+    expect(validateParamValue({ name: 'message', label: 'Message', type: 'text' }, 'Hello {{user.name')).toBe('Expression syntax is invalid.');
+  });
+
   it('truncates large raw payloads intentionally', () => {
     const result = safeJSONStringify({ data: 'x'.repeat(21000) });
     expect(result.truncated).toBe(true);
