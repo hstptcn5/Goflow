@@ -445,9 +445,12 @@ func (e *Engine) executeWorkflow(runCtx context.Context, wf *storage.Workflow, t
 	}
 
 	remainingCount := len(nodeList)
+	if remainingCount == 0 {
+		close(doneChan)
+	}
 
 schedulerLoop:
-	for remainingCount > 0 {
+	for {
 		select {
 		case nid := <-readyChan:
 			stateMu.Lock()
