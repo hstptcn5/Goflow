@@ -24,13 +24,31 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "The following files need gofmt:"
+            echo "$unformatted"
+            gofmt -d $unformatted
+            exit 1
+          fi
+
       - name: Test
         run: go test ./...
+
+      - name: Race test
+        run: go test -race ./...
 
       - name: Vet
         run: |
           packages=$(go list ./... | grep -v '/release/')
           go vet $packages
+
+      - name: Vulnerability scan
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
   frontend:
     name: Frontend build

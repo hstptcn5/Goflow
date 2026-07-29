@@ -1,6 +1,6 @@
 module goflow
 
-go 1.25.0
+go 1.25.12
 
 require (
 	github.com/dop251/goja v0.0.0-20260722130236-0768e0998ac0
@@ -14,7 +14,7 @@ require (
 	github.com/redis/go-redis/v9 v9.21.0
 	github.com/robfig/cron/v3 v3.0.1
 	go.mongodb.org/mongo-driver v1.17.9
-	golang.org/x/crypto v0.26.0
+	golang.org/x/crypto v0.52.0
 	golang.org/x/oauth2 v0.36.0
 	modernc.org/sqlite v1.34.0
 )
@@ -43,10 +43,10 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/net v0.21.0 // indirect
-	golang.org/x/sync v0.8.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/text v0.17.0 // indirect
+	golang.org/x/net v0.54.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	modernc.org/gc/v3 v3.0.0-20240107210532-573471604cb6 // indirect
 	modernc.org/libc v1.55.3 // indirect
 	modernc.org/mathutil v1.6.0 // indirect

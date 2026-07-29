@@ -445,9 +445,12 @@ func (e *Engine) executeWorkflow(runCtx context.Context, wf *storage.Workflow, t
 	}
 
 	remainingCount := len(nodeList)
+	if remainingCount == 0 {
+		close(doneChan)
+	}
 
 schedulerLoop:
-	for remainingCount > 0 {
+	for {
 		select {
 		case nid := <-readyChan:
 			stateMu.Lock()
@@ -770,12 +773,13 @@ schedulerLoop:
 	logsJSONBytes, _ := json.Marshal(nodeLogs)
 	_ = e.executionStore.UpdateStatusWithError(executionID, finalStatus, totalDuration, string(logsJSONBytes), errorMessage)
 
-	execRecord.Status = finalStatus
-	execRecord.DurationMs = totalDuration
-	execRecord.LogsJSON = string(logsJSONBytes)
-	execRecord.ErrorMessage = errorMessage
+	completedRecord := *execRecord
+	completedRecord.Status = finalStatus
+	completedRecord.DurationMs = totalDuration
+	completedRecord.LogsJSON = string(logsJSONBytes)
+	completedRecord.ErrorMessage = errorMessage
 
-	return execRecord, nil
+	return &completedRecord, nil
 }
 
 func subWorkflowStateFromContext(ctx context.Context) subWorkflowState {

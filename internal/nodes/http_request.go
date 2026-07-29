@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+const maxHTTPResponseBytes int64 = 10 << 20
+
 type HTTPRequestExecutor struct {
 	client *http.Client
 }
@@ -63,9 +65,12 @@ func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 	}
 	defer resp.Body.Close()
 
-	respBytes, err := io.ReadAll(resp.Body)
+	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxHTTPResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if int64(len(respBytes)) > maxHTTPResponseBytes {
+		return nil, fmt.Errorf("HTTP response exceeds %d byte limit", maxHTTPResponseBytes)
 	}
 
 	var jsonResult interface{}

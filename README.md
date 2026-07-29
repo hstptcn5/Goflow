@@ -45,6 +45,12 @@ Goflow is not trying to replace n8n for every team automation use case. It optim
 
 Choose n8n for its mature integration ecosystem. Choose Goflow when deployment simplicity, local ownership, and agent-friendly interfaces matter more.
 
+## Who Goflow Is For
+
+Goflow is designed for trusted local and small internal automation where deployment simplicity, local ownership, and controlled agent access matter more than a large connector marketplace.
+
+See [Who Is Goflow For?](docs/WHO_IS_GOFLOW_FOR.md) for the primary scenario, capability boundary, alternatives, and non-goals.
+
 ## Quick Start
 
 ### Download a release
