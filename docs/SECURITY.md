@@ -66,6 +66,16 @@ Authenticated API requests and token management actions are recorded in audit ev
 GET /api/v1/audit-events?limit=100
 ```
 
+## Workflow Capability Boundary
+
+Workflow creation and editing are administrator-level capabilities. Depending on the configured nodes and credentials, a workflow can call arbitrary HTTP endpoints, connect to databases, invoke external AI providers, run remote SSH commands, and modify local Git repositories.
+
+Scoped tokens restrict which approved workflows a caller may run. They do not sandbox an unsafe workflow.
+
+The HTTP Request node can reach private-network and link-local services. Do not allow untrusted users to create or edit workflows. Run Goflow with the operating-system permissions and network access that its workflows actually require.
+
+The SSH node currently does not verify host keys. Use it only on trusted networks while strict known-host verification is being implemented.
+
 ## Current Limitations
 
 Goflow does not yet provide multi-user workspaces, full RBAC, SSO, or enterprise governance features.
