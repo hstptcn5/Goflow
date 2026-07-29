@@ -1,6 +1,6 @@
 module goflow
 
-go 1.25.0
+go 1.25.12
 
 require (
 	github.com/dop251/goja v0.0.0-20260722130236-0768e0998ac0
