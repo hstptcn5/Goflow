@@ -8,10 +8,10 @@ import (
 
 type DAGPlan struct {
 	Nodes           map[string]*nodes.Node
-	Dependencies    map[string][]string // NodeID -> danh sách NodeIDs phụ thuộc (các node phải chạy trước)
-	Dependents      map[string][]string // NodeID -> danh sách NodeIDs phụ thuộc vào node này (các node chạy sau)
-	InDegree        map[string]int      // Số lượng phụ thuộc đầu vào chưa hoàn thành
-	ExecutionLayers [][]string          // Các lớp node có thể thực thi song song
+	Dependencies    map[string][]string     // NodeID -> danh sách NodeIDs phụ thuộc (các node phải chạy trước)
+	Dependents      map[string][]string     // NodeID -> danh sách NodeIDs phụ thuộc vào node này (các node chạy sau)
+	InDegree        map[string]int          // Số lượng phụ thuộc đầu vào chưa hoàn thành
+	ExecutionLayers [][]string              // Các lớp node có thể thực thi song song
 	EdgesFrom       map[string][]nodes.Edge // NodeID -> danh sách các cạnh xuất phát từ node này
 }
 
