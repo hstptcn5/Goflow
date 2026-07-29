@@ -773,12 +773,13 @@ schedulerLoop:
 	logsJSONBytes, _ := json.Marshal(nodeLogs)
 	_ = e.executionStore.UpdateStatusWithError(executionID, finalStatus, totalDuration, string(logsJSONBytes), errorMessage)
 
-	execRecord.Status = finalStatus
-	execRecord.DurationMs = totalDuration
-	execRecord.LogsJSON = string(logsJSONBytes)
-	execRecord.ErrorMessage = errorMessage
+	completedRecord := *execRecord
+	completedRecord.Status = finalStatus
+	completedRecord.DurationMs = totalDuration
+	completedRecord.LogsJSON = string(logsJSONBytes)
+	completedRecord.ErrorMessage = errorMessage
 
-	return execRecord, nil
+	return &completedRecord, nil
 }
 
 func subWorkflowStateFromContext(ctx context.Context) subWorkflowState {
