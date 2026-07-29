@@ -8,7 +8,7 @@ import (
 )
 
 type pluginInput struct {
-	Outputs map[string]interface{} `json:"outputs"`
+	Outputs map[string]any `json:"outputs"`
 }
 
 func main() {
@@ -18,8 +18,8 @@ func main() {
 		return
 	}
 
-	trigger, _ := input.Outputs["$trigger"].(map[string]interface{})
-	body, _ := trigger["body"].(map[string]interface{})
+	trigger, _ := input.Outputs["$trigger"].(map[string]any)
+	body, _ := trigger["body"].(map[string]any)
 
 	email, _ := body["email"].(string)
 	company, _ := body["company"].(string)
@@ -46,15 +46,15 @@ func main() {
 		tier = "medium"
 	}
 
-	writeResult(map[string]interface{}{
+	writeResult(map[string]any{
 		"score": score,
 		"tier":  tier,
 		"email": email,
 	})
 }
 
-func writeResult(result interface{}) {
-	_ = json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+func writeResult(result any) {
+	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{
 		"result": result,
 	})
 }
