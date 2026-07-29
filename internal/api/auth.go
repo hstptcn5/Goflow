@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/base64"
 	"net/http"
 	"strings"
@@ -70,7 +71,7 @@ func requestHasAPIKey(r *http.Request, apiKey string) bool {
 	for _, protocol := range websocketProtocols(r) {
 		if token, ok := strings.CutPrefix(protocol, "goflow."); ok {
 			decoded, err := base64.RawURLEncoding.DecodeString(token)
-			return err == nil && string(decoded) == apiKey
+			return err == nil && secureEqual(string(decoded), apiKey)
 		}
 	}
 	return false
@@ -83,7 +84,7 @@ func authenticateRequest(r *http.Request, apiKey string, tokenStore *storage.Acc
 	authHeader := r.Header.Get("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
 		rawToken := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
-		if rawToken == apiKey {
+		if secureEqual(rawToken, apiKey) {
 			return AuthInfo{Subject: "api_key", Admin: true}, true
 		}
 		if tokenStore != nil {
@@ -97,12 +98,19 @@ func authenticateRequest(r *http.Request, apiKey string, tokenStore *storage.Acc
 	for _, protocol := range websocketProtocols(r) {
 		if token, ok := strings.CutPrefix(protocol, "goflow."); ok {
 			decoded, err := base64.RawURLEncoding.DecodeString(token)
-			if err == nil && string(decoded) == apiKey {
+			if err == nil && secureEqual(string(decoded), apiKey) {
 				return AuthInfo{Subject: "api_key", Admin: true}, true
 			}
 		}
 	}
 	return AuthInfo{}, false
+}
+
+func secureEqual(got, want string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
 
 func AuthFromContext(ctx context.Context) (AuthInfo, bool) {
