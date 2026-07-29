@@ -65,7 +65,7 @@ func requestHasAPIKey(r *http.Request, apiKey string) bool {
 	}
 	authHeader := r.Header.Get("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
-		return strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer ")) == apiKey
+		return secureEqual(strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer ")), apiKey)
 	}
 
 	for _, protocol := range websocketProtocols(r) {
