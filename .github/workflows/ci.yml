@@ -24,13 +24,24 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+
       - name: Test
         run: go test ./...
+
+      - name: Race test
+        run: go test -race ./...
 
       - name: Vet
         run: |
           packages=$(go list ./... | grep -v '/release/')
           go vet $packages
+
+      - name: Vulnerability scan
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
   frontend:
     name: Frontend build
