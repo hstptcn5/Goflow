@@ -62,4 +62,3 @@ func writeResult(result any) {
 func writeError(message string) {
 	_, _ = fmt.Fprintf(os.Stdout, `{"error":%q}`, message)
 }
-
