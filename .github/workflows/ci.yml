@@ -30,6 +30,7 @@ jobs:
           if [ -n "$unformatted" ]; then
             echo "The following files need gofmt:"
             echo "$unformatted"
+            gofmt -d $unformatted
             exit 1
           fi
 
