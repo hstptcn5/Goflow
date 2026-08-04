@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"goflow/internal/workflow"
@@ -18,11 +17,6 @@ const (
 	MaxWorkflowBytes    = 10 << 20
 	SupportedSchema     = 1
 	DefaultWorkflowPath = "workflows/main.json"
-)
-
-var (
-	idPattern     = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*$`)
-	semverPattern = regexp.MustCompile(`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
 )
 
 type Manifest struct {
@@ -62,7 +56,10 @@ func Load(dir string) (*Pack, error) {
 		return nil, fmt.Errorf("path: resolve pack directory symlinks: %w", err)
 	}
 
-	manifestPath := filepath.Join(root, ManifestFile)
+	manifestPath, err := resolveManifestPath(root)
+	if err != nil {
+		return nil, err
+	}
 	manifest, err := readManifest(manifestPath)
 	if err != nil {
 		return nil, err
@@ -71,25 +68,18 @@ func Load(dir string) (*Pack, error) {
 		return nil, err
 	}
 
-	entryPath, err := resolveInside(root, manifest.EntryWorkflow, true)
+	entryPath, err := resolveExistingRegularInside(root, manifest.EntryWorkflow)
 	if err != nil {
 		return nil, fmt.Errorf("path: entry_workflow: %w", err)
 	}
-	entryInfo, err := os.Stat(entryPath)
-	if err != nil {
-		return nil, fmt.Errorf("path: entry_workflow does not exist: %w", err)
-	}
-	if !entryInfo.Mode().IsRegular() {
-		return nil, fmt.Errorf("path: entry_workflow must be a regular file")
-	}
 
 	for _, pluginPath := range manifest.Plugins {
-		if _, err := resolveInside(root, pluginPath, false); err != nil {
+		if _, err := resolveExistingRegularInside(root, pluginPath); err != nil {
 			return nil, fmt.Errorf("path: plugins entry %q: %w", pluginPath, err)
 		}
 	}
 	for _, assetPath := range manifest.Assets {
-		if _, err := resolveInside(root, assetPath, false); err != nil {
+		if _, err := resolveExistingRegularInside(root, assetPath); err != nil {
 			return nil, fmt.Errorf("path: assets entry %q: %w", assetPath, err)
 		}
 	}
@@ -110,6 +100,21 @@ func Load(dir string) (*Pack, error) {
 	}, nil
 }
 
+func resolveManifestPath(root string) (string, error) {
+	path := filepath.Join(root, ManifestFile)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", fmt.Errorf("manifest: pack.json is required: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("manifest: pack.json must not be a symlink")
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("manifest: pack.json must be a regular file")
+	}
+	return path, nil
+}
+
 func readManifest(path string) (Manifest, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -128,6 +133,10 @@ func readManifest(path string) (Manifest, error) {
 		return Manifest{}, err
 	}
 
+	if err := validateRequiredFields(data); err != nil {
+		return Manifest{}, err
+	}
+
 	var manifest Manifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return Manifest{}, fmt.Errorf("manifest: pack.json must be JSON: %w", err)
@@ -135,20 +144,81 @@ func readManifest(path string) (Manifest, error) {
 	return manifest, nil
 }
 
+func validateRequiredFields(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	required := []string{"schema_version", "id", "name", "version", "entry_workflow", "required_credentials", "supported_platforms"}
+	for _, field := range required {
+		value, ok := raw[field]
+		if !ok {
+			return fmt.Errorf("manifest: %s is required", field)
+		}
+		if isJSONNull(value) {
+			return fmt.Errorf("manifest: %s must not be null", field)
+		}
+	}
+	if err := requireStringArray(raw["required_credentials"], "required_credentials", false); err != nil {
+		return err
+	}
+	if err := requireStringArray(raw["supported_platforms"], "supported_platforms", true); err != nil {
+		return err
+	}
+	if value, ok := raw["plugins"]; ok {
+		if isJSONNull(value) {
+			return fmt.Errorf("manifest: plugins must not be null")
+		}
+		if err := requireStringArray(value, "plugins", false); err != nil {
+			return err
+		}
+	}
+	if value, ok := raw["assets"]; ok {
+		if isJSONNull(value) {
+			return fmt.Errorf("manifest: assets must not be null")
+		}
+		if err := requireStringArray(value, "assets", false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isJSONNull(raw json.RawMessage) bool {
+	return strings.TrimSpace(string(raw)) == "null"
+}
+
+func requireStringArray(raw json.RawMessage, field string, requireNonEmpty bool) error {
+	var values []interface{}
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return fmt.Errorf("manifest: %s must be a JSON array", field)
+	}
+	if requireNonEmpty && len(values) == 0 {
+		return fmt.Errorf("manifest: %s must include at least one platform", field)
+	}
+	for index, value := range values {
+		text, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("manifest: %s[%d] must be a string", field, index)
+		}
+		if strings.TrimSpace(text) == "" {
+			return fmt.Errorf("manifest: %s[%d] must be a non-empty string", field, index)
+		}
+	}
+	return nil
+}
+
 func validateManifest(manifest Manifest) error {
 	if manifest.SchemaVersion != SupportedSchema {
 		return fmt.Errorf("manifest: schema_version must be %d", SupportedSchema)
 	}
-	if !idPattern.MatchString(manifest.ID) {
-		return fmt.Errorf("manifest: id must contain only lowercase letters, numbers, dots, or hyphens")
-	}
-	if strings.Contains(manifest.ID, "..") {
-		return fmt.Errorf("manifest: id must not contain consecutive dots")
+	if !isValidID(manifest.ID) {
+		return fmt.Errorf("manifest: id must use lowercase alphanumeric segments separated by dots or hyphens")
 	}
 	if strings.TrimSpace(manifest.Name) == "" {
 		return fmt.Errorf("manifest: name is required")
 	}
-	if !semverPattern.MatchString(manifest.Version) {
+	if !isValidSemVer(manifest.Version) {
 		return fmt.Errorf("manifest: version must be valid SemVer")
 	}
 	if strings.TrimSpace(manifest.EntryWorkflow) == "" {
@@ -165,39 +235,149 @@ func validateManifest(manifest Manifest) error {
 	return nil
 }
 
-func resolveInside(root, relPath string, requireExisting bool) (string, error) {
-	if strings.TrimSpace(relPath) == "" {
-		return "", fmt.Errorf("path is required")
+func isValidID(id string) bool {
+	if id == "" {
+		return false
 	}
-	if filepath.IsAbs(relPath) {
-		return "", fmt.Errorf("absolute paths are not allowed")
+	if strings.HasPrefix(id, ".") || strings.HasPrefix(id, "-") || strings.HasSuffix(id, ".") || strings.HasSuffix(id, "-") {
+		return false
 	}
-	clean := filepath.Clean(relPath)
-	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("path traversal is not allowed")
+	if strings.Contains(id, "..") || strings.Contains(id, ".-") || strings.Contains(id, "-.") {
+		return false
 	}
-	candidate := filepath.Join(root, clean)
-	absCandidate, err := filepath.Abs(candidate)
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func isValidSemVer(version string) bool {
+	coreAndBuild := strings.Split(version, "+")
+	if len(coreAndBuild) > 2 || coreAndBuild[0] == "" {
+		return false
+	}
+	if len(coreAndBuild) == 2 && !validDotIdentifiers(coreAndBuild[1], false) {
+		return false
+	}
+	coreAndPre := strings.Split(coreAndBuild[0], "-")
+	if len(coreAndPre) > 2 {
+		return false
+	}
+	core := strings.Split(coreAndPre[0], ".")
+	if len(core) != 3 {
+		return false
+	}
+	for _, part := range core {
+		if !validNumericIdentifier(part, false) {
+			return false
+		}
+	}
+	if len(coreAndPre) == 2 && !validDotIdentifiers(coreAndPre[1], true) {
+		return false
+	}
+	return true
+}
+
+func validDotIdentifiers(value string, rejectNumericLeadingZero bool) bool {
+	if value == "" {
+		return false
+	}
+	parts := strings.Split(value, ".")
+	for _, part := range parts {
+		if part == "" {
+			return false
+		}
+		hasNonDigit := false
+		for _, r := range part {
+			if (r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '-' {
+				if r < '0' || r > '9' {
+					hasNonDigit = true
+				}
+				continue
+			}
+			return false
+		}
+		if rejectNumericLeadingZero && !hasNonDigit && !validNumericIdentifier(part, false) {
+			return false
+		}
+	}
+	return true
+}
+
+func validNumericIdentifier(value string, allowLeadingZero bool) bool {
+	if value == "" {
+		return false
+	}
+	if len(value) > 1 && strings.HasPrefix(value, "0") && !allowLeadingZero {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func resolveExistingRegularInside(root, slashPath string) (string, error) {
+	osRelPath, err := portablePathToOS(slashPath)
 	if err != nil {
+		return "", err
+	}
+	candidate := filepath.Join(root, osRelPath)
+	resolved, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("path does not exist")
+		}
 		return "", err
 	}
 	rootEval, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return "", err
 	}
-	checkedPath := absCandidate
-	if _, statErr := os.Lstat(absCandidate); statErr == nil || requireExisting {
-		checkedPath, err = filepath.EvalSymlinks(absCandidate)
-		if err != nil {
-			return "", err
-		}
-	} else if !os.IsNotExist(statErr) {
-		return "", statErr
-	}
-	if !isWithin(rootEval, checkedPath) {
+	if !isWithin(rootEval, resolved) {
 		return "", fmt.Errorf("path resolves outside the pack directory")
 	}
-	return absCandidate, nil
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("path must be a regular file")
+	}
+	return candidate, nil
+}
+
+func portablePathToOS(slashPath string) (string, error) {
+	if strings.TrimSpace(slashPath) == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	if strings.Contains(slashPath, `\`) {
+		return "", fmt.Errorf("backslash paths are not allowed")
+	}
+	if strings.HasPrefix(slashPath, "/") {
+		return "", fmt.Errorf("absolute paths are not allowed")
+	}
+	if len(slashPath) >= 2 && slashPath[1] == ':' && ((slashPath[0] >= 'A' && slashPath[0] <= 'Z') || (slashPath[0] >= 'a' && slashPath[0] <= 'z')) {
+		return "", fmt.Errorf("Windows drive paths are not allowed")
+	}
+	parts := strings.Split(slashPath, "/")
+	for _, part := range parts {
+		if part == "" {
+			return "", fmt.Errorf("empty path segments are not allowed")
+		}
+		if part == "." {
+			return "", fmt.Errorf("dot path segments are not allowed")
+		}
+		if part == ".." {
+			return "", fmt.Errorf("path traversal is not allowed")
+		}
+	}
+	return filepath.FromSlash(slashPath), nil
 }
 
 func isWithin(root, path string) bool {

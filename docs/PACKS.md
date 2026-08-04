@@ -6,11 +6,11 @@ Goflow Pack is a directory format for distributing one workflow with pack metada
 
 ```text
 example-pack/
-├── pack.json
-├── workflows/
-│   └── main.json
-├── plugins/
-└── assets/
++-- pack.json
++-- workflows/
+|   +-- main.json
++-- plugins/
++-- assets/
 ```
 
 Only `pack.json` and the `entry_workflow` file are required. `plugins/` and `assets/` are reserved for future packaging and may be absent.
@@ -39,17 +39,32 @@ Known fields:
 | Field | Required | Rules |
 | :--- | :--- | :--- |
 | `schema_version` | Yes | Must be `1`. |
-| `id` | Yes | Stable ID using lowercase letters, numbers, dots, or hyphens. |
+| `id` | Yes | Stable ID using lowercase alphanumeric segments separated by dots or hyphens. It cannot start or end with a delimiter and cannot contain empty segments such as `..` or mixed delimiters such as `.-`. |
 | `name` | Yes | Human-readable pack name. |
-| `version` | Yes | Valid SemVer, including optional prerelease/build metadata. |
+| `version` | Yes | Valid SemVer 2.0.0, including optional prerelease/build metadata. Numeric prerelease identifiers cannot contain leading zeroes. |
 | `description` | No | Human-readable description. |
-| `entry_workflow` | Yes | Relative path to a workflow JSON file inside the pack directory. |
-| `required_credentials` | Yes | Logical credential names or credential type requirements only. Values and secrets are rejected. |
-| `supported_platforms` | Yes | Informational platform strings such as `windows-amd64`. |
-| `plugins` | No | Optional list of relative plugin resource paths reserved for future use. The validator checks path safety only and does not execute plugins. |
-| `assets` | No | Optional list of relative asset paths reserved for future use. The validator checks path safety only. |
+| `entry_workflow` | Yes | Portable slash path to a workflow JSON file inside the pack directory. |
+| `required_credentials` | Yes | JSON array of logical credential names or credential type requirements only. An empty array is valid. Values and secrets are rejected. |
+| `supported_platforms` | Yes | Non-empty JSON array of non-empty platform strings such as `windows-amd64`. |
+| `plugins` | No | Optional JSON array of portable slash paths to plugin resource files. Listed files must exist, resolve inside the pack, and be regular files. The validator does not execute plugins. |
+| `assets` | No | Optional JSON array of portable slash paths to asset files. Listed files must exist, resolve inside the pack, and be regular files. The validator does not interpret asset contents. |
 
 Unknown fields are accepted for forward compatibility, but known fields are validated strictly. Manifest fields that look like secret-bearing fields, such as `secrets`, `password`, `token`, or `api_key`, are rejected when they contain values.
+
+Required fields must be present in `pack.json`; zero values caused by missing fields are not accepted. `required_credentials` and `supported_platforms` must be arrays and cannot be `null`.
+
+## Portable Paths
+
+Manifest paths are logical slash paths. They use `/` regardless of the host operating system. The validator rejects:
+
+- Empty paths.
+- Backslashes.
+- Unix absolute paths such as `/workflows/main.json`.
+- Windows drive paths such as `C:/file`, `C:\file`, or `C:file`.
+- UNC or device paths.
+- Empty, `.`, or `..` segments.
+
+After this logical validation, paths are converted to the host OS path format and resolved with symlinks before containment checks.
 
 ## Validation
 
@@ -71,19 +86,23 @@ Entry workflow: workflows/main.json
 Validation checks:
 
 - `pack.json` exists, is JSON, and is at most 1 MiB.
+- `pack.json` is a regular file and is not a symlink.
 - `schema_version` is `1`.
-- `id`, `name`, `version`, `entry_workflow`, and `required_credentials` follow the v1 rules.
-- `entry_workflow` is a relative path inside the pack directory.
-- Absolute paths and `..` traversal are rejected.
+- Required fields are present and use the expected JSON types.
+- `id`, `name`, `version`, `entry_workflow`, `required_credentials`, and `supported_platforms` follow the v1 rules.
+- `entry_workflow` is a portable slash path inside the pack directory.
+- Absolute paths, backslashes, drive paths, and dot segments are rejected.
 - Symlink escapes are rejected for the entry workflow.
 - The entry workflow exists and is a regular file.
 - Workflow JSON is at most 10 MiB.
 - The existing Goflow workflow validator accepts the entry workflow.
-- Plugin and asset paths listed in the manifest are resolved as pack-local paths only.
+- Plugin and asset paths listed in the manifest must exist, resolve inside the pack, and be regular files.
 
 ## Security Boundary
 
 Pack validation is static. It does not execute plugins, start the server, read credentials, write credentials, or modify the database. `required_credentials` is metadata only; it describes logical needs such as `smtp_account` or `slack_bot_token`, not secret values.
+
+`pack.json` symlinks are rejected. Entry workflow, plugin, and asset symlinks are allowed only when the fully resolved target remains inside the pack directory and is a regular file.
 
 Pack validation is not a trust system. A valid pack may still contain plugin files or workflow behavior that operators should review before any future install or run command uses it.
 
