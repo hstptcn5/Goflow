@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"goflow/internal/workflow"
 )
 
 func TestReadInputRejectsMultipleSources(t *testing.T) {
@@ -79,12 +81,12 @@ func TestReadWorkflowFileAcceptsUIExportShape(t *testing.T) {
 	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
 		t.Fatalf("write workflow file: %v", err)
 	}
-	workflow, err := readWorkflowFile(path)
+	workflowDef, err := workflow.ReadFile(path)
 	if err != nil {
 		t.Fatalf("readWorkflowFile failed: %v", err)
 	}
-	if workflow.Name != "Imported" || workflow.NodesJSON != "[]" || workflow.EdgesJSON != "[]" {
-		t.Fatalf("unexpected workflow: %#v", workflow)
+	if workflowDef.Name != "Imported" || workflowDef.NodesJSON != "[]" || workflowDef.EdgesJSON != "[]" {
+		t.Fatalf("unexpected workflow: %#v", workflowDef)
 	}
 }
 
@@ -110,15 +112,15 @@ func TestReadWorkflowFilePreservesInterfaceMetadata(t *testing.T) {
 	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
 		t.Fatalf("write workflow file: %v", err)
 	}
-	workflow, err := readWorkflowFile(path)
+	workflowDef, err := workflow.ReadFile(path)
 	if err != nil {
 		t.Fatalf("readWorkflowFile failed: %v", err)
 	}
-	if workflow.ExposeCLI || !workflow.ExposeMCP || !workflow.RequiresApproval || workflow.MaxConcurrentRuns != 1 || workflow.ConcurrencyPolicy != "reject" {
-		t.Fatalf("interface metadata was not preserved: %#v", workflow)
+	if workflowDef.ExposeCLI || !workflowDef.ExposeMCP || !workflowDef.RequiresApproval || workflowDef.MaxConcurrentRuns != 1 || workflowDef.ConcurrencyPolicy != "reject" {
+		t.Fatalf("interface metadata was not preserved: %#v", workflowDef)
 	}
-	if workflow.MCPToolName != "imported_tool" || workflow.RiskLevel != "high" {
-		t.Fatalf("unexpected metadata: %#v", workflow)
+	if workflowDef.MCPToolName != "imported_tool" || workflowDef.RiskLevel != "high" {
+		t.Fatalf("unexpected metadata: %#v", workflowDef)
 	}
 }
 
@@ -127,7 +129,7 @@ func TestReadWorkflowFileRejectsMissingName(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"nodes":[],"edges":[]}`), 0600); err != nil {
 		t.Fatalf("write workflow file: %v", err)
 	}
-	if _, err := readWorkflowFile(path); err == nil {
+	if _, err := workflow.ReadFile(path); err == nil {
 		t.Fatalf("expected missing name error")
 	}
 }
@@ -214,6 +216,54 @@ func TestWorkflowValidateRejectsUnsupportedSchemaKeyword(t *testing.T) {
 	}
 }
 
+func TestPackValidateReturnsSuccessForValidPack(t *testing.T) {
+	dir := writePackFixture(t, `{
+		"schema_version":1,
+		"id":"example.hello-webhook",
+		"name":"Hello Webhook",
+		"version":"0.1.0",
+		"entry_workflow":"workflows/main.json",
+		"required_credentials":[],
+		"supported_platforms":["windows-amd64"]
+	}`, `{
+		"name":"Hello Webhook",
+		"nodes":[{"id":"trigger","type":"webhookTrigger","params":{}}],
+		"edges":[]
+	}`)
+	var stdout, stderr bytes.Buffer
+	code := Runner{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")}.Run([]string{"pack", "validate", dir})
+	if code != ExitOK {
+		t.Fatalf("expected success, code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "example.hello-webhook") || !strings.Contains(stdout.String(), "0.1.0") {
+		t.Fatalf("unexpected stdout: %q", stdout.String())
+	}
+}
+
+func TestPackValidateReturnsInvalidInputForInvalidPack(t *testing.T) {
+	dir := writePackFixture(t, `{
+		"schema_version":1,
+		"id":"Example Bad",
+		"name":"Hello Webhook",
+		"version":"0.1.0",
+		"entry_workflow":"workflows/main.json",
+		"required_credentials":[],
+		"supported_platforms":["windows-amd64"]
+	}`, `{
+		"name":"Hello Webhook",
+		"nodes":[],
+		"edges":[]
+	}`)
+	var stdout, stderr bytes.Buffer
+	code := Runner{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")}.Run([]string{"pack", "validate", dir})
+	if code != ExitInvalidInput {
+		t.Fatalf("expected invalid input, code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "manifest") {
+		t.Fatalf("expected manifest error, got %q", stderr.String())
+	}
+}
+
 func writeWorkflowFixture(t *testing.T, data string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "workflow.json")
@@ -221,6 +271,21 @@ func writeWorkflowFixture(t *testing.T, data string) string {
 		t.Fatalf("write workflow fixture: %v", err)
 	}
 	return path
+}
+
+func writePackFixture(t *testing.T, manifest, workflow string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "workflows"), 0700); err != nil {
+		t.Fatalf("mkdir workflows: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pack.json"), []byte(manifest), 0600); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "workflows", "main.json"), []byte(workflow), 0600); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+	return dir
 }
 
 func runValidateFixture(path string) (int, string) {

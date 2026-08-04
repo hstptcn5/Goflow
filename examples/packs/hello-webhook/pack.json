@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "example.hello-webhook",
+  "name": "Hello Webhook",
+  "version": "0.1.0",
+  "description": "Minimal Goflow pack with a webhook trigger workflow",
+  "entry_workflow": "workflows/main.json",
+  "required_credentials": [],
+  "supported_platforms": [
+    "windows-amd64"
+  ]
+}

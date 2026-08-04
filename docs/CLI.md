@@ -21,6 +21,7 @@ goflow workflow run <workflow-id-or-slug> --set source=cli --wait
 goflow workflow export <workflow-id-or-slug> --output workflow.json
 goflow workflow import workflow.json --activate
 goflow workflow validate workflow.json
+goflow pack validate examples/packs/hello-webhook
 goflow execution get <execution-id>
 goflow execution watch <execution-id>
 goflow execution cancel <execution-id>
@@ -67,3 +68,12 @@ goflow token create mcp-runner \
 
 Add `--scope execution:cancel` only if the runner needs cancellation access.
 
+## Pack Validation
+
+```bash
+goflow pack validate <pack-directory>
+```
+
+`pack validate` checks `pack.json`, resolves pack-local paths safely, and validates the entry workflow with the same workflow validator used by `goflow workflow validate`. It does not start the server, require `GOFLOW_API_KEY`, execute plugins, or modify the database.
+
+See [Pack Format v1](PACKS.md) for manifest rules, security boundaries, examples, and non-goals.
