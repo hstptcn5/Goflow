@@ -245,6 +245,9 @@ func isValidID(id string) bool {
 	if strings.Contains(id, "..") || strings.Contains(id, ".-") || strings.Contains(id, "-.") {
 		return false
 	}
+	if strings.Contains(id, "--") {
+		return false
+	}
 	for _, r := range id {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '-' {
 			continue
@@ -262,11 +265,13 @@ func isValidSemVer(version string) bool {
 	if len(coreAndBuild) == 2 && !validDotIdentifiers(coreAndBuild[1], false) {
 		return false
 	}
-	coreAndPre := strings.Split(coreAndBuild[0], "-")
-	if len(coreAndPre) > 2 {
-		return false
+	coreText := coreAndBuild[0]
+	preText := ""
+	if core, pre, ok := strings.Cut(coreAndBuild[0], "-"); ok {
+		coreText = core
+		preText = pre
 	}
-	core := strings.Split(coreAndPre[0], ".")
+	core := strings.Split(coreText, ".")
 	if len(core) != 3 {
 		return false
 	}
@@ -275,7 +280,10 @@ func isValidSemVer(version string) bool {
 			return false
 		}
 	}
-	if len(coreAndPre) == 2 && !validDotIdentifiers(coreAndPre[1], true) {
+	if preText != "" && !validDotIdentifiers(preText, true) {
+		return false
+	}
+	if strings.HasSuffix(coreAndBuild[0], "-") {
 		return false
 	}
 	return true
@@ -376,8 +384,37 @@ func portablePathToOS(slashPath string) (string, error) {
 		if part == ".." {
 			return "", fmt.Errorf("path traversal is not allowed")
 		}
+		if strings.Contains(part, ":") {
+			return "", fmt.Errorf("path segments must not contain colon")
+		}
+		if strings.HasSuffix(part, ".") || strings.HasSuffix(part, " ") {
+			return "", fmt.Errorf("path segments must not end with dot or space")
+		}
+		if isWindowsReservedName(part) {
+			return "", fmt.Errorf("path segment %q is reserved on Windows", part)
+		}
 	}
 	return filepath.FromSlash(slashPath), nil
+}
+
+func isWindowsReservedName(segment string) bool {
+	name := segment
+	if before, _, ok := strings.Cut(name, "."); ok {
+		name = before
+	}
+	name = strings.ToUpper(name)
+	switch name {
+	case "CON", "PRN", "AUX", "NUL":
+		return true
+	}
+	if len(name) == 4 {
+		prefix := name[:3]
+		suffix := name[3]
+		if (prefix == "COM" || prefix == "LPT") && suffix >= '1' && suffix <= '9' {
+			return true
+		}
+	}
+	return false
 }
 
 func isWithin(root, path string) bool {

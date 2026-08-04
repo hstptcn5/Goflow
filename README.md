@@ -188,6 +188,7 @@ goflow status
 goflow workflow list
 goflow workflow run <workflow-id-or-slug> --set source=cli --wait
 goflow pack validate examples/packs/hello-webhook
+goflow pack build examples/packs/hello-webhook --output release
 goflow execution get <execution-id>
 goflow execution cancel <execution-id>
 goflow token create mcp-runner --scope workflow:list --scope workflow:read --scope workflow:run --scope execution:read --workflow <workflow-id>

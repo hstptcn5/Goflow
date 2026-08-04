@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"goflow/internal/pack"
 	"goflow/internal/workflow"
 )
 
@@ -261,6 +262,51 @@ func TestPackValidateReturnsInvalidInputForInvalidPack(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "manifest") {
 		t.Fatalf("expected manifest error, got %q", stderr.String())
+	}
+}
+
+func TestPackBuildReturnsSuccessAndArchivePath(t *testing.T) {
+	dir := writePackFixture(t, `{
+		"schema_version":1,
+		"id":"example.hello-webhook",
+		"name":"Hello Webhook",
+		"version":"0.1.0",
+		"entry_workflow":"workflows/main.json",
+		"required_credentials":[],
+		"supported_platforms":["`+pack.CurrentPlatform()+`"]
+	}`, `{
+		"name":"Hello Webhook",
+		"nodes":[{"id":"trigger","type":"webhookTrigger","params":{}}],
+		"edges":[]
+	}`)
+	runtimePath := filepath.Join(t.TempDir(), "goflow-runtime")
+	if err := os.WriteFile(runtimePath, []byte("runtime"), 0600); err != nil {
+		t.Fatalf("write runtime fixture: %v", err)
+	}
+	outputDir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	code := Runner{
+		Stdout:          &stdout,
+		Stderr:          &stderr,
+		Stdin:           strings.NewReader(""),
+		PackRuntimePath: runtimePath,
+	}.Run([]string{"pack", "build", dir, "--output", outputDir})
+	if code != ExitOK {
+		t.Fatalf("expected success, code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Built portable pack bundle") || !strings.Contains(stdout.String(), outputDir) {
+		t.Fatalf("expected archive path in stdout, got %q", stdout.String())
+	}
+}
+
+func TestPackBuildReturnsInvalidInput(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Runner{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")}.Run([]string{"pack", "build", t.TempDir()})
+	if code == ExitOK {
+		t.Fatalf("expected non-zero exit code")
+	}
+	if !strings.Contains(stderr.String(), "--output is required") {
+		t.Fatalf("expected output error, got %q", stderr.String())
 	}
 }
 

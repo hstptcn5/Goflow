@@ -22,6 +22,7 @@ goflow workflow export <workflow-id-or-slug> --output workflow.json
 goflow workflow import workflow.json --activate
 goflow workflow validate workflow.json
 goflow pack validate examples/packs/hello-webhook
+goflow pack build examples/packs/hello-webhook --output release
 goflow execution get <execution-id>
 goflow execution watch <execution-id>
 goflow execution cancel <execution-id>
@@ -77,3 +78,15 @@ goflow pack validate <pack-directory>
 `pack validate` checks `pack.json`, resolves pack-local paths safely, and validates the entry workflow with the same workflow validator used by `goflow workflow validate`. It does not start the server, require `GOFLOW_API_KEY`, execute plugins, or modify the database.
 
 See [Pack Format v1](PACKS.md) for manifest rules, security boundaries, examples, and non-goals.
+
+## Pack Build
+
+```bash
+goflow pack build <pack-directory> --output <output-directory> [--target <goos-goarch>] [--force]
+```
+
+`pack build` creates a portable pack bundle ZIP for the current runtime platform. `--target` defaults to the running platform, for example `windows-amd64`, and must match both the current runtime platform and a platform listed in `supported_platforms`. Cross-target builds are not supported in this phase.
+
+The bundle contains the current Goflow runtime, `pack.json`, the entry workflow, listed plugin files, listed asset files, `PACK_INFO.json`, and `README.txt`. It does not start the server, require `GOFLOW_API_KEY`, read credentials, use the database, or execute plugins.
+
+Use `--force` to replace the exact destination archive after the new archive has been built successfully.

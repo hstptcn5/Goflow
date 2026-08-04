@@ -1,6 +1,6 @@
 # Goflow Pack Format v1
 
-Goflow Pack is a directory format for distributing one workflow with pack metadata and optional local resources. This foundation only validates packs. It does not install, run, build, or update them.
+Goflow Pack is a directory format for distributing one workflow with pack metadata and optional local resources. Goflow can validate a pack and build a portable pack bundle. It does not install, run, or update packs.
 
 ## Directory Layout
 
@@ -63,6 +63,9 @@ Manifest paths are logical slash paths. They use `/` regardless of the host oper
 - Windows drive paths such as `C:/file`, `C:\file`, or `C:file`.
 - UNC or device paths.
 - Empty, `.`, or `..` segments.
+- Path segments containing `:`.
+- Path segments ending in `.` or a space.
+- Windows reserved device names such as `CON`, `PRN`, `AUX`, `NUL`, `COM1` through `COM9`, and `LPT1` through `LPT9`, including when an extension is present.
 
 After this logical validation, paths are converted to the host OS path format and resolved with symlinks before containment checks.
 
@@ -98,9 +101,107 @@ Validation checks:
 - The existing Goflow workflow validator accepts the entry workflow.
 - Plugin and asset paths listed in the manifest must exist, resolve inside the pack, and be regular files.
 
+## Build
+
+Run:
+
+```bash
+goflow pack build examples/packs/hello-webhook --output release
+```
+
+Optional flags:
+
+```bash
+goflow pack build <pack-directory> \
+  --output <output-directory> \
+  [--target <goos-goarch>] \
+  [--force]
+```
+
+The output is a portable pack bundle named:
+
+```text
+<pack-id>-<pack-version>-<target>.zip
+```
+
+Example:
+
+```text
+example.hello-webhook-0.1.0-windows-amd64.zip
+```
+
+`--target` defaults to the platform of the running Goflow binary, such as `windows-amd64`, `linux-amd64`, or `darwin-arm64`. This phase only supports same-platform runtime packaging. Cross-target builds fail clearly and must be implemented in a later phase. The target must also be listed in `supported_platforms`.
+
+ZIP layout:
+
+```text
+goflow.exe
+pack/pack.json
+pack/workflows/main.json
+pack/plugins/...
+pack/assets/...
+PACK_INFO.json
+README.txt
+```
+
+On Linux and macOS the runtime entry is `goflow` instead of `goflow.exe`. The runtime is not renamed to the pack ID.
+
+Only controlled files are included:
+
+- The current Goflow runtime executable.
+- `pack.json`.
+- The entry workflow.
+- Plugin files listed in `plugins`.
+- Asset files listed in `assets`.
+- Generated `PACK_INFO.json`.
+- Generated `README.txt`.
+
+The builder does not copy the whole pack directory. Unlisted files such as `.env`, `goflow.db`, `goflow.master.key`, notes, unlisted plugins, and unlisted assets are excluded.
+
+### PACK_INFO.json
+
+`PACK_INFO.json` is deterministic machine-readable metadata:
+
+```json
+{
+  "schema_version": 1,
+  "pack_id": "example.hello-webhook",
+  "pack_version": "0.1.0",
+  "target": "windows-amd64",
+  "runtime_entry": "goflow.exe",
+  "entry_workflow": "pack/workflows/main.json",
+  "files": [
+    {
+      "path": "pack/pack.json",
+      "sha256": "...",
+      "size": 123
+    }
+  ]
+}
+```
+
+The file inventory is sorted by archive path and includes SHA-256 plus size for all files except `PACK_INFO.json` itself. It includes the runtime and generated `README.txt`. It does not contain absolute local paths, usernames, hostnames, build machine paths, or timestamps.
+
+### Determinism And Output Safety
+
+Builds use sorted ZIP entries, a fixed ZIP timestamp of `1980-01-01T00:00:00Z`, fixed compression method, and stable JSON formatting. The builder writes a temporary archive in the output directory and renames it to the final archive only after the ZIP is complete.
+
+By default, an existing output archive is not overwritten. With `--force`, the new temporary archive is fully built before replacing the existing archive. On Unix-like systems `rename` can replace atomically. On Windows, replacing an existing file may require removing the old archive after the new temporary archive has been completed, so there can be a small final replacement window.
+
+### Size Limits
+
+Named limits:
+
+- `pack.json`: 1 MiB.
+- Entry workflow JSON: 10 MiB.
+- Each listed plugin or asset file: 100 MiB.
+- Total pack payload excluding the runtime: 512 MiB.
+
+The builder checks file sizes with `stat` before writing the ZIP and streams files while hashing and archiving, so it does not allocate memory for entire plugin or asset files.
+
 ## Security Boundary
 
-Pack validation is static. It does not execute plugins, start the server, read credentials, write credentials, or modify the database. `required_credentials` is metadata only; it describes logical needs such as `smtp_account` or `slack_bot_token`, not secret values.
+Pack validation and build are static. They do not execute plugins, start the server, read credentials, write credentials, or modify the database. `required_credentials` is metadata only; it describes logical needs such as `smtp_account` or `slack_bot_token`, not secret values.
 
 `pack.json` symlinks are rejected. Entry workflow, plugin, and asset symlinks are allowed only when the fully resolved target remains inside the pack directory and is a regular file.
 
@@ -110,9 +211,10 @@ Pack validation is not a trust system. A valid pack may still contain plugin fil
 
 This v1 foundation does not support:
 
-- Building `.exe` files.
+- Building new `.exe` files or cross-target runtimes.
 - Installing packs.
 - Running packs directly.
+- `pack run`.
 - Marketplace publishing or discovery.
 - Plugin signing.
 - Auto-update.

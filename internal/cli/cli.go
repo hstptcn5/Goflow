@@ -28,9 +28,10 @@ const (
 )
 
 type Runner struct {
-	Stdout io.Writer
-	Stderr io.Writer
-	Stdin  io.Reader
+	Stdout          io.Writer
+	Stderr          io.Writer
+	Stdin           io.Reader
+	PackRuntimePath string
 }
 
 type clientOptions struct {
@@ -84,6 +85,7 @@ Usage:
   goflow workflow import <file> [--activate]
   goflow workflow validate <file>
   goflow pack validate <pack-directory>
+  goflow pack build <pack-directory> --output <output-directory> [--target goos-goarch] [--force]
   goflow execution get <execution-id> [--output table|json]
   goflow execution watch <execution-id> [--timeout 60s] [--interval 1s] [--output table|json]
   goflow execution cancel <execution-id> [--output table|json]
@@ -297,6 +299,8 @@ func (r Runner) pack(args []string) int {
 	switch args[0] {
 	case "validate":
 		return r.packValidate(args[1:])
+	case "build":
+		return r.packBuild(args[1:])
 	default:
 		fmt.Fprintf(r.Stderr, "unknown pack subcommand: %s\n", args[0])
 		return ExitInvalidInput
@@ -316,6 +320,35 @@ func (r Runner) packValidate(args []string) int {
 		return ExitInvalidInput
 	}
 	fmt.Fprintf(r.Stdout, "Pack is valid\nID: %s\nVersion: %s\nEntry workflow: %s\n", loaded.Manifest.ID, loaded.Manifest.Version, loaded.Manifest.EntryWorkflow)
+	return ExitOK
+}
+
+func (r Runner) packBuild(args []string) int {
+	fs := flag.NewFlagSet("pack build", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	outputDir := fs.String("output", "", "Output directory for the portable pack bundle")
+	target := fs.String("target", pack.CurrentPlatform(), "Target platform in goos-goarch format")
+	force := fs.Bool("force", false, "Replace the destination archive if it already exists")
+	dir, ok, code := parseOneRef(fs, args, "pack directory", r.Stderr)
+	if !ok {
+		return code
+	}
+	if strings.TrimSpace(*outputDir) == "" {
+		fmt.Fprintln(r.Stderr, "--output is required")
+		return ExitInvalidInput
+	}
+	result, err := pack.Build(pack.BuildOptions{
+		PackDir:     dir,
+		OutputDir:   *outputDir,
+		Target:      *target,
+		Force:       *force,
+		RuntimePath: r.PackRuntimePath,
+	})
+	if err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	fmt.Fprintf(r.Stdout, "Built portable pack bundle\nArchive: %s\nTarget: %s\n", result.ArchivePath, result.Target)
 	return ExitOK
 }
 

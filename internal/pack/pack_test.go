@@ -59,7 +59,7 @@ func TestLoadRejectsUnsupportedSchemaVersion(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidID(t *testing.T) {
-	for _, id := range []string{"Example Bad", ".example", "example.", "-example", "example-", "example..pack", "example.-pack"} {
+	for _, id := range []string{"Example Bad", ".example", "example.", "-example", "example-", "example..pack", "example.-pack", "example--pack", "example-.pack"} {
 		t.Run(id, func(t *testing.T) {
 			dir := writeValidPack(t, func(m *Manifest) {
 				m.ID = id
@@ -83,7 +83,7 @@ func TestLoadAcceptsValidIDExamples(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidSemVer(t *testing.T) {
-	for _, version := range []string{"1", "1.0.0-01", "1.0.0-alpha.01"} {
+	for _, version := range []string{"1", "1.0.0-", "1.0.0-alpha..1", "1.0.0-01", "1.0.0-alpha.01"} {
 		t.Run(version, func(t *testing.T) {
 			dir := writeValidPack(t, func(m *Manifest) {
 				m.Version = version
@@ -94,7 +94,7 @@ func TestLoadRejectsInvalidSemVer(t *testing.T) {
 }
 
 func TestLoadAcceptsValidSemVerExamples(t *testing.T) {
-	for _, version := range []string{"0.1.0", "1.0.0-alpha", "1.0.0-alpha.1", "1.0.0+build.5", "1.0.0-alpha.1+build.5"} {
+	for _, version := range []string{"0.1.0", "1.0.0-alpha", "1.0.0-alpha.1", "1.0.0+build.5", "1.0.0-alpha.1+build.5", "1.0.0-alpha-beta", "1.0.0-alpha-beta.1", "1.0.0-x-y-z+build.1"} {
 		t.Run(version, func(t *testing.T) {
 			dir := writeValidPack(t, func(m *Manifest) {
 				m.Version = version
