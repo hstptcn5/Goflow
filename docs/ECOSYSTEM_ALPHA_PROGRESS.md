@@ -534,7 +534,7 @@ Security considerations:
 
 Commit SHA:
 
-- Pending.
+- `6629ba2` (`ci: add alpha artifact pipeline`).
 
 Remaining work:
 
