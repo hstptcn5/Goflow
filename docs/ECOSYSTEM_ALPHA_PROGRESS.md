@@ -105,7 +105,7 @@ Blockers:
 
 ## Checkpoint B - Backwards-Compatible Pack Setup Metadata
 
-Status: IN_PROGRESS
+Status: MANUAL_VERIFICATION_REQUIRED
 
 Starting commit: `88c49dfcfacc7477450a12ddd981e2308dda19bb`
 
@@ -661,10 +661,12 @@ Evidence collected:
 - Clean checkout `npm --prefix ui run test:e2e:dailyops`: PASS, 2-phase real DailyOps appliance E2E.
 - Clean checkout `npm --prefix ui run test:e2e`: PASS, 26 Playwright tests with 2 DailyOps harness-only tests skipped.
 - Clean checkout WSL DailyOps validate/test, deterministic build, ZIP verify, extracted verify, forbidden runtime-state scan, and canary/path scan: PASS; linux-amd64 bundle SHA-256 `8176ee9e35dbbe26542b03fd619bfa5fe2bcc8418cf3e2105661b0462ec01cc6`.
+- GitHub Actions PR CI run #31312131833 for `40afbe4`: PASS. Jobs: Frontend build, Backend tests, Pack contracts and DailyOps, Appliance Playwright E2E, Build linux-amd64, Build linux-arm64, Build windows-amd64, Build darwin-amd64, Build darwin-arm64. Manual development-artifacts job was correctly skipped because run #31312131833 was a pull_request event.
 
 Current gates:
 
-- GitHub Actions PR CI still needs to be run for this branch head.
+- All code, UI, pack, clean-checkout, and PR CI gates for the final DailyOps E2E branch are PASS.
+- The only remaining alpha acceptance gate is the documented post-merge manual development-artifacts dispatch and artifact verification.
 - Manual `workflow_dispatch` development-artifacts verification is POST-MERGE_REQUIRED. The current `ci.yml` declaration is not available on the default branch yet, so GitHub cannot dispatch this workflow from the normal Actions UI/API path until the workflow file exists on `main`. This is an operational post-merge gate, not a code failure for the stacked PR.
 
 Final-alpha acceptance gate:
