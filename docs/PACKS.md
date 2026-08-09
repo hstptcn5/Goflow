@@ -382,7 +382,14 @@ Runtime state is stored outside the pack directory by default:
 - macOS: `~/Library/Application Support/Goflow/packs/<pack-id>/`
 - Linux: `$XDG_DATA_HOME/Goflow/packs/<pack-id>/` or `~/.local/share/Goflow/packs/<pack-id>/`
 
-Use `--data-dir` for tests or controlled deployments. The data directory contains `goflow.db`, `goflow.master.key`, `pack-state.json`, `run-state.json`, and lock metadata. Back up `goflow.db` together with `goflow.master.key`.
+Use `--data-dir` for tests or controlled deployments. The data directory contains `goflow.db`, `goflow.master.key`, `pack-state.json`, `run-state.json`, setup files, and lock metadata. Back up `goflow.db` together with `goflow.master.key`.
+
+Runtime setup state is stored outside the source pack and extracted bundle:
+
+- `pack-config.json` contains non-secret config values, the pack ID, and a config schema version. Values are revalidated against the current manifest before use. Unknown fields are retained only when they are safe and are not applied as current config.
+- `pack-credentials.json` contains credential slot assignments as credential IDs plus expected credential types. It never contains decrypted credential values. Slot assignments are valid only when the referenced credential still exists and has the type declared by `credential_requirements`. Unknown slots are retained only when their keys and IDs are safe.
+
+Both setup files are written atomically with restricted file permissions where supported. Parent setup directories are created with restricted permissions where supported.
 
 The pack workflow is a managed workflow. Its workflow ID is deterministic from the pack ID, so repeated runs update the same record instead of creating duplicates. A version or workflow-content update preserves the database, credentials, and execution history.
 

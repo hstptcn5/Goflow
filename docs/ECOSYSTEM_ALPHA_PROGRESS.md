@@ -218,15 +218,20 @@ Architectural decision:
 
 - Add a dedicated `internal/packsetup` package for runtime setup state instead of expanding `packrun`.
 - Store non-secret config in `pack-config.json` under the per-pack data directory.
+- Store credential slot assignments in `pack-credentials.json` under the per-pack data directory.
 - Include pack ID and config schema version in the stored file.
 - Revalidate known fields against the current manifest before applying them.
 - Retain safe stale fields on disk but keep them out of the applied runtime config map.
 - Reject unsafe stale fields that look like retained secret material.
+- Validate credential assignments through an injectable resolver before setup is considered ready.
 
 Files changed:
 
 - `internal/packsetup/config.go`
 - `internal/packsetup/config_test.go`
+- `internal/packsetup/credentials.go`
+- `internal/packsetup/credentials_test.go`
+- `docs/PACKS.md`
 - `docs/ECOSYSTEM_ALPHA_PROGRESS.md`
 
 Tests run and result:
@@ -241,17 +246,18 @@ Security considerations:
 
 - Config storage rejects pack ID mismatches, unsupported schema versions, oversized files, bad URL values, wrong scalar types, missing required values, and unsafe stale fields.
 - Config writes are atomic and use `0600` mode where supported.
-- Credential IDs and binding application are not implemented yet in this checkpoint.
+- Credential-slot storage rejects pack ID mismatches, unsupported schema versions, oversized files, undeclared slots, missing required slots, missing credentials, wrong credential types, and unsafe stale slot metadata.
+- Credential-slot files store credential IDs and expected types only; decrypted values are never read or written by this package.
 
 Commit SHA:
 
 - `e6f8aae` (`feat: add pack config storage`).
+- Pending credential-slot storage commit.
 
 Remaining work:
 
 - Safe path-only interpolation for input, node outputs, and pack config.
 - Harden HTTP Request and Telegram nodes for appliance use.
-- Add credential-slot storage and validation.
 - Integrate config storage with packrun/appliance backend in Checkpoint D.
 
 ## Checkpoint D - Appliance Backend and Security Boundary

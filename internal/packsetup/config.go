@@ -317,7 +317,11 @@ func readFileLimit(path string, limit int64) ([]byte, error) {
 }
 
 func writeConfigAtomic(path string, cfg ConfigFile) error {
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	return writeJSONAtomic(path, cfg)
+}
+
+func writeJSONAtomic(path string, value interface{}) error {
+	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
