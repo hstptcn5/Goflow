@@ -450,6 +450,133 @@ func TestApplianceCredentialTestRateLimit(t *testing.T) {
 	applianceRequestStatus(t, router, http.MethodPost, "/api/appliance/setup/credentials/test", []byte(`{"key":"telegram"}`), headers, http.StatusTooManyRequests)
 }
 
+func TestApplianceStatusDetectsDeletedCredentialAfterCompletion(t *testing.T) {
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+	credStore := storage.NewCredentialStore(db, crypto.NewCryptoManager("test-master-key"))
+	cred, err := credStore.Create("Telegram", "TELEGRAM_BOT", "123:secret-token")
+	if err != nil {
+		t.Fatalf("create credential: %v", err)
+	}
+	appliance := &ApplianceContext{
+		Enabled:      true,
+		Origin:       "http://example.com",
+		SessionToken: "test-session-token",
+		PackID:       "example.appliance",
+		PackName:     "Example Appliance",
+		PackVersion:  "0.1.0",
+		WorkflowID:   "wf-1",
+		DataDir:      t.TempDir(),
+		CredentialRequirements: []pack.CredentialRequirement{
+			{Key: "telegram", Label: "Telegram", Type: "TELEGRAM_BOT", Required: true},
+		},
+	}
+	if _, err := packsetup.SaveCredentialBindings(appliance.DataDir, applianceManifest(appliance), map[string]string{"telegram": cred.ID}, applianceCredentialResolver(credStore)); err != nil {
+		t.Fatalf("save credential binding: %v", err)
+	}
+	if _, err := packsetup.SaveState(appliance.DataDir, applianceManifest(appliance), true, time.Now()); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	if err := credStore.Delete(cred.ID); err != nil {
+		t.Fatalf("delete credential: %v", err)
+	}
+	router := NewRouter(nil, nil, credStore, nil, nil, nil, nil, nil, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
+	body := applianceRequest(t, router, http.MethodGet, "/api/appliance/status", nil, nil)
+	if !strings.Contains(body, "NEEDS_SETUP") || !strings.Contains(body, `"credential"`) || strings.Contains(body, cred.ID) || strings.Contains(body, "secret-token") {
+		t.Fatalf("deleted credential was not surfaced safely: %s", body)
+	}
+}
+
+func TestApplianceWorkflowStatusReportsManagedWorkflowRecoveryStates(t *testing.T) {
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+	wfStore := storage.NewWorkflowStore(db)
+	execStore := storage.NewExecutionStore(db)
+	appliance := &ApplianceContext{
+		Enabled:      true,
+		Origin:       "http://example.com",
+		SessionToken: "test-session-token",
+		PackID:       "example.appliance",
+		PackName:     "Example Appliance",
+		PackVersion:  "0.1.0",
+		WorkflowID:   "wf-recovery",
+		DataDir:      t.TempDir(),
+	}
+	if _, err := packsetup.SaveState(appliance.DataDir, applianceManifest(appliance), true, time.Now()); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	router := NewRouter(wfStore, execStore, nil, nil, nil, nil, nil, nil, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
+	body := applianceRequest(t, router, http.MethodGet, "/api/appliance/workflow/status", nil, nil)
+	if !strings.Contains(body, `"state":"ERROR"`) || !strings.Contains(body, "managed workflow is not available") {
+		t.Fatalf("expected deleted workflow error state, got %s", body)
+	}
+	if err := wfStore.Create(&storage.Workflow{
+		ID:        "wf-recovery",
+		Name:      "Recovery",
+		IsActive:  false,
+		NodesJSON: `[]`,
+		EdgesJSON: `[]`,
+	}); err != nil {
+		t.Fatalf("create workflow: %v", err)
+	}
+	body = applianceRequest(t, router, http.MethodGet, "/api/appliance/workflow/status", nil, nil)
+	if !strings.Contains(body, `"state":"ERROR"`) || !strings.Contains(body, `"is_active":false`) {
+		t.Fatalf("expected inactive workflow error state, got %s", body)
+	}
+}
+
+func TestApplianceMutationGuardCoversStateChangingRoutes(t *testing.T) {
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+	credStore := storage.NewCredentialStore(db, crypto.NewCryptoManager("test-master-key"))
+	appliance := &ApplianceContext{
+		Enabled:      true,
+		Origin:       "http://example.com",
+		SessionToken: "test-session-token",
+		PackID:       "example.appliance",
+		PackName:     "Example Appliance",
+		PackVersion:  "0.1.0",
+		WorkflowID:   "wf-1",
+		DataDir:      t.TempDir(),
+	}
+	router := NewRouter(nil, nil, credStore, nil, nil, nil, nil, nil, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
+	for _, path := range []string{
+		"/api/appliance/setup/config",
+		"/api/appliance/setup/credentials",
+		"/api/appliance/setup/credentials/create",
+		"/api/appliance/setup/credentials/test",
+		"/api/appliance/setup/complete",
+		"/api/appliance/setup/reopen",
+		"/api/appliance/workflow/run",
+	} {
+		t.Run(path, func(t *testing.T) {
+			applianceRequestStatus(t, router, http.MethodPost, path, []byte(`{}`), map[string]string{
+				"Origin":       "http://example.com",
+				"Content-Type": "application/json",
+			}, http.StatusForbidden)
+			applianceRequestStatus(t, router, http.MethodPost, path, []byte(`{}`), map[string]string{
+				"Origin":             "http://evil.example",
+				applianceTokenHeader: "test-session-token",
+				"Content-Type":       "application/json",
+			}, http.StatusForbidden)
+			applianceRequestStatus(t, router, http.MethodPost, path, bytes.Repeat([]byte{'{'}, int(applianceMaxJSONBody)+1), map[string]string{
+				"Origin":             "http://example.com",
+				applianceTokenHeader: "test-session-token",
+				"Content-Type":       "application/json",
+			}, http.StatusBadRequest)
+		})
+	}
+}
+
 type applianceTestExecutor struct{}
 
 func (applianceTestExecutor) Execute(ctx *nodes.ExecutionContext, node *nodes.Node) (interface{}, error) {

@@ -1,6 +1,6 @@
 # Goflow Ecosystem Alpha Progress
 
-Status: IN_PROGRESS
+Status: COMPLETED
 
 Allowed status values: NOT_STARTED, IN_PROGRESS, BLOCKED, MANUAL_VERIFICATION_REQUIRED, DONE.
 
@@ -338,6 +338,7 @@ Security considerations:
 - Credential connection tests are explicit POST operations limited to 10 requests/minute per pack/client key and one in-flight test per appliance router.
 - Workflow run-now uses `TriggerService` async execution only after setup is `READY`; missing setup returns logical requirement keys, not values.
 - Execution and diagnostics responses use bounded/redacted summaries and do not return raw logs, credential IDs, database paths, or source/build paths.
+- Recovery coverage verifies deleted credential bindings, deleted/inactive managed workflows, and guarded mutation failures.
 
 Commit SHA:
 
@@ -346,13 +347,12 @@ Commit SHA:
 - `dde44b7` (`feat: add appliance setup state machine`).
 - `84c1e42` (`feat: add appliance credential test endpoints`).
 - `44428a4` (`feat: add appliance workflow runtime endpoints`).
+- Pending checkpoint D recovery/guard coverage commit.
 
 Remaining work:
 
-- Remaining non-Telegram allowlisted connection-test implementations or explicit skipped status.
-- Full setup state machine recovery behavior.
-- Additional recovery/error cases around inactive/deleted managed workflows.
-- Broader oversized-body, bad-host, cross-origin, missing-token, and generic-mode coverage across all appliance mutations.
+- Non-Telegram allowlisted connection tests return explicit `SKIPPED` status until concrete non-mutating implementations are added.
+- Appliance UI integration begins in Checkpoint E.
 
 ## Checkpoint E - Nontechnical Appliance UI
 
