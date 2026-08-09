@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"net/http"
@@ -288,6 +289,195 @@ func TestApplianceCompleteActivatesManagedWorkflow(t *testing.T) {
 	statusBody := applianceRequest(t, router, http.MethodGet, "/api/appliance/status", nil, nil)
 	if !strings.Contains(statusBody, "READY") {
 		t.Fatalf("expected ready active workflow, got %s", statusBody)
+	}
+}
+
+func TestApplianceCompleteRejectsUnapplicableBindingsWithoutCompleting(t *testing.T) {
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+	wfStore := storage.NewWorkflowStore(db)
+	workflowID := "wf-invalid-binding"
+	originalNodes := `[{"id":"fetch","type":"httpRequest","params":{"url":"https://example.test/default.json"}}]`
+	if err := wfStore.Create(&storage.Workflow{
+		ID:          workflowID,
+		Name:        "Managed",
+		Description: "Managed",
+		IsActive:    false,
+		NodesJSON:   originalNodes,
+		EdgesJSON:   "[]",
+	}); err != nil {
+		t.Fatalf("create workflow: %v", err)
+	}
+	appliance := &ApplianceContext{
+		Enabled:      true,
+		Origin:       "http://example.com",
+		SessionToken: "test-session-token",
+		PackID:       "example.appliance",
+		PackName:     "Example Appliance",
+		PackVersion:  "0.1.0",
+		WorkflowID:   workflowID,
+		DataDir:      t.TempDir(),
+		ConfigSchema: []pack.ConfigField{{Key: "source_url", Label: "Source URL", Type: "url", Required: true}},
+		Bindings: []pack.Binding{
+			{Source: "config.source_url", Target: pack.BindingTarget{NodeID: "missing", Param: "url"}},
+		},
+	}
+	router := NewRouter(wfStore, nil, nil, nil, nil, nil, nil, nil, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
+	saveApplianceConfig(t, router, "https://source.example.test/feed.json")
+
+	body := applianceRequestStatus(t, router, http.MethodPost, "/api/appliance/setup/complete", []byte(`{}`), applianceMutationHeaders(), http.StatusBadRequest)
+	if strings.Contains(body, "missing") || strings.Contains(body, "source.example.test") {
+		t.Fatalf("completion failure leaked internal binding details: %s", body)
+	}
+	if state, err := packsetup.LoadState(appliance.DataDir, applianceManifest(appliance)); err == nil && state.Completed {
+		t.Fatalf("invalid binding left setup completed")
+	}
+	wf, err := wfStore.GetByID(workflowID)
+	if err != nil {
+		t.Fatalf("read workflow: %v", err)
+	}
+	if wf.IsActive || wf.NodesJSON != originalNodes {
+		t.Fatalf("workflow changed after invalid binding: active=%v nodes=%s", wf.IsActive, wf.NodesJSON)
+	}
+	statusBody := applianceRequest(t, router, http.MethodGet, "/api/appliance/status", nil, nil)
+	if strings.Contains(statusBody, "READY") {
+		t.Fatalf("status reported ready after failed completion: %s", statusBody)
+	}
+}
+
+func TestAppliancePersistCompletionRollsBackStateAndWorkflowOnUpdateFailure(t *testing.T) {
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+	wfStore := storage.NewWorkflowStore(db)
+	workflowID := "wf-rollback"
+	originalNodes := `[{"id":"fetch","type":"httpRequest","params":{"url":"https://example.test/default.json"}}]`
+	if err := wfStore.Create(&storage.Workflow{
+		ID:          workflowID,
+		Name:        "Managed",
+		Description: "Managed",
+		IsActive:    false,
+		NodesJSON:   originalNodes,
+		EdgesJSON:   "[]",
+	}); err != nil {
+		t.Fatalf("create workflow: %v", err)
+	}
+	appliance := &ApplianceContext{
+		Enabled:      true,
+		Origin:       "http://example.com",
+		SessionToken: "test-session-token",
+		PackID:       "example.appliance",
+		PackName:     "Example Appliance",
+		PackVersion:  "0.1.0",
+		WorkflowID:   workflowID,
+		DataDir:      t.TempDir(),
+		ConfigSchema: []pack.ConfigField{{Key: "source_url", Label: "Source URL", Type: "url", Required: true}},
+		Bindings: []pack.Binding{
+			{Source: "config.source_url", Target: pack.BindingTarget{NodeID: "fetch", Param: "url"}},
+		},
+	}
+	if _, err := packsetup.SaveConfig(appliance.DataDir, applianceManifest(appliance), map[string]interface{}{"source_url": "https://source.example.test/feed.json"}); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	prepared, err := appliancePrepareCompletion(appliance, wfStore, nil)
+	if err != nil {
+		t.Fatalf("prepare completion: %v", err)
+	}
+	failFirstUpdate := true
+	stateTransitions := []bool{}
+	_, err = appliancePersistCompletion(prepared, applianceCompletionStore{
+		saveState: func(completed bool, now time.Time) (*packsetup.StateFile, error) {
+			stateTransitions = append(stateTransitions, completed)
+			return packsetup.SaveState(appliance.DataDir, applianceManifest(appliance), completed, now)
+		},
+		updateWorkflow: func(wf *storage.Workflow) error {
+			if failFirstUpdate {
+				failFirstUpdate = false
+				if err := wfStore.Update(wf); err != nil {
+					return err
+				}
+				return errors.New("injected workflow persistence failure")
+			}
+			return wfStore.Update(wf)
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected injected workflow update failure")
+	}
+	if got := strings.Trim(strings.Join(boolStrings(stateTransitions), ","), ","); got != "true,false" {
+		t.Fatalf("expected completed then rollback state transitions, got %v", stateTransitions)
+	}
+	state, err := packsetup.LoadState(appliance.DataDir, applianceManifest(appliance))
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if state.Completed {
+		t.Fatalf("failed workflow persistence left setup completed")
+	}
+	wf, err := wfStore.GetByID(workflowID)
+	if err != nil {
+		t.Fatalf("read workflow: %v", err)
+	}
+	if wf.IsActive || wf.NodesJSON != originalNodes {
+		t.Fatalf("workflow was not restored after failure: active=%v nodes=%s", wf.IsActive, wf.NodesJSON)
+	}
+	router := NewRouter(wfStore, nil, nil, nil, nil, nil, nil, nil, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
+	statusBody := applianceRequest(t, router, http.MethodGet, "/api/appliance/status", nil, nil)
+	if strings.Contains(statusBody, "READY") {
+		t.Fatalf("status reported ready after rollback: %s", statusBody)
+	}
+	prepared, err = appliancePrepareCompletion(appliance, wfStore, nil)
+	if err != nil {
+		t.Fatalf("prepare retry: %v", err)
+	}
+	if _, err := appliancePersistCompletion(prepared, applianceDefaultCompletionStore(appliance, wfStore)); err != nil {
+		t.Fatalf("retry completion: %v", err)
+	}
+	statusBody = applianceRequest(t, router, http.MethodGet, "/api/appliance/status", nil, nil)
+	if !strings.Contains(statusBody, "READY") {
+		t.Fatalf("expected ready after retry, got %s", statusBody)
+	}
+}
+
+func TestApplianceReopenChangeConfigAndCompleteRebindsWorkflow(t *testing.T) {
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+	wfStore := storage.NewWorkflowStore(db)
+	appliance, router := testBindingAppliance(t, wfStore, "wf-rebind")
+
+	saveApplianceConfig(t, router, "https://source.example.test/first.json")
+	completeApplianceSetup(t, router)
+	assertWorkflowNodes(t, wfStore, appliance.WorkflowID, true, "https://source.example.test/first.json", 1)
+	applianceRequest(t, router, http.MethodPost, "/api/appliance/setup/reopen", []byte(`{}`), applianceMutationHeaders())
+	saveApplianceConfig(t, router, "https://source.example.test/second.json")
+	completeApplianceSetup(t, router)
+	assertWorkflowNodes(t, wfStore, appliance.WorkflowID, true, "https://source.example.test/second.json", 1)
+}
+
+func TestApplianceRepeatedCompletionIsIdempotent(t *testing.T) {
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+	wfStore := storage.NewWorkflowStore(db)
+	appliance, router := testBindingAppliance(t, wfStore, "wf-idempotent")
+
+	saveApplianceConfig(t, router, "https://source.example.test/idempotent.json")
+	completeApplianceSetup(t, router)
+	first := assertWorkflowNodes(t, wfStore, appliance.WorkflowID, true, "https://source.example.test/idempotent.json", 1)
+	completeApplianceSetup(t, router)
+	second := assertWorkflowNodes(t, wfStore, appliance.WorkflowID, true, "https://source.example.test/idempotent.json", 1)
+	if first != second {
+		t.Fatalf("repeated completion corrupted workflow nodes: first=%s second=%s", first, second)
 	}
 }
 
@@ -685,6 +875,92 @@ func (applianceTestExecutor) GetDefinition() nodes.NodeDefinition {
 		Description: "Test action",
 		Category:    "test",
 	}
+}
+
+func testBindingAppliance(t *testing.T, wfStore *storage.WorkflowStore, workflowID string) (*ApplianceContext, http.Handler) {
+	t.Helper()
+	if err := wfStore.Create(&storage.Workflow{
+		ID:          workflowID,
+		Name:        "Managed",
+		Description: "Managed",
+		IsActive:    false,
+		NodesJSON:   `[{"id":"fetch","type":"httpRequest","params":{"url":"https://example.test/default.json"}}]`,
+		EdgesJSON:   "[]",
+	}); err != nil {
+		t.Fatalf("create workflow: %v", err)
+	}
+	appliance := &ApplianceContext{
+		Enabled:      true,
+		Origin:       "http://example.com",
+		SessionToken: "test-session-token",
+		PackID:       "example.appliance",
+		PackName:     "Example Appliance",
+		PackVersion:  "0.1.0",
+		WorkflowID:   workflowID,
+		DataDir:      t.TempDir(),
+		ConfigSchema: []pack.ConfigField{{Key: "source_url", Label: "Source URL", Type: "url", Required: true}},
+		Bindings: []pack.Binding{
+			{Source: "config.source_url", Target: pack.BindingTarget{NodeID: "fetch", Param: "url"}},
+		},
+	}
+	router := NewRouter(wfStore, nil, nil, nil, nil, nil, nil, nil, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
+	return appliance, router
+}
+
+func applianceMutationHeaders() map[string]string {
+	return map[string]string{
+		"Origin":             "http://example.com",
+		applianceTokenHeader: "test-session-token",
+		"Content-Type":       "application/json",
+	}
+}
+
+func saveApplianceConfig(t *testing.T, router http.Handler, sourceURL string) {
+	t.Helper()
+	payload, err := json.Marshal(map[string]interface{}{"values": map[string]interface{}{"source_url": sourceURL}})
+	if err != nil {
+		t.Fatalf("marshal config payload: %v", err)
+	}
+	applianceRequest(t, router, http.MethodPost, "/api/appliance/setup/config", payload, applianceMutationHeaders())
+}
+
+func completeApplianceSetup(t *testing.T, router http.Handler) {
+	t.Helper()
+	applianceRequest(t, router, http.MethodPost, "/api/appliance/setup/complete", []byte(`{}`), applianceMutationHeaders())
+}
+
+func assertWorkflowNodes(t *testing.T, wfStore *storage.WorkflowStore, workflowID string, wantActive bool, wantURL string, wantNodes int) string {
+	t.Helper()
+	wf, err := wfStore.GetByID(workflowID)
+	if err != nil {
+		t.Fatalf("read workflow: %v", err)
+	}
+	if wf.IsActive != wantActive {
+		t.Fatalf("workflow active=%v, want %v", wf.IsActive, wantActive)
+	}
+	var nodeList []nodes.Node
+	if err := json.Unmarshal([]byte(wf.NodesJSON), &nodeList); err != nil {
+		t.Fatalf("workflow nodes_json is invalid: %v", err)
+	}
+	if len(nodeList) != wantNodes {
+		t.Fatalf("workflow node count=%d, want %d: %s", len(nodeList), wantNodes, wf.NodesJSON)
+	}
+	if got, _ := nodeList[0].Params["url"].(string); got != wantURL {
+		t.Fatalf("workflow bound url=%q, want %q", got, wantURL)
+	}
+	return wf.NodesJSON
+}
+
+func boolStrings(values []bool) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value {
+			result = append(result, "true")
+		} else {
+			result = append(result, "false")
+		}
+	}
+	return result
 }
 
 func applianceRequest(t *testing.T, router http.Handler, method, path string, body []byte, headers map[string]string) string {

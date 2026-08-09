@@ -2,7 +2,6 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { createServer as createHTTPServer } from 'node:http';
-import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
@@ -21,6 +20,13 @@ const tokenSecret = randomBytes(18).toString('base64url');
 const tokenParts = `${tokenPrefix}|${tokenSecret}`;
 const chatID = '@dailyops_e2e';
 const capturedLogs = [];
+const expectedMessageFragments = [
+  '2026-08-09',
+  '48250.75',
+  '314',
+  '3 SKUs below threshold',
+  'Revenue up 12.4% vs prior day',
+];
 
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(artifactDir, { recursive: true });
@@ -39,11 +45,14 @@ try {
   if (exitCode !== 0) throw new Error('DailyOps setup Playwright phase failed');
   await killTree(harness.child);
 
+  assertSourceCalls(sourceServer, { count: 1, method: 'GET', path: '/dailyops.json' });
   assertTelegramCalls(telegramServer, { getMe: 1, sendMessage: 1 });
 
   harness = await startHarness();
   exitCode = await runPlaywright('persist', harness.baseURL);
   if (exitCode !== 0) throw new Error('DailyOps persistence Playwright phase failed');
+  assertSourceCalls(sourceServer, { count: 1, method: 'GET', path: '/dailyops.json' });
+  assertTelegramCalls(telegramServer, { getMe: 1, sendMessage: 1 });
 
   await scanForForbiddenRuntimeData();
   ensureLogsDoNotExposeSecret();
@@ -60,8 +69,13 @@ try {
 process.exit(exitCode);
 
 async function startSourceServer() {
+  const state = { count: 0, methods: [], paths: [], unexpected: [] };
   const server = createHTTPServer((req, res) => {
+    state.count += 1;
+    state.methods.push(req.method);
+    state.paths.push(req.url);
     if (req.method !== 'GET' || req.url !== '/dailyops.json') {
+      state.unexpected.push({ method: req.method, path: req.url || '' });
       res.writeHead(404);
       res.end('not found');
       return;
@@ -77,7 +91,8 @@ async function startSourceServer() {
       comparison_summary: 'Revenue up 12.4% vs prior day',
     }));
   });
-  return listen(server);
+  const listened = await listen(server);
+  return { ...listened, state };
 }
 
 async function startTelegramServer() {
@@ -101,8 +116,10 @@ async function startTelegramServer() {
       state.sendMessage += 1;
       const body = await readBody(req);
       const payload = JSON.parse(body || '{}');
-      if (payload.chat_id !== chatID || !String(payload.text || '').includes('DailyOps Daily Report')) {
-        state.unexpected.push({ method: req.method, path: 'sendMessage', reason: 'invalid payload' });
+      const text = String(payload.text || '');
+      const missingFragments = expectedMessageFragments.filter((fragment) => !text.includes(fragment));
+      if (payload.chat_id !== chatID || !text.includes('DailyOps Daily Report') || missingFragments.length > 0) {
+        state.unexpected.push({ method: req.method, path: 'sendMessage', reason: missingFragments.length ? `missing source fragments: ${missingFragments.join(', ')}` : 'invalid payload' });
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, description: 'invalid payload' }));
         return;
@@ -131,7 +148,6 @@ function listen(server) {
 }
 
 async function startHarness() {
-  const port = await findFreePort();
   const child = spawn('go', [
     'run',
     './internal/testharness/dailyopsappliance',
@@ -139,7 +155,7 @@ async function startHarness() {
     '--data-dir', dataDir,
     '--ui-dir', uiDir,
     '--telegram-base-url', telegramBaseURL,
-    '--port', String(port),
+    '--port', '0',
   ], {
     cwd: root,
     env: {
@@ -149,11 +165,41 @@ async function startHarness() {
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  child.stdout.on('data', (chunk) => recordLog(chunk));
+  const baseURLPromise = waitForHarnessURL(child);
   child.stderr.on('data', (chunk) => recordLog(chunk));
-  const baseURL = `http://127.0.0.1:${port}`;
+  const baseURL = await baseURLPromise;
   await waitForAppliance(child, baseURL);
   return { child, baseURL };
+}
+
+function waitForHarnessURL(child) {
+  return new Promise((resolveURL, rejectURL) => {
+    let buffer = '';
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        rejectURL(new Error('DailyOps appliance harness did not print a URL'));
+      }
+    }, 60_000);
+    child.stdout.on('data', (chunk) => {
+      const text = recordLog(chunk);
+      buffer += text;
+      const match = buffer.match(/URL:\s+(http:\/\/127\.0\.0\.1:\d+)\//);
+      if (match && !settled) {
+        settled = true;
+        clearTimeout(timeout);
+        resolveURL(match[1]);
+      }
+    });
+    child.once('exit', (code, signal) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timeout);
+        rejectURL(new Error(`DailyOps appliance harness exited before URL: code=${code} signal=${signal}`));
+      }
+    });
+  });
 }
 
 function runPlaywright(phaseName, baseURL) {
@@ -203,6 +249,19 @@ function assertTelegramCalls(serverState, expected) {
   }
   if (serverState.state.getMe !== expected.getMe || serverState.state.sendMessage !== expected.sendMessage) {
     throw new Error(`Telegram mock call counts mismatch: getMe=${serverState.state.getMe}, sendMessage=${serverState.state.sendMessage}`);
+  }
+}
+
+function assertSourceCalls(serverState, expected) {
+  const { state } = serverState;
+  if (state.unexpected.length) {
+    throw new Error(`Unexpected source mock calls: ${JSON.stringify(state.unexpected)}`);
+  }
+  if (state.count !== expected.count) {
+    throw new Error(`Source mock call count mismatch: count=${state.count}, methods=${state.methods.join(',')}, paths=${state.paths.join(',')}`);
+  }
+  if (state.methods[0] !== expected.method || state.paths[0] !== expected.path) {
+    throw new Error(`Source mock request mismatch: methods=${state.methods.join(',')}, paths=${state.paths.join(',')}`);
   }
 }
 
@@ -295,6 +354,7 @@ function recordLog(chunk) {
   const text = chunk.toString('utf8');
   capturedLogs.push(text);
   process.stdout.write(text.replaceAll(tokenSecret, '[REDACTED]'));
+  return text;
 }
 
 function ensureLogsDoNotExposeSecret() {
@@ -319,18 +379,6 @@ function readBody(req) {
     });
     req.on('end', () => resolveRead(body));
     req.on('error', rejectRead);
-  });
-}
-
-async function findFreePort() {
-  return new Promise((resolvePort, rejectPort) => {
-    const server = createNetServer();
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      const found = address && typeof address === 'object' ? address.port : 0;
-      server.close(() => resolvePort(found));
-    });
-    server.on('error', rejectPort);
   });
 }
 

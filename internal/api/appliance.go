@@ -397,12 +397,13 @@ func applianceCompleteHandler(appliance *ApplianceContext, wfStore *storage.Work
 			renderJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "setup requirements are missing", "missing": missing})
 			return
 		}
-		state, err := packsetup.SaveState(appliance.DataDir, applianceManifest(appliance), true, time.Now())
+		prepared, err := appliancePrepareCompletion(appliance, wfStore, credStore)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "setup could not be completed", http.StatusBadRequest)
 			return
 		}
-		if err := applianceApplyBindingsAndActivate(appliance, wfStore, credStore); err != nil {
+		state, err := appliancePersistCompletion(prepared, applianceDefaultCompletionStore(appliance, wfStore))
+		if err != nil {
 			http.Error(w, "managed workflow could not be activated", http.StatusInternalServerError)
 			return
 		}
@@ -410,27 +411,43 @@ func applianceCompleteHandler(appliance *ApplianceContext, wfStore *storage.Work
 	}
 }
 
-func applianceApplyBindingsAndActivate(appliance *ApplianceContext, wfStore *storage.WorkflowStore, credStore *storage.CredentialStore) error {
+type appliancePreparedCompletion struct {
+	appliance *ApplianceContext
+	manifest  pack.Manifest
+	original  *storage.Workflow
+	updated   *storage.Workflow
+}
+
+type applianceCompletionStore struct {
+	saveState      func(completed bool, now time.Time) (*packsetup.StateFile, error)
+	updateWorkflow func(*storage.Workflow) error
+}
+
+func appliancePrepareCompletion(appliance *ApplianceContext, wfStore *storage.WorkflowStore, credStore *storage.CredentialStore) (*appliancePreparedCompletion, error) {
+	prepared := &appliancePreparedCompletion{
+		appliance: appliance,
+		manifest:  applianceManifest(appliance),
+	}
 	if wfStore == nil {
-		return nil
+		return prepared, nil
 	}
 	wf, err := wfStore.GetByID(appliance.WorkflowID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	updated := *wf
 	updated.IsActive = true
-	manifest := applianceManifest(appliance)
+	manifest := prepared.manifest
 	if len(manifest.Bindings) > 0 {
 		cfg, err := packsetup.LoadConfig(appliance.DataDir, manifest)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		credentialSlots := map[string]packsetup.CredentialSlot{}
 		if len(manifest.CredentialRequirements) > 0 {
 			creds, err := packsetup.LoadCredentialBindings(appliance.DataDir, manifest, applianceCredentialResolver(credStore))
 			if err != nil {
-				return err
+				return nil, err
 			}
 			credentialSlots = creds.Credentials.Slots
 		}
@@ -454,12 +471,55 @@ func applianceApplyBindingsAndActivate(appliance *ApplianceContext, wfStore *sto
 			ConcurrencyPolicy: updated.ConcurrencyPolicy,
 		}, manifest, cfg.Config.Values, credentialSlots)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		updated.NodesJSON = bound.NodesJSON
 		updated.EdgesJSON = bound.EdgesJSON
 	}
-	return wfStore.Update(&updated)
+	prepared.original = wf
+	prepared.updated = &updated
+	return prepared, nil
+}
+
+func applianceDefaultCompletionStore(appliance *ApplianceContext, wfStore *storage.WorkflowStore) applianceCompletionStore {
+	return applianceCompletionStore{
+		saveState: func(completed bool, now time.Time) (*packsetup.StateFile, error) {
+			return packsetup.SaveState(appliance.DataDir, applianceManifest(appliance), completed, now)
+		},
+		updateWorkflow: func(wf *storage.Workflow) error {
+			if wfStore == nil {
+				return nil
+			}
+			return wfStore.Update(wf)
+		},
+	}
+}
+
+func appliancePersistCompletion(prepared *appliancePreparedCompletion, store applianceCompletionStore) (*packsetup.StateFile, error) {
+	// Safe order: all setup inputs and the fully bound workflow are prepared before
+	// mutation. The setup state is persisted first, then the active workflow. If
+	// workflow persistence fails, Goflow compensates by restoring the original
+	// workflow snapshot and rolling setup state back to incomplete before
+	// returning a generic failure to the HTTP caller.
+	state, err := store.saveState(true, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	if prepared.updated == nil {
+		return state, nil
+	}
+	if err := store.updateWorkflow(prepared.updated); err != nil {
+		restoreErr := store.updateWorkflow(prepared.original)
+		_, rollbackErr := store.saveState(false, time.Now())
+		if restoreErr != nil {
+			return nil, restoreErr
+		}
+		if rollbackErr != nil {
+			return nil, rollbackErr
+		}
+		return nil, err
+	}
+	return state, nil
 }
 
 func applianceReopenHandler(appliance *ApplianceContext) http.HandlerFunc {
