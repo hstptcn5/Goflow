@@ -548,13 +548,52 @@ Remaining work:
 
 ## Checkpoint I - Security Review, Documentation, and Pilot Handoff
 
-Status: NOT_STARTED
+Status: IN_PROGRESS
 
-Planned scope:
+Implemented scope:
 
-- Complete threat model.
-- Appliance quickstart, troubleshooting, backup/restore, credential rotation, author guide, DailyOps guide, artifact verification.
-- Pilot guide and post-alpha roadmap.
+- Completed ecosystem alpha threat model fields for boundary, mitigations, tests, residual risk, and future signing/registry requirement.
+- Added appliance quickstart, troubleshooting/diagnostics, backup/restore, credential rotation, DailyOps demo, development artifact verification, and pilot handoff docs.
+- Linked operator docs from Pack Format docs.
+- Updated post-alpha roadmap status while preserving gated phases and non-inference rules.
+
+Files changed:
+
+- `docs/APPLIANCE_QUICKSTART.md`
+- `docs/APPLIANCE_TROUBLESHOOTING.md`
+- `docs/CREDENTIAL_ROTATION.md`
+- `docs/DAILYOPS_DEMO_GUIDE.md`
+- `docs/DATA_BACKUP_RESTORE.md`
+- `docs/DEVELOPMENT_ARTIFACTS.md`
+- `docs/PILOT_GUIDE.md`
+- `docs/ECOSYSTEM_THREAT_MODEL.md`
+- `docs/POST_ALPHA_ROADMAP.md`
+- `docs/PACKS.md`
+- `docs/ECOSYSTEM_ALPHA_PROGRESS.md`
+
+Tests run and result:
+
+- Claim scan for unsupported validation/customer/revenue/vendor claims across updated docs: PASS; matches are explicit non-claim limitations.
+- Threat model check for one `Future signing/registry requirement` field per threat section: PASS.
+- `go test ./...`: PASS.
+- `go vet ./...`: PASS.
+- `go build ./...`: PASS.
+- `govulncheck ./...`: PASS, 0 reachable vulnerabilities.
+- `npm --prefix ui run test`: PASS, 11 files and 51 tests.
+- `npm --prefix ui run build`: PASS.
+- `npm --prefix ui run test:e2e -- appliance.spec.js`: PASS, 2 Playwright appliance tests.
+- `npm --prefix ui run test:e2e:runner`: PASS.
+- `wsl.exe sh -lc 'cd /mnt/d/build2026/Goflow && export PATH="$HOME/.cache/codex-go/go/bin:$PATH" && go test -race ./...'`: PASS.
+
+Security considerations:
+
+- Docs explicitly prohibit collecting production secrets through chat, issues, screenshots, or committed files.
+- Docs label artifacts as unsigned alpha development outputs and preserve the limitation that `PACK_INFO.json` is not publisher trust.
+- Pilot guide does not claim interviews, customers, revenue, vendor access, or market validation occurred.
+
+Commit SHA:
+
+- Pending.
 
 ## Final Acceptance Suite
 

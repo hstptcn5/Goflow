@@ -1,6 +1,6 @@
 # Goflow Ecosystem Alpha Threat Model
 
-Status: Draft for Checkpoint A
+Status: Completed for ecosystem alpha Checkpoint I
 
 This document tracks the security boundary for the workflow-pack ecosystem alpha. Each later checkpoint must update the relevant threats with implementation evidence and tests.
 
@@ -40,7 +40,7 @@ Mitigations:
 - Symlink escape rejection for source validation.
 - Extracted bundles reject symlinks and unexpected controlled files.
 - `PACK_INFO` SHA-256 and size verification.
-- Pack-only embedded secret scan planned for known secret-bearing parameters.
+- Pack-only embedded secret scan for known secret-bearing parameters.
 
 Required tests:
 
@@ -50,6 +50,10 @@ Required tests:
 Residual risk:
 
 - Unsigned packs can still be malicious workflows. Publisher authenticity requires a future trust layer.
+
+Future signing/registry requirement:
+
+- Signed publisher identity, offline bundle signature verification, revocation, and reviewed pack metadata before any remote install.
 
 ### Unsigned PACK_INFO Limitations
 
@@ -70,6 +74,10 @@ Required tests:
 Residual risk:
 
 - A malicious party can rebuild a bundle with matching hashes. Future signing is required.
+
+Future signing/registry requirement:
+
+- `PACK_INFO` must be covered by an external signature and publisher key policy before it is treated as trust evidence.
 
 ### Symlink And Path Traversal
 
@@ -92,6 +100,10 @@ Residual risk:
 
 - Platform filesystem behavior differences require CI and local smoke coverage.
 
+Future signing/registry requirement:
+
+- Registry ingestion must repeat path and symlink validation before signing pack metadata.
+
 ### ZIP Bombs And Bounded Reads
 
 Boundary:
@@ -101,7 +113,7 @@ Boundary:
 Mitigations:
 
 - Existing pack limits for manifest, workflow, resources, runtime, `PACK_INFO`, and entry count.
-- Planned named limits for setup metadata, API JSON bodies, diagnostics, HTTP response bodies, and recent execution counts.
+- Named limits for setup metadata, API JSON bodies, diagnostics, HTTP response bodies, and recent execution counts.
 
 Required tests:
 
@@ -110,6 +122,10 @@ Required tests:
 Residual risk:
 
 - Compression-level resource exhaustion must remain bounded by streaming and entry limits.
+
+Future signing/registry requirement:
+
+- Registry-side scanning must enforce the same size, count, and compression limits before publication.
 
 ### Embedded Workflow Secrets
 
@@ -120,7 +136,7 @@ Boundary:
 Mitigations:
 
 - Existing manifest secret-field rejection.
-- Planned pack-only scan for known secret-bearing workflow parameters.
+- Pack-only scan for known secret-bearing workflow parameters.
 - Telegram pack workflows must use credential IDs, not literal bot tokens.
 
 Required tests:
@@ -133,6 +149,10 @@ Residual risk:
 
 - Unknown node types or future secret-bearing parameters require maintained metadata.
 
+Future signing/registry requirement:
+
+- Signed pack review must include maintained secret-parameter metadata and automated canary scans.
+
 ### Localhost CSRF And DNS Rebinding
 
 Boundary:
@@ -141,9 +161,9 @@ Boundary:
 
 Mitigations:
 
-- Planned exact allowed `Origin` check.
-- Planned loopback `Host` validation.
-- Planned high-entropy per-process appliance token from same-origin bootstrap.
+- Exact allowed `Origin` check.
+- Loopback `Host` validation.
+- High-entropy per-process appliance token from same-origin bootstrap.
 - No wildcard CORS.
 
 Required tests:
@@ -154,6 +174,10 @@ Residual risk:
 
 - Browser and proxy edge cases require careful host/origin parsing.
 
+Future signing/registry requirement:
+
+- Remote registry or update features must not weaken loopback-only appliance mutation guards.
+
 ### Credential Exfiltration
 
 Boundary:
@@ -163,7 +187,7 @@ Boundary:
 Mitigations:
 
 - Existing encrypted credential store.
-- Planned credential slot to credential ID binding only.
+- Credential slot to credential ID binding only.
 - Diagnostics exclude decrypted values and encrypted blobs.
 - UI never displays existing decrypted secrets.
 
@@ -176,6 +200,10 @@ Residual risk:
 
 - Unsafe workflows can still send secrets to remote endpoints if the user authorizes that workflow.
 
+Future signing/registry requirement:
+
+- Signed pack metadata must declare credential use, network destinations where knowable, and reviewer approval for credential-bearing workflows.
+
 ### SSRF And Unsafe Redirects
 
 Boundary:
@@ -184,8 +212,8 @@ Boundary:
 
 Mitigations:
 
-- Planned URL scheme validation, method allowlist, request/body/header/response limits.
-- Planned redirect policy that avoids carrying authorization to different origins.
+- URL scheme validation, method allowlist, request/body/header/response limits.
+- Redirect policy that avoids carrying authorization to different origins.
 - Pack setup must not accept arbitrary connection-test URLs.
 
 Required tests:
@@ -195,6 +223,10 @@ Required tests:
 Residual risk:
 
 - Generic workflows created by admins retain broad HTTP capability.
+
+Future signing/registry requirement:
+
+- Registry metadata should classify network behavior and require review for broad outbound access.
 
 ### Diagnostic And Log Leakage
 
@@ -216,6 +248,10 @@ Residual risk:
 
 - Redaction patterns require ongoing maintenance.
 
+Future signing/registry requirement:
+
+- Registry and support tooling must reject diagnostic attachments that contain known credential, key, or path patterns.
+
 ### Stale Or Cross-Pack Single Instance State
 
 Boundary:
@@ -236,6 +272,10 @@ Residual risk:
 
 - Local users with direct data directory write access can disrupt appliance startup.
 
+Future signing/registry requirement:
+
+- Signed pack upgrades must preserve pack ID continuity and reject cross-pack state migration without explicit user action.
+
 ### Plugin Or Native Execution
 
 Boundary:
@@ -245,7 +285,7 @@ Boundary:
 Mitigations:
 
 - Existing Pack Run fails early when `plugins` is non-empty.
-- Planned author tools inspect plugins as files only.
+- Author tools inspect plugins as files only.
 
 Required tests:
 
@@ -255,6 +295,10 @@ Required tests:
 Residual risk:
 
 - Future plugin support needs signing, sandboxing, and explicit trust.
+
+Future signing/registry requirement:
+
+- Native/plugin execution requires signed publishers, sandbox policy, user consent, and registry review before support is enabled.
 
 ### Supply Chain And CI Artifact Trust
 
@@ -278,6 +322,10 @@ Residual risk:
 
 - GitHub Actions artifacts are not a substitute for publisher signing.
 
+Future signing/registry requirement:
+
+- Production releases require reproducible release evidence, signed artifacts, key rotation, and revocation.
+
 ### Pack Upgrade Compatibility
 
 Boundary:
@@ -287,7 +335,7 @@ Boundary:
 Mitigations:
 
 - Stable managed workflow ID from pack ID.
-- Planned setup schema version in state.
+- Setup schema version in state.
 - Revalidate stored values and credential slot assignments against the current manifest.
 - Return to `NEEDS_SETUP` when new required setup is introduced.
 
@@ -299,3 +347,7 @@ Required tests:
 Residual risk:
 
 - Incompatible schema changes require clear user action and future migration contracts.
+
+Future signing/registry requirement:
+
+- Registry metadata must carry compatibility and migration contracts signed by the pack publisher.

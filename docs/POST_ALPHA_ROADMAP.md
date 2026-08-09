@@ -1,6 +1,6 @@
 # Goflow Post-Alpha Roadmap
 
-Status: Draft for Checkpoint A
+Status: Completed for ecosystem alpha Checkpoint I
 
 This roadmap defines work that must not be inferred as complete during the ecosystem alpha. Each phase requires objective entry gates, exit criteria, security dependencies, and explicit user or business decisions.
 

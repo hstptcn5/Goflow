@@ -400,6 +400,16 @@ goflow pack verify <bundle.zip|extracted-directory> --output table
 
 See [PACK_AUTHOR_TUTORIAL.md](PACK_AUTHOR_TUTORIAL.md) for a PowerShell and POSIX walkthrough.
 
+Operator docs:
+
+- [APPLIANCE_QUICKSTART.md](APPLIANCE_QUICKSTART.md)
+- [APPLIANCE_TROUBLESHOOTING.md](APPLIANCE_TROUBLESHOOTING.md)
+- [DATA_BACKUP_RESTORE.md](DATA_BACKUP_RESTORE.md)
+- [CREDENTIAL_ROTATION.md](CREDENTIAL_ROTATION.md)
+- [DAILYOPS_DEMO_GUIDE.md](DAILYOPS_DEMO_GUIDE.md)
+- [DEVELOPMENT_ARTIFACTS.md](DEVELOPMENT_ARTIFACTS.md)
+- [PILOT_GUIDE.md](PILOT_GUIDE.md)
+
 ## Run
 
 Run a source pack directory:
