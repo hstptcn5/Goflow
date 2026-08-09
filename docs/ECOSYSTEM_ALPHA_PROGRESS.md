@@ -54,7 +54,7 @@ Alpha branch:
 
 ## Checkpoint A - Baseline, Architecture, and Contracts
 
-Status: IN_PROGRESS
+Status: MANUAL_VERIFICATION_REQUIRED
 
 Starting commit: `8dd397a21f00cb8828753d177069e97f09db8a90`
 
@@ -526,6 +526,9 @@ Tests run and result:
 - `cd ui && npm run test:e2e -- appliance.spec.js`: PASS, 2 Playwright appliance tests used by PR CI.
 - `cd ui && npm run test:e2e:runner`: PASS.
 - Local WSL pack contract script matching CI intent: `pack validate`, `pack test --output json`, deterministic DailyOps build comparison, ZIP/extracted `pack verify`, forbidden runtime file scan, and canary/path scan: PASS.
+- GitHub Actions PR CI run #74 for `1d44368`: PASS. Jobs: Backend tests, Frontend build, Pack contracts and DailyOps, Appliance Playwright E2E, Build linux-amd64, Build linux-arm64, Build windows-amd64, Build darwin-amd64, Build darwin-arm64. Manual development-artifacts job was correctly skipped because run #74 was a pull_request event.
+- Run #74 uploaded PR build artifacts for linux-amd64, linux-arm64, windows-amd64, darwin-amd64, and darwin-arm64 with retention through 2026-11-07.
+- Downloaded run #74 Windows artifact `goflow-windows-amd64`, extracted it locally, launched `goflow-windows-amd64.exe pack run examples/packs/dailyops-rest-telegram --data-dir <temp> --port <temp> --no-open`, verified `/api/appliance/bootstrap` returned `official.dailyops-rest-telegram` with a token, and verified `/` served the embedded UI shell: PASS.
 
 Security considerations:
 
@@ -536,12 +539,12 @@ Security considerations:
 Commit SHA:
 
 - `6629ba2` (`ci: add alpha artifact pipeline`).
+- `1d44368` (`ci: scope appliance e2e job`).
 
 Remaining work:
 
-- Run local full gates.
-- Push Checkpoint H draft PR and wait for PR CI.
-- Attempt manual `workflow_dispatch` artifact run on this branch; if GitHub requires the dispatch trigger on the default branch, record that as a pre-merge manual verification limitation.
+- Manual `workflow_dispatch` development-artifacts run still requires an authenticated GitHub UI/API path. The current shell has no `gh`, `GH_TOKEN`, `GITHUB_TOKEN`, or `GITHUB_PAT`; the GitHub connector exposes CI status/artifact download but not workflow dispatch; the in-app GitHub browser session is logged out.
+- Final acceptance must run the manual development-artifacts workflow after an authenticated dispatch path is available and verify the `UNSIGNED-DEVELOPMENT-ALPHA-*` artifacts.
 
 ## Checkpoint I - Security Review, Documentation, and Pilot Handoff
 
