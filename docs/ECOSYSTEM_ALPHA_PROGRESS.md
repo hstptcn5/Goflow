@@ -45,7 +45,8 @@ Baseline verification before alpha branch:
 Final-alpha dependency gate:
 
 - Existing frontend npm audit findings from `npm ci`: 1 moderate and 1 high vulnerability.
-- Before final acceptance, this must be resolved by a compatible upgrade, removed by dependency changes, or documented with verified non-reachability and accepted residual risk.
+- Resolved in Checkpoint I final gate hardening by lockfile-only transitive upgrades: `postcss` 8.5.21 to 8.5.26 and `nanoid` 3.3.16 to 3.3.18.
+- `npm --prefix ui audit --audit-level=moderate`: PASS, 0 vulnerabilities.
 
 Alpha branch:
 
@@ -570,6 +571,7 @@ Files changed:
 - `docs/POST_ALPHA_ROADMAP.md`
 - `docs/PACKS.md`
 - `docs/ECOSYSTEM_ALPHA_PROGRESS.md`
+- `ui/package-lock.json`
 
 Tests run and result:
 
@@ -584,6 +586,9 @@ Tests run and result:
 - `npm --prefix ui run test:e2e -- appliance.spec.js`: PASS, 2 Playwright appliance tests.
 - `npm --prefix ui run test:e2e:runner`: PASS.
 - `wsl.exe sh -lc 'cd /mnt/d/build2026/Goflow && export PATH="$HOME/.cache/codex-go/go/bin:$PATH" && go test -race ./...'`: PASS.
+- `npm --prefix ui audit fix --package-lock-only`: PASS; upgraded transitive vulnerable `postcss`/`nanoid`.
+- `npm --prefix ui ci`: PASS, 0 vulnerabilities after lockfile update.
+- `npm --prefix ui audit --audit-level=moderate`: PASS, 0 vulnerabilities.
 
 Security considerations:
 
