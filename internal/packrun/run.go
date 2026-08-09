@@ -78,6 +78,10 @@ func RunExtractedBundle(ctx context.Context, bundleDir string, opts Options) err
 	return Run(ctx, opts)
 }
 
+func Prepare(ctx context.Context, loaded *pack.Pack, dataDir string) (*Prepared, error) {
+	return prepare(ctx, loaded, dataDir)
+}
+
 func Run(ctx context.Context, opts Options) error {
 	if ctx == nil {
 		ctx = context.Background()

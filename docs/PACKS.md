@@ -383,6 +383,23 @@ Named limits:
 
 The builder checks file sizes with `stat` before writing the ZIP, rechecks inventory sizes after hashing, and verifies actual uncompressed ZIP entry sizes by streaming archive contents with limits. It streams files while hashing and archiving, so it does not allocate memory for entire plugin or asset files.
 
+## Author CLI
+
+Pack authors can use the stable local workflow below:
+
+```bash
+goflow pack init <directory> --id <id> --name <name>
+goflow pack validate <directory>
+goflow pack inspect <directory|bundle.zip|extracted-directory> --output table
+goflow pack test <directory> --output json
+goflow pack build <directory> --output <output-directory>
+goflow pack verify <bundle.zip|extracted-directory> --output table
+```
+
+`pack init` creates a deterministic safe scaffold and refuses non-empty target directories unless `--force` is supplied. `pack inspect` reports pack identity, target support, setup counts, controlled file counts, plugin/asset counts, and integrity status without printing workflow parameter values. `pack test` is offline: it validates setup metadata, applies synthetic non-secret config and fake credential IDs in temporary state, prepares the managed workflow idempotently, and reports connection tests as skipped when they require an external service. `pack verify` reuses bundle verification and does not run or import the pack.
+
+See [PACK_AUTHOR_TUTORIAL.md](PACK_AUTHOR_TUTORIAL.md) for a PowerShell and POSIX walkthrough.
+
 ## Run
 
 Run a source pack directory:
@@ -443,4 +460,3 @@ This v1 foundation does not support:
 - Plugin signing.
 - Auto-update.
 - Secret distribution.
-- Appliance UI.

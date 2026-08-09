@@ -403,15 +403,47 @@ Commit SHA:
 
 ## Checkpoint F - Pack Author Toolkit
 
-Status: NOT_STARTED
+Status: COMPLETED
 
-Planned scope:
+Implemented scope:
 
 - `goflow pack init`
 - `goflow pack inspect`
 - `goflow pack test`
 - `goflow pack verify`
-- Author tutorial and CLI golden tests.
+- Author tutorial and CLI contract tests.
+
+Files changed:
+
+- `internal/cli/cli.go`
+- `internal/cli/cli_test.go`
+- `internal/pack/build.go`
+- `internal/packrun/run.go`
+- `docs/PACKS.md`
+- `docs/PACK_AUTHOR_TUTORIAL.md`
+- `docs/ECOSYSTEM_ALPHA_PROGRESS.md`
+
+Tests run and result:
+
+- `go test ./internal/cli ./internal/pack ./internal/packrun`: PASS.
+- `go test ./...`: PASS.
+- `go vet ./...`: PASS.
+- `go build ./...`: PASS.
+- `govulncheck ./...`: PASS, 0 reachable vulnerabilities.
+- `wsl.exe sh -lc 'cd /mnt/d/build2026/Goflow && export PATH="$HOME/.cache/codex-go/go/bin:$PATH" && go test -race ./...'`: PASS.
+- `cd ui && npm run test`: PASS.
+- `cd ui && npm run build`: PASS.
+
+Security considerations:
+
+- `pack init` scaffolds without credentials or example secret values and refuses non-empty directories unless `--force` is supplied.
+- `pack inspect` reports metadata/counts and does not print workflow parameter values.
+- `pack test` uses synthetic non-secret config and fake credential IDs in temporary state; it does not call real networks, open browsers, run external programs, or send messages.
+- `pack verify` checks ZIP or extracted bundle integrity without running or importing the pack.
+
+Commit SHA:
+
+- Pending pack author toolkit commit.
 
 ## Checkpoint G - DailyOps Reference Pack
 

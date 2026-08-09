@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"goflow/internal/mcpserver"
 	"goflow/internal/pack"
 	"goflow/internal/packrun"
+	"goflow/internal/packsetup"
 	"goflow/internal/workflow"
 )
 
@@ -89,7 +91,11 @@ Usage:
   goflow workflow export <workflow-id|slug|name> [--output file]
   goflow workflow import <file> [--activate]
   goflow workflow validate <file>
+  goflow pack init <directory> --id <id> --name <name> [--target <goos-goarch>] [--force]
   goflow pack validate <pack-directory>
+  goflow pack inspect <pack-directory|bundle.zip|extracted-directory> [--output table|json]
+  goflow pack test <pack-directory> [--output table|json]
+  goflow pack verify <bundle.zip|extracted-directory> [--output table|json]
   goflow pack build <pack-directory> --output <output-directory> [--target goos-goarch] [--force]
   goflow pack run <pack-directory> [--data-dir directory] [--port port] [--no-open]
   goflow execution get <execution-id> [--output table|json]
@@ -303,8 +309,16 @@ func (r Runner) pack(args []string) int {
 		return ExitInvalidInput
 	}
 	switch args[0] {
+	case "init":
+		return r.packInit(args[1:])
 	case "validate":
 		return r.packValidate(args[1:])
+	case "inspect":
+		return r.packInspect(args[1:])
+	case "test":
+		return r.packTest(args[1:])
+	case "verify":
+		return r.packVerify(args[1:])
 	case "build":
 		return r.packBuild(args[1:])
 	case "run":
@@ -313,6 +327,29 @@ func (r Runner) pack(args []string) int {
 		fmt.Fprintf(r.Stderr, "unknown pack subcommand: %s\n", args[0])
 		return ExitInvalidInput
 	}
+}
+
+func (r Runner) packInit(args []string) int {
+	fs := flag.NewFlagSet("pack init", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	id := fs.String("id", "", "Pack ID, for example example.daily-report")
+	name := fs.String("name", "", "Human-readable pack name")
+	target := fs.String("target", pack.CurrentPlatform(), "Target platform in goos-goarch format")
+	force := fs.Bool("force", false, "Replace an existing target directory")
+	dir, ok, code := parseOneRef(fs, args, "pack directory", r.Stderr)
+	if !ok {
+		return code
+	}
+	if strings.TrimSpace(*id) == "" || strings.TrimSpace(*name) == "" {
+		fmt.Fprintln(r.Stderr, "--id and --name are required")
+		return ExitInvalidInput
+	}
+	if err := scaffoldPack(dir, *id, *name, *target, *force); err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	fmt.Fprintf(r.Stdout, "Initialized pack\nDirectory: %s\nID: %s\n", dir, *id)
+	return ExitOK
 }
 
 func (r Runner) packValidate(args []string) int {
@@ -329,6 +366,70 @@ func (r Runner) packValidate(args []string) int {
 	}
 	fmt.Fprintf(r.Stdout, "Pack is valid\nID: %s\nVersion: %s\nEntry workflow: %s\n", loaded.Manifest.ID, loaded.Manifest.Version, loaded.Manifest.EntryWorkflow)
 	return ExitOK
+}
+
+func (r Runner) packInspect(args []string) int {
+	fs := flag.NewFlagSet("pack inspect", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	output := fs.String("output", "table", "Output format: table or json")
+	ref, ok, code := parseOneRef(fs, args, "pack reference", r.Stderr)
+	if !ok {
+		return code
+	}
+	result, err := inspectPackReference(ref)
+	if err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {
+		fmt.Fprintf(r.Stdout, "Pack: %s\nVersion: %s\nKind: %s\nIntegrity: %s\nTarget: %s\nEntry workflow: %s\nConfig fields: %d\nCredential requirements: %d\nBindings: %d\nPlugins: %d\nAssets: %d\n", result.ID, result.Version, result.Kind, result.Integrity, result.Target, result.EntryWorkflow, result.ConfigFields, result.CredentialRequirements, result.Bindings, result.Plugins, result.Assets)
+	})
+}
+
+func (r Runner) packTest(args []string) int {
+	fs := flag.NewFlagSet("pack test", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	output := fs.String("output", "table", "Output format: table or json")
+	dir, ok, code := parseOneRef(fs, args, "pack directory", r.Stderr)
+	if !ok {
+		return code
+	}
+	result, err := testPackOffline(dir)
+	if err != nil {
+		result.Status = "FAILED"
+		result.Error = err.Error()
+		if *output == "json" {
+			return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {})
+		}
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {
+		fmt.Fprintf(r.Stdout, "Pack test: %s\nID: %s\nValidation: %s\nSetup: %s\nManaged workflow: %s\nConnection tests: %s\n", result.Status, result.ID, result.Validation, result.Setup, result.ManagedWorkflow, result.ConnectionTests)
+	})
+}
+
+func (r Runner) packVerify(args []string) int {
+	fs := flag.NewFlagSet("pack verify", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	output := fs.String("output", "table", "Output format: table or json")
+	ref, ok, code := parseOneRef(fs, args, "bundle reference", r.Stderr)
+	if !ok {
+		return code
+	}
+	result, err := verifyPackReference(ref)
+	if err != nil {
+		result.Status = "FAILED"
+		result.Error = err.Error()
+		if *output == "json" {
+			return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {})
+		}
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {
+		fmt.Fprintf(r.Stdout, "Pack verification: %s\nKind: %s\nPack: %s\nVersion: %s\nTarget: %s\n", result.Status, result.Kind, result.ID, result.Version, result.Target)
+	})
 }
 
 func (r Runner) packBuild(args []string) int {
@@ -389,6 +490,309 @@ func (r Runner) packRun(args []string) int {
 		return ExitExecutionFailed
 	}
 	return ExitOK
+}
+
+type packInspectResult struct {
+	Kind                   string `json:"kind"`
+	ID                     string `json:"id"`
+	Name                   string `json:"name"`
+	Version                string `json:"version"`
+	Target                 string `json:"target,omitempty"`
+	EntryWorkflow          string `json:"entry_workflow"`
+	Integrity              string `json:"integrity"`
+	ConfigFields           int    `json:"config_fields"`
+	CredentialRequirements int    `json:"credential_requirements"`
+	Bindings               int    `json:"bindings"`
+	Plugins                int    `json:"plugins"`
+	Assets                 int    `json:"assets"`
+}
+
+type packTestResult struct {
+	Status          string   `json:"status"`
+	ID              string   `json:"id,omitempty"`
+	Validation      string   `json:"validation,omitempty"`
+	Setup           string   `json:"setup,omitempty"`
+	ManagedWorkflow string   `json:"managed_workflow,omitempty"`
+	ConnectionTests string   `json:"connection_tests,omitempty"`
+	Skipped         []string `json:"skipped,omitempty"`
+	Error           string   `json:"error,omitempty"`
+}
+
+type packVerifyResult struct {
+	Status  string `json:"status"`
+	Kind    string `json:"kind,omitempty"`
+	ID      string `json:"id,omitempty"`
+	Version string `json:"version,omitempty"`
+	Target  string `json:"target,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+func writePackCommandOutput(stdout, stderr io.Writer, output string, value interface{}, writeTable func()) int {
+	switch strings.ToLower(strings.TrimSpace(output)) {
+	case "", "table":
+		writeTable()
+		return ExitOK
+	case "json":
+		data, err := json.MarshalIndent(value, "", "  ")
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return ExitInvalidInput
+		}
+		data = append(data, '\n')
+		_, _ = stdout.Write(data)
+		return ExitOK
+	default:
+		fmt.Fprintln(stderr, "--output must be table or json")
+		return ExitInvalidInput
+	}
+}
+
+func scaffoldPack(dir, id, name, target string, force bool) error {
+	if strings.TrimSpace(target) == "" {
+		target = pack.CurrentPlatform()
+	}
+	if info, err := os.Stat(dir); err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("target path exists and is not a directory")
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return fmt.Errorf("read target directory: %w", err)
+		}
+		if len(entries) > 0 && !force {
+			return fmt.Errorf("target directory is not empty; pass --force to replace it")
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("check target directory: %w", err)
+	}
+	parent := filepath.Dir(dir)
+	if err := os.MkdirAll(parent, 0700); err != nil {
+		return fmt.Errorf("create parent directory: %w", err)
+	}
+	temp, err := os.MkdirTemp(parent, "."+filepath.Base(dir)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temporary scaffold: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(temp) }()
+	if err := os.MkdirAll(filepath.Join(temp, "workflows"), 0700); err != nil {
+		return err
+	}
+	manifest := pack.Manifest{
+		SchemaVersion:       pack.SupportedSchema,
+		ID:                  id,
+		Name:                name,
+		Version:             "0.1.0",
+		Description:         "A portable Goflow pack.",
+		EntryWorkflow:       pack.DefaultWorkflowPath,
+		RequiredCredentials: []string{},
+		SupportedPlatforms:  []string{target},
+	}
+	workflowData := map[string]interface{}{
+		"name":        name,
+		"description": "Scaffolded safe workflow.",
+		"is_active":   false,
+		"nodes": []map[string]interface{}{
+			{"id": "trigger", "type": "webhookTrigger", "name": "Manual input", "params": map[string]interface{}{}},
+		},
+		"edges": []interface{}{},
+	}
+	if err := writeJSONFile(filepath.Join(temp, pack.ManifestFile), manifest); err != nil {
+		return err
+	}
+	if err := writeJSONFile(filepath.Join(temp, pack.DefaultWorkflowPath), workflowData); err != nil {
+		return err
+	}
+	readme := fmt.Sprintf("# %s\n\nPack ID: `%s`\n\nThis scaffold contains no credentials or secret example values.\n", name, id)
+	if err := os.WriteFile(filepath.Join(temp, "README.md"), []byte(readme), 0600); err != nil {
+		return fmt.Errorf("write README.md: %w", err)
+	}
+	if _, err := pack.Load(temp); err != nil {
+		return fmt.Errorf("validate scaffold: %w", err)
+	}
+	if force {
+		if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("replace target directory: %w", err)
+		}
+	}
+	if err := os.Rename(temp, dir); err != nil {
+		return fmt.Errorf("publish scaffold: %w", err)
+	}
+	return nil
+}
+
+func inspectPackReference(ref string) (packInspectResult, error) {
+	if strings.HasSuffix(strings.ToLower(ref), ".zip") {
+		info, err := pack.ReadBundleArchiveInfo(ref)
+		if err != nil {
+			return packInspectResult{}, err
+		}
+		integrity := "valid"
+		if err := pack.VerifyBundleArchiveFile(ref); err != nil {
+			integrity = "invalid: " + err.Error()
+		}
+		return packInspectResult{Kind: "bundle_zip", ID: info.PackID, Version: info.PackVersion, Target: info.Target, EntryWorkflow: info.EntryWorkflow, Integrity: integrity}, nil
+	}
+	if _, err := os.Stat(filepath.Join(ref, "PACK_INFO.json")); err == nil {
+		info, err := pack.VerifyExtractedBundle(ref)
+		if err != nil {
+			return packInspectResult{}, err
+		}
+		return packInspectResult{Kind: "extracted_bundle", ID: info.PackID, Version: info.PackVersion, Target: info.Target, EntryWorkflow: info.EntryWorkflow, Integrity: "valid"}, nil
+	}
+	loaded, err := pack.Load(ref)
+	if err != nil {
+		return packInspectResult{}, err
+	}
+	m := loaded.Manifest
+	return packInspectResult{
+		Kind:                   "pack_directory",
+		ID:                     m.ID,
+		Name:                   m.Name,
+		Version:                m.Version,
+		Target:                 strings.Join(m.SupportedPlatforms, ","),
+		EntryWorkflow:          m.EntryWorkflow,
+		Integrity:              "source_valid",
+		ConfigFields:           len(m.ConfigSchema),
+		CredentialRequirements: len(m.CredentialRequirements),
+		Bindings:               len(m.Bindings),
+		Plugins:                len(m.Plugins),
+		Assets:                 len(m.Assets),
+	}, nil
+}
+
+func verifyPackReference(ref string) (packVerifyResult, error) {
+	if strings.HasSuffix(strings.ToLower(ref), ".zip") {
+		if err := pack.VerifyBundleArchiveFile(ref); err != nil {
+			return packVerifyResult{Kind: "bundle_zip"}, err
+		}
+		info, err := pack.ReadBundleArchiveInfo(ref)
+		if err != nil {
+			return packVerifyResult{Kind: "bundle_zip"}, err
+		}
+		return packVerifyResult{Status: "PASS", Kind: "bundle_zip", ID: info.PackID, Version: info.PackVersion, Target: info.Target}, nil
+	}
+	info, err := pack.VerifyExtractedBundle(ref)
+	if err != nil {
+		return packVerifyResult{Kind: "extracted_bundle"}, err
+	}
+	return packVerifyResult{Status: "PASS", Kind: "extracted_bundle", ID: info.PackID, Version: info.PackVersion, Target: info.Target}, nil
+}
+
+func testPackOffline(dir string) (packTestResult, error) {
+	loaded, err := pack.Load(dir)
+	if err != nil {
+		return packTestResult{Validation: "FAILED"}, err
+	}
+	result := packTestResult{Status: "PASS", ID: loaded.Manifest.ID, Validation: "PASS"}
+	dataDir := filepath.Join(os.TempDir(), "goflow-pack-test-"+strings.ReplaceAll(loaded.Manifest.ID, ".", "-"))
+	dataDir, err = os.MkdirTemp("", filepath.Base(dataDir)+"-*")
+	if err != nil {
+		return result, fmt.Errorf("create test data directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(dataDir) }()
+	configValues := syntheticConfigValues(loaded.Manifest.ConfigSchema)
+	if _, err := packsetup.SaveConfig(dataDir, loaded.Manifest, configValues); err != nil {
+		return result, err
+	}
+	credentialSlots := map[string]string{}
+	for _, req := range loaded.Manifest.CredentialRequirements {
+		credentialSlots[req.Key] = "fake-" + req.Key + "-credential"
+		if req.TestKind != "" {
+			result.Skipped = append(result.Skipped, req.Key+":"+req.TestKind)
+		}
+	}
+	resolver := packsetup.CredentialLookupFunc(func(id string) (packsetup.CredentialIdentity, error) {
+		for _, req := range loaded.Manifest.CredentialRequirements {
+			if id == "fake-"+req.Key+"-credential" {
+				return packsetup.CredentialIdentity{ID: id, Type: req.Type}, nil
+			}
+		}
+		return packsetup.CredentialIdentity{}, fmt.Errorf("fake credential not found")
+	})
+	loadedCreds, err := packsetup.SaveCredentialBindings(dataDir, loaded.Manifest, credentialSlots, resolver)
+	if err != nil {
+		return result, err
+	}
+	result.Setup = "PASS"
+	if len(result.Skipped) > 0 {
+		result.ConnectionTests = "SKIPPED"
+	} else {
+		result.ConnectionTests = "NONE"
+	}
+	wf, err := workflow.ReadFileLimit(loaded.EntryWorkflowPath, pack.MaxWorkflowBytes)
+	if err != nil {
+		return result, err
+	}
+	cfg, err := packsetup.LoadConfig(dataDir, loaded.Manifest)
+	if err != nil {
+		return result, err
+	}
+	if _, err := packsetup.ApplyBindings(client.Workflow{
+		ID:                "offline",
+		Name:              wf.Name,
+		NodesJSON:         wf.NodesJSON,
+		EdgesJSON:         wf.EdgesJSON,
+		InputSchemaJSON:   wf.InputSchemaJSON,
+		OutputSchemaJSON:  wf.OutputSchemaJSON,
+		ExposeCLI:         wf.ExposeCLI,
+		ExposeMCP:         wf.ExposeMCP,
+		RiskLevel:         wf.RiskLevel,
+		MaxConcurrentRuns: wf.MaxConcurrentRuns,
+		ConcurrencyPolicy: wf.ConcurrencyPolicy,
+	}, loaded.Manifest, cfg.Config.Values, loadedCreds.Slots); err != nil {
+		return result, err
+	}
+	if _, err := packrun.Prepare(context.Background(), loaded, dataDir); err != nil {
+		return result, err
+	}
+	if _, err := packrun.Prepare(context.Background(), loaded, dataDir); err != nil {
+		return result, err
+	}
+	result.ManagedWorkflow = "PASS"
+	return result, nil
+}
+
+func syntheticConfigValues(fields []pack.ConfigField) map[string]interface{} {
+	values := map[string]interface{}{}
+	for _, field := range fields {
+		if field.Default != nil {
+			values[field.Key] = field.Default
+			continue
+		}
+		switch field.Type {
+		case "url":
+			values[field.Key] = "https://example.test/data.json"
+		case "integer":
+			if field.Min != nil {
+				values[field.Key] = *field.Min
+			} else {
+				values[field.Key] = 0
+			}
+		case "boolean":
+			values[field.Key] = false
+		case "select":
+			if len(field.Options) > 0 {
+				values[field.Key] = field.Options[0]
+			} else {
+				values[field.Key] = ""
+			}
+		default:
+			values[field.Key] = "demo"
+		}
+	}
+	return values
+}
+
+func writeJSONFile(path string, value interface{}) error {
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return fmt.Errorf("write %s: %w", filepath.Base(path), err)
+	}
+	return nil
 }
 
 func (r Runner) workflowExport(args []string) int {
