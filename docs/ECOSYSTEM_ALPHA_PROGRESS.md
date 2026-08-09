@@ -276,7 +276,7 @@ Commit SHA:
 - `ad46eb3` (`feat: add pack credential slot storage`).
 - `3f4ec23` (`feat: add pack setup binding resolver`).
 - `69243e4` (`fix: harden pack network nodes`).
-- Pending Checkpoint C final evidence commit.
+- `bc5091d` (`docs: mark checkpoint c complete`).
 
 Remaining work:
 
