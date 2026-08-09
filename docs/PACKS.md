@@ -48,10 +48,125 @@ Known fields:
 | `supported_platforms` | Yes | Non-empty JSON array of non-empty platform strings such as `windows-amd64`. |
 | `plugins` | No | Optional JSON array of portable slash paths to plugin resource files. Listed files must exist, resolve inside the pack, and be regular files. The validator does not execute plugins. |
 | `assets` | No | Optional JSON array of portable slash paths to asset files. Listed files must exist, resolve inside the pack, and be regular files. The validator does not interpret asset contents. |
+| `config_schema` | No | Optional setup metadata for non-secret pack configuration. |
+| `credential_requirements` | No | Optional structured credential slots without values. |
+| `bindings` | No | Optional declarative mappings from setup values to existing workflow node parameters. |
 
 Unknown fields are accepted for forward compatibility, but known fields are validated strictly. Manifest fields that look like secret-bearing fields, such as `secrets`, `password`, `token`, or `api_key`, are rejected when they contain values.
 
 Required fields must be present in `pack.json`; zero values caused by missing fields are not accepted. `required_credentials` and `supported_platforms` must be arrays and cannot be `null`.
+
+## Optional Setup Metadata
+
+Pack Format v1 supports optional setup metadata while keeping `schema_version: 1`. Existing packs that omit these fields remain valid.
+
+### config_schema
+
+`config_schema` is an optional array of non-secret configuration fields for appliance setup. Supported field types are:
+
+- `string`
+- `url`
+- `integer`
+- `boolean`
+- `select`
+
+Each item includes:
+
+- `key`: lowercase letters, numbers, and underscores.
+- `label`: human-readable text.
+- `description`: optional bounded text.
+- `type`: one of the supported field types.
+- `required`: boolean.
+- `default`: optional non-secret default with the correct JSON type.
+- `options`: required for `select`, unique bounded scalar values.
+- `min` and `max`: optional integer limits.
+- `min_length` and `max_length`: optional string limits.
+- `display_only`: optional marker for required values that are intentionally shown but not bound into the workflow.
+
+Configuration is not a secret store. Keys, labels, descriptions, defaults, and options that imply or look like tokens, passwords, API keys, private keys, authorization headers, credentials, or other secret material are rejected.
+
+### credential_requirements
+
+`credential_requirements` is an optional structured replacement for UI setup needs. It describes slots, not values:
+
+- `key`
+- `label`
+- `description`
+- `type`
+- `required`
+- `test_kind`
+- `display_only`
+
+Allowed credential types are currently:
+
+- `API_KEY`
+- `TELEGRAM_BOT`
+- `BEARER_TOKEN`
+- `BASIC_AUTH`
+- `OPENAI_API_KEY`
+- `DEEPSEEK_API_KEY`
+- `GOOGLE_SERVICE_ACCOUNT`
+- `DATABASE_URL`
+- `SSH_KEY`
+- `SMTP_ACCOUNT`
+
+Allowed connection test kinds are currently:
+
+- `telegram_get_me`
+- `http_head`
+- `smtp_noop`
+- `database_ping`
+
+No arbitrary test URL, command, script, plugin, or secret value is allowed in manifest setup metadata.
+
+Legacy `required_credentials` remains valid. When `credential_requirements` is present, appliance setup should use the structured requirements. When it is absent, legacy entries are treated as simple logical credential requirements for display and backwards compatibility.
+
+### bindings
+
+`bindings` maps setup values to parameters on existing nodes in the entry workflow:
+
+```json
+{
+  "source": "config.source_url",
+  "target": {
+    "node_id": "fetch",
+    "param": "url"
+  }
+}
+```
+
+Rules:
+
+- `source` must be exactly `config.<key>` or `credential.<key>`.
+- The source key must exist in `config_schema` or `credential_requirements`.
+- The target node must exist in the entry workflow.
+- The target parameter must be declared by that node type.
+- Credential sources may bind only to parameters of type `credential`.
+- Config sources may not bind to credential or secret-like parameters.
+- Duplicate source/target pairs are rejected.
+- Required setup items must be bound or explicitly marked `display_only: true`.
+- Bindings are applied only to a runtime copy of the managed workflow. Source packs and extracted bundles remain immutable.
+
+### Setup Metadata Limits
+
+Named limits:
+
+- `config_schema`: 32 fields.
+- `credential_requirements`: 32 entries.
+- `bindings`: 128 entries.
+- Setup key: 64 characters.
+- Label: 120 characters.
+- Description: 1000 characters.
+- Select option: 120 characters.
+- String default: 1000 characters.
+- Integer absolute value: 1,000,000,000.
+- Total serialized setup metadata: 64 KiB.
+
+Validation errors identify the field and logical item involved without echoing possible secret values.
+
+### Pack-Only Workflow Secret Scan
+
+In pack context, workflow parameters known to carry secrets must not contain literal values. For example, a Telegram node may bind or select `credential_id`, but a pack workflow with a non-empty literal `bot_token` is rejected. This restriction applies to packs only and does not silently rewrite generic non-pack workflows.
 
 ## Portable Paths
 

@@ -99,14 +99,59 @@ Blockers:
 
 ## Checkpoint B - Backwards-Compatible Pack Setup Metadata
 
-Status: NOT_STARTED
+Status: IN_PROGRESS
 
-Planned scope:
+Starting commit: `88c49dfcfacc7477450a12ddd981e2308dda19bb`
 
-- Add optional `config_schema`, `credential_requirements`, and `bindings`.
-- Retain legacy `required_credentials`.
-- Add pack-only embedded secret scan.
-- Add bounded metadata validation and deterministic round-trip tests.
+Architectural decision:
+
+- Keep Pack Format v1 at `schema_version: 1` and add optional known fields only.
+- Keep legacy `required_credentials`; structured `credential_requirements` are the appliance setup contract when present.
+- Validate bindings during pack load against the entry workflow and built-in node parameter definitions.
+- Treat `display_only: true` as the explicit marker for required setup items that are intentionally not bound.
+- Reject literal secret-bearing workflow parameters only in pack context; generic workflow validation remains unchanged.
+
+Files changed:
+
+- `internal/pack/pack.go`
+- `internal/pack/pack_test.go`
+- `internal/pack/build_test.go`
+- `docs/PACKS.md`
+- `docs/ECOSYSTEM_ALPHA_PROGRESS.md`
+
+Tests run and result:
+
+- `go test ./internal/pack`: PASS.
+- `go test ./...`: PASS.
+- `go vet ./...`: PASS.
+- `go build ./...`: PASS.
+- `govulncheck ./...`: PASS, 0 reachable vulnerabilities.
+- `go test -race ./...` on Windows: BLOCKED because this Go toolchain requires CGO for race.
+- `wsl.exe sh -lc 'cd /mnt/d/build2026/Goflow && export PATH="$HOME/.cache/codex-go/go/bin:$PATH" && go test -race ./...'`: PASS.
+- `cd ui && npm run test`: PASS, 10 files and 48 tests.
+- `cd ui && npm run build`: PASS.
+
+Security considerations:
+
+- New config metadata rejects secret-like keys, labels, descriptions, defaults, and options.
+- Credential requirements describe slots only and allowlist credential types and connection test kinds.
+- Credential bindings can target only `credential` parameters.
+- Config bindings cannot target credential or secret-like parameters.
+- Pack workflow literal secret-bearing params, including Telegram `bot_token`, are rejected before pack load succeeds.
+- Validation errors name fields and logical items without echoing secret-looking values.
+
+Commit SHA:
+
+- Pending until this checkpoint is committed.
+
+Remaining work:
+
+- Commit and push Checkpoint B.
+- Wait for CI on PR #3.
+
+Blockers:
+
+- None.
 
 ## Checkpoint C - Safe Runtime Configuration and Parameter Resolution
 

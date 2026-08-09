@@ -443,6 +443,256 @@ func TestLoadRejectsNonPortablePluginAndAssetPathsOnEveryOS(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsValidSetupMetadata(t *testing.T) {
+	dir := writeValidPack(t, func(m *Manifest) {
+		m.ConfigSchema = []ConfigField{
+			{Key: "store_name", Label: "Store name", Type: "string", Required: true, Default: "Demo Store", MinLength: intPtr(1), MaxLength: intPtr(80)},
+			{Key: "source_url", Label: "Source URL", Type: "url", Required: true, Default: "https://example.test/report"},
+			{Key: "threshold", Label: "Threshold", Type: "integer", Default: float64(10), Min: intPtr(0), Max: intPtr(1000)},
+			{Key: "include_stock", Label: "Include stock", Type: "boolean", Default: true},
+			{Key: "tone", Label: "Tone", Type: "select", Default: "short", Options: []interface{}{"short", "detailed"}},
+		}
+		m.CredentialRequirements = []CredentialRequirement{
+			{Key: "telegram_bot", Label: "Telegram bot", Type: "TELEGRAM_BOT", Required: true, TestKind: "telegram_get_me"},
+		}
+		m.Bindings = []Binding{
+			{Source: "config.store_name", Target: BindingTarget{NodeID: "telegram", Param: "message"}},
+			{Source: "config.source_url", Target: BindingTarget{NodeID: "fetch", Param: "url"}},
+			{Source: "credential.telegram_bot", Target: BindingTarget{NodeID: "telegram", Param: "credential_id"}},
+		}
+	})
+	writeFile(t, filepath.Join(dir, DefaultWorkflowPath), setupWorkflowJSON())
+	if _, err := Load(dir); err != nil {
+		t.Fatalf("expected valid setup metadata, got %v", err)
+	}
+}
+
+func TestLoadAcceptsLegacyPackWithoutSetupMetadata(t *testing.T) {
+	dir := writeValidPack(t)
+	if _, err := Load(dir); err != nil {
+		t.Fatalf("expected legacy pack to remain valid, got %v", err)
+	}
+}
+
+func TestLoadRejectsInvalidSetupMetadataArrays(t *testing.T) {
+	dir := writePackWithManifest(t, `{
+		"schema_version":1,
+		"id":"example.setup",
+		"name":"Setup",
+		"version":"0.1.0",
+		"entry_workflow":"workflows/main.json",
+		"required_credentials":[],
+		"supported_platforms":["windows-amd64"],
+		"config_schema":{}
+	}`)
+	assertLoadError(t, dir, "config_schema must be a JSON array")
+}
+
+func TestLoadRejectsDuplicateSetupKeys(t *testing.T) {
+	dir := writeValidPack(t, func(m *Manifest) {
+		m.ConfigSchema = []ConfigField{
+			{Key: "store_name", Label: "Store name", Type: "string", Required: true, DisplayOnly: true},
+			{Key: "store_name", Label: "Other name", Type: "string"},
+		}
+	})
+	assertLoadError(t, dir, "duplicates")
+
+	dir = writeValidPack(t, func(m *Manifest) {
+		m.CredentialRequirements = []CredentialRequirement{
+			{Key: "telegram_bot", Label: "Telegram bot", Type: "TELEGRAM_BOT", Required: true, DisplayOnly: true},
+			{Key: "telegram_bot", Label: "Other bot", Type: "TELEGRAM_BOT"},
+		}
+	})
+	assertLoadError(t, dir, "duplicates")
+}
+
+func TestLoadRejectsInvalidConfigFieldTypesAndDefaults(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(*Manifest)
+		want string
+	}{
+		{
+			name: "unknown type",
+			edit: func(m *Manifest) {
+				m.ConfigSchema = []ConfigField{{Key: "store_name", Label: "Store name", Type: "secret", Required: true, DisplayOnly: true}}
+			},
+			want: "type",
+		},
+		{
+			name: "secret key",
+			edit: func(m *Manifest) {
+				m.ConfigSchema = []ConfigField{{Key: "api_token", Label: "API token", Type: "string"}}
+			},
+			want: "secret material",
+		},
+		{
+			name: "secret default",
+			edit: func(m *Manifest) {
+				m.ConfigSchema = []ConfigField{{Key: "store_name", Label: "Store name", Type: "string", Default: "sk-real-secret"}}
+			},
+			want: "secret material",
+		},
+		{
+			name: "integer default wrong type",
+			edit: func(m *Manifest) {
+				m.ConfigSchema = []ConfigField{{Key: "threshold", Label: "Threshold", Type: "integer", Default: "10"}}
+			},
+			want: "must be an integer",
+		},
+		{
+			name: "select missing options",
+			edit: func(m *Manifest) {
+				m.ConfigSchema = []ConfigField{{Key: "tone", Label: "Tone", Type: "select"}}
+			},
+			want: "options is required",
+		},
+		{
+			name: "select duplicate options",
+			edit: func(m *Manifest) {
+				m.ConfigSchema = []ConfigField{{Key: "tone", Label: "Tone", Type: "select", Options: []interface{}{"short", "short"}}}
+			},
+			want: "duplicates",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeValidPack(t, tt.edit)
+			assertLoadError(t, dir, tt.want)
+		})
+	}
+}
+
+func TestLoadRejectsInvalidCredentialRequirement(t *testing.T) {
+	tests := []struct {
+		name string
+		req  CredentialRequirement
+		want string
+	}{
+		{name: "unknown type", req: CredentialRequirement{Key: "bot", Label: "Bot", Type: "UNKNOWN"}, want: "known credential type"},
+		{name: "unknown test", req: CredentialRequirement{Key: "bot", Label: "Bot", Type: "TELEGRAM_BOT", TestKind: "https://example.test/check"}, want: "allowlisted"},
+		{name: "bad key", req: CredentialRequirement{Key: "Bot", Label: "Bot", Type: "TELEGRAM_BOT"}, want: "lowercase"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeValidPack(t, func(m *Manifest) {
+				m.CredentialRequirements = []CredentialRequirement{tt.req}
+			})
+			assertLoadError(t, dir, tt.want)
+		})
+	}
+}
+
+func TestLoadRejectsInvalidBindings(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(*Manifest)
+		want string
+	}{
+		{
+			name: "unknown config source",
+			edit: func(m *Manifest) {
+				m.Bindings = []Binding{{Source: "config.missing", Target: BindingTarget{NodeID: "fetch", Param: "url"}}}
+			},
+			want: "unknown config key",
+		},
+		{
+			name: "missing node",
+			edit: func(m *Manifest) {
+				m.ConfigSchema = []ConfigField{{Key: "source_url", Label: "Source URL", Type: "url", Required: true}}
+				m.Bindings = []Binding{{Source: "config.source_url", Target: BindingTarget{NodeID: "missing", Param: "url"}}}
+			},
+			want: "does not exist",
+		},
+		{
+			name: "missing param",
+			edit: func(m *Manifest) {
+				m.ConfigSchema = []ConfigField{{Key: "source_url", Label: "Source URL", Type: "url", Required: true}}
+				m.Bindings = []Binding{{Source: "config.source_url", Target: BindingTarget{NodeID: "fetch", Param: "missing"}}}
+			},
+			want: "not defined",
+		},
+		{
+			name: "credential to non credential",
+			edit: func(m *Manifest) {
+				m.CredentialRequirements = []CredentialRequirement{{Key: "telegram_bot", Label: "Telegram bot", Type: "TELEGRAM_BOT", Required: true}}
+				m.Bindings = []Binding{{Source: "credential.telegram_bot", Target: BindingTarget{NodeID: "telegram", Param: "chat_id"}}}
+			},
+			want: "credential source",
+		},
+		{
+			name: "config to credential",
+			edit: func(m *Manifest) {
+				m.ConfigSchema = []ConfigField{{Key: "bot_id", Label: "Bot ID", Type: "string", Required: true}}
+				m.Bindings = []Binding{{Source: "config.bot_id", Target: BindingTarget{NodeID: "telegram", Param: "credential_id"}}}
+			},
+			want: "secret-like",
+		},
+		{
+			name: "duplicate binding",
+			edit: func(m *Manifest) {
+				m.ConfigSchema = []ConfigField{{Key: "source_url", Label: "Source URL", Type: "url", Required: true}}
+				binding := Binding{Source: "config.source_url", Target: BindingTarget{NodeID: "fetch", Param: "url"}}
+				m.Bindings = []Binding{binding, binding}
+			},
+			want: "duplicates",
+		},
+		{
+			name: "required config unbound",
+			edit: func(m *Manifest) {
+				m.ConfigSchema = []ConfigField{{Key: "source_url", Label: "Source URL", Type: "url", Required: true}}
+			},
+			want: "no binding",
+		},
+		{
+			name: "required credential unbound",
+			edit: func(m *Manifest) {
+				m.CredentialRequirements = []CredentialRequirement{{Key: "telegram_bot", Label: "Telegram bot", Type: "TELEGRAM_BOT", Required: true}}
+			},
+			want: "no binding",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeValidPack(t, tt.edit)
+			writeFile(t, filepath.Join(dir, DefaultWorkflowPath), setupWorkflowJSON())
+			assertLoadError(t, dir, tt.want)
+		})
+	}
+}
+
+func TestLoadAllowsRequiredSetupDisplayOnly(t *testing.T) {
+	dir := writeValidPack(t, func(m *Manifest) {
+		m.ConfigSchema = []ConfigField{{Key: "store_name", Label: "Store name", Type: "string", Required: true, DisplayOnly: true}}
+		m.CredentialRequirements = []CredentialRequirement{{Key: "telegram_bot", Label: "Telegram bot", Type: "TELEGRAM_BOT", Required: true, DisplayOnly: true}}
+	})
+	if _, err := Load(dir); err != nil {
+		t.Fatalf("expected required display-only setup to be valid, got %v", err)
+	}
+}
+
+func TestLoadRejectsOversizedSetupMetadata(t *testing.T) {
+	dir := writeValidPack(t, func(m *Manifest) {
+		m.ConfigSchema = []ConfigField{{
+			Key:         "store_name",
+			Label:       "Store name",
+			Description: strings.Repeat("x", MaxSetupMetadataBytes),
+			Type:        "string",
+		}}
+	})
+	assertLoadError(t, dir, "setup metadata exceeds")
+}
+
+func TestLoadRejectsPackOnlyEmbeddedSecretParameters(t *testing.T) {
+	dir := writeValidPack(t)
+	writeFile(t, filepath.Join(dir, DefaultWorkflowPath), `{
+		"name":"Secret Telegram",
+		"nodes":[{"id":"telegram","type":"telegramBot","params":{"bot_token":"123456:ABC-secret","chat_id":"demo","message":"hello"}}],
+		"edges":[]
+	}`)
+	assertLoadError(t, dir, "literal secret")
+}
+
 func writeValidPack(t *testing.T, edits ...func(*Manifest)) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -513,6 +763,25 @@ func validWorkflowJSON() string {
 		"nodes":[{"id":"trigger","type":"webhookTrigger","params":{}}],
 		"edges":[]
 	}`
+}
+
+func setupWorkflowJSON() string {
+	return `{
+		"name":"Setup Workflow",
+		"nodes":[
+			{"id":"trigger","type":"webhookTrigger","params":{}},
+			{"id":"fetch","type":"httpRequest","params":{"method":"GET","url":"https://example.test/report","headers":"{}"}},
+			{"id":"telegram","type":"telegramBot","params":{"credential_id":"","chat_id":"demo","message":"hello"}}
+		],
+		"edges":[
+			{"id":"e1","source":"trigger","target":"fetch"},
+			{"id":"e2","source":"fetch","target":"telegram"}
+		]
+	}`
+}
+
+func intPtr(value int) *int {
+	return &value
 }
 
 func validManifestJSON() string {
