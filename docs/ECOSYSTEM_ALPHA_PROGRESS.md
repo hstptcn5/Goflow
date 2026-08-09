@@ -142,11 +142,11 @@ Security considerations:
 
 Commit SHA:
 
-- Pending until this checkpoint is committed.
+- `a4caa3e` (`feat: validate pack setup metadata`).
 
 Remaining work:
 
-- Commit and push Checkpoint B.
+- Push Checkpoint B.
 - Wait for CI on PR #3.
 
 Blockers:
