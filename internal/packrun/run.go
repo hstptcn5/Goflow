@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"goflow/config"
+	"goflow/internal/api"
 	"goflow/internal/pack"
 	"goflow/internal/serverapp"
 	"goflow/internal/storage"
@@ -121,6 +122,12 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("pack run: listen on loopback: %w", err)
 	}
+	origin := "http://" + listener.Addr().String()
+	sessionToken, err := generateSessionToken()
+	if err != nil {
+		_ = listener.Close()
+		return fmt.Errorf("pack run: create appliance session token: %w", err)
+	}
 	serverCfg := &config.Config{
 		Host:                      "127.0.0.1",
 		Port:                      strconv.Itoa(opts.Port),
@@ -135,7 +142,21 @@ func Run(ctx context.Context, opts Options) error {
 		MCPMaxInflightPerClient:   2,
 		MCPRateLimitPerMinute:     30,
 	}
-	app, err := serverapp.Start(ctx, serverapp.Options{Config: serverCfg, UIFS: opts.UIFS, Listener: listener})
+	app, err := serverapp.Start(ctx, serverapp.Options{
+		Config:   serverCfg,
+		UIFS:     opts.UIFS,
+		Listener: listener,
+		Appliance: &api.ApplianceContext{
+			Enabled:      true,
+			Origin:       origin,
+			SessionToken: sessionToken,
+			PackID:       loaded.Manifest.ID,
+			PackName:     loaded.Manifest.Name,
+			PackVersion:  loaded.Manifest.Version,
+			Description:  loaded.Manifest.Description,
+			WorkflowID:   prepared.WorkflowID,
+		},
+	})
 	if err != nil {
 		return err
 	}
@@ -332,6 +353,14 @@ func loadOrCreateMasterKey(path string) (string, error) {
 		return "", err
 	}
 	return key, nil
+}
+
+func generateSessionToken() (string, error) {
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(tokenBytes), nil
 }
 
 func acquireDataLock(dataDir string) (*dataLock, bool, error) {

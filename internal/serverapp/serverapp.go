@@ -25,10 +25,11 @@ import (
 )
 
 type Options struct {
-	Config   *config.Config
-	UIFS     fs.FS
-	Listener net.Listener
-	Logger   *log.Logger
+	Config    *config.Config
+	UIFS      fs.FS
+	Listener  net.Listener
+	Logger    *log.Logger
+	Appliance *api.ApplianceContext
 }
 
 type App struct {
@@ -142,6 +143,7 @@ func Start(ctx context.Context, opts Options) (*App, error) {
 		cfg.MCPAllowedOrigins,
 		cfg.MCPMaxInflightPerClient,
 		cfg.MCPRateLimitPerMinute,
+		opts.Appliance,
 	)
 
 	server := &http.Server{

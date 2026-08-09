@@ -285,13 +285,52 @@ Remaining work:
 
 ## Checkpoint D - Appliance Backend and Security Boundary
 
-Status: NOT_STARTED
+Status: IN_PROGRESS
 
-Planned scope:
+Starting commit: `137322a565169139a8214e14cc37f0662b66e3a1`
 
-- Explicit appliance runtime context.
-- Appliance bootstrap, setup, status, run-now, latest execution, diagnostics APIs.
-- Exact-origin, host, token, content-type, body-limit, and generic-mode isolation tests.
+Architectural decision:
+
+- Add explicit appliance context passed from `packrun` into `serverapp` and the API router.
+- Generate an in-memory per-process appliance session token during Pack Run.
+- Mount `/api/appliance/*` only when appliance context is present.
+- Keep generic `goflow serve` isolated: appliance routes return 404 when no appliance context exists.
+- Require exact Host validation for appliance routes and exact Origin plus session-token header for mutations.
+- Start with bootstrap/status/diagnostics skeletons; setup persistence, run-now, latest execution, and full state machine remain in this checkpoint.
+
+Files changed:
+
+- `internal/api/appliance.go`
+- `internal/api/router.go`
+- `internal/api/router_test.go`
+- `internal/serverapp/serverapp.go`
+- `internal/packrun/run.go`
+- `docs/ECOSYSTEM_ALPHA_PROGRESS.md`
+
+Tests run and result:
+
+- `go test ./internal/api ./internal/serverapp ./internal/packrun`: PASS.
+
+Security considerations:
+
+- Appliance session token is generated from 32 random bytes and is not stored in pack files or data files.
+- Appliance routes are absent in generic mode.
+- Mutation requests require JSON content type, exact allowed Origin, and the appliance token header.
+- Host mismatch returns 404 to reduce DNS-rebinding exposure.
+- Current diagnostics skeleton includes only pack ID/version, workflow ID, and readiness state.
+
+Commit SHA:
+
+- Pending appliance context/bootstrap commit.
+
+Remaining work:
+
+- Setup schema/current readiness API.
+- Saving config and credential slot assignments.
+- Credential creation/selection/replacement and allowlisted connection tests.
+- Complete/reopen setup and setup state machine.
+- Server/workflow status, run-now, latest execution, recent executions, and diagnostics redaction tests.
+- Oversized-body, rate-limit, bad-host, cross-origin, missing-token, and generic-mode coverage across all appliance mutations.
 
 ## Checkpoint E - Nontechnical Appliance UI
 
