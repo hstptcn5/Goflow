@@ -210,7 +210,7 @@ Blockers:
 
 ## Checkpoint C - Safe Runtime Configuration and Parameter Resolution
 
-Status: IN_PROGRESS
+Status: DONE
 
 Starting commit: `788b5470ae17bd1441c864a87ee2f15630048f92`
 
@@ -252,6 +252,10 @@ Tests run and result:
 - `go vet ./...`: PASS.
 - `go build ./...`: PASS.
 - `govulncheck ./...`: PASS, 0 reachable vulnerabilities.
+- `wsl.exe sh -lc 'cd /mnt/d/build2026/Goflow && export PATH="$HOME/.cache/codex-go/go/bin:$PATH" && go test -race ./...'`: PASS.
+- `cd ui && npm run test`: PASS, 10 files and 48 tests.
+- `cd ui && npm run build`: PASS.
+- GitHub Actions CI run #62 for `8bbdd52`: PASS. Jobs: Frontend build, Backend tests, Build linux-amd64, Build linux-arm64, Build darwin-amd64, Build darwin-arm64, Build windows-amd64.
 
 Security considerations:
 
@@ -272,10 +276,12 @@ Commit SHA:
 - `ad46eb3` (`feat: add pack credential slot storage`).
 - `3f4ec23` (`feat: add pack setup binding resolver`).
 - `69243e4` (`fix: harden pack network nodes`).
+- Pending Checkpoint C final evidence commit.
 
 Remaining work:
 
-- Integrate config storage with packrun/appliance backend in Checkpoint D.
+- Integrate setup storage and binding primitives with appliance backend in Checkpoint D.
+- Build appliance UI in Checkpoint E.
 
 ## Checkpoint D - Appliance Backend and Security Boundary
 
