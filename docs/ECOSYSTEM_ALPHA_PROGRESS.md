@@ -443,7 +443,7 @@ Security considerations:
 
 Commit SHA:
 
-- Pending pack author toolkit commit.
+- `6d0c6e9` (`feat: add pack author toolkit commands`).
 
 ## Checkpoint G - DailyOps Reference Pack
 
