@@ -6,14 +6,18 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
-	"goflow/internal/application"
 	"goflow/internal/client"
 	"goflow/internal/mcpserver"
-	"goflow/internal/nodes"
+	"goflow/internal/pack"
+	"goflow/internal/packrun"
+	"goflow/internal/workflow"
 )
 
 const (
@@ -28,9 +32,11 @@ const (
 )
 
 type Runner struct {
-	Stdout io.Writer
-	Stderr io.Writer
-	Stdin  io.Reader
+	Stdout          io.Writer
+	Stderr          io.Writer
+	Stdin           io.Reader
+	PackRuntimePath string
+	UIFS            fs.FS
 }
 
 type clientOptions struct {
@@ -56,6 +62,8 @@ func (r Runner) Run(args []string) int {
 		return r.status(args[1:])
 	case "workflow":
 		return r.workflow(args[1:])
+	case "pack":
+		return r.pack(args[1:])
 	case "execution":
 		return r.execution(args[1:])
 	case "token":
@@ -81,6 +89,9 @@ Usage:
   goflow workflow export <workflow-id|slug|name> [--output file]
   goflow workflow import <file> [--activate]
   goflow workflow validate <file>
+  goflow pack validate <pack-directory>
+  goflow pack build <pack-directory> --output <output-directory> [--target goos-goarch] [--force]
+  goflow pack run <pack-directory> [--data-dir directory] [--port port] [--no-open]
   goflow execution get <execution-id> [--output table|json]
   goflow execution watch <execution-id> [--timeout 60s] [--interval 1s] [--output table|json]
   goflow execution cancel <execution-id> [--output table|json]
@@ -286,6 +297,100 @@ func (r Runner) workflow(args []string) int {
 	}
 }
 
+func (r Runner) pack(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(r.Stderr, "pack subcommand is required")
+		return ExitInvalidInput
+	}
+	switch args[0] {
+	case "validate":
+		return r.packValidate(args[1:])
+	case "build":
+		return r.packBuild(args[1:])
+	case "run":
+		return r.packRun(args[1:])
+	default:
+		fmt.Fprintf(r.Stderr, "unknown pack subcommand: %s\n", args[0])
+		return ExitInvalidInput
+	}
+}
+
+func (r Runner) packValidate(args []string) int {
+	fs := flag.NewFlagSet("pack validate", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	dir, ok, code := parseOneRef(fs, args, "pack directory", r.Stderr)
+	if !ok {
+		return code
+	}
+	loaded, err := pack.Load(dir)
+	if err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	fmt.Fprintf(r.Stdout, "Pack is valid\nID: %s\nVersion: %s\nEntry workflow: %s\n", loaded.Manifest.ID, loaded.Manifest.Version, loaded.Manifest.EntryWorkflow)
+	return ExitOK
+}
+
+func (r Runner) packBuild(args []string) int {
+	fs := flag.NewFlagSet("pack build", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	outputDir := fs.String("output", "", "Output directory for the portable pack bundle")
+	target := fs.String("target", pack.CurrentPlatform(), "Target platform in goos-goarch format")
+	force := fs.Bool("force", false, "Replace the destination archive if it already exists")
+	dir, ok, code := parseOneRef(fs, args, "pack directory", r.Stderr)
+	if !ok {
+		return code
+	}
+	if strings.TrimSpace(*outputDir) == "" {
+		fmt.Fprintln(r.Stderr, "--output is required")
+		return ExitInvalidInput
+	}
+	result, err := pack.Build(pack.BuildOptions{
+		PackDir:     dir,
+		OutputDir:   *outputDir,
+		Target:      *target,
+		Force:       *force,
+		RuntimePath: r.PackRuntimePath,
+	})
+	if err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	fmt.Fprintf(r.Stdout, "Built portable pack bundle\nArchive: %s\nTarget: %s\n", result.ArchivePath, result.Target)
+	return ExitOK
+}
+
+func (r Runner) packRun(args []string) int {
+	fs := flag.NewFlagSet("pack run", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	dataDir := fs.String("data-dir", "", "Pack Run data directory")
+	port := fs.Int("port", 0, "Loopback port; 0 asks the OS to choose a free port")
+	noOpen := fs.Bool("no-open", false, "Print the URL without opening a browser")
+	dir, ok, code := parseOneRef(fs, args, "pack directory", r.Stderr)
+	if !ok {
+		return code
+	}
+	if *port < 0 || *port > 65535 {
+		fmt.Fprintln(r.Stderr, "--port must be between 0 and 65535")
+		return ExitInvalidInput
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := packrun.Run(ctx, packrun.Options{
+		PackDir: dir,
+		DataDir: *dataDir,
+		Port:    *port,
+		NoOpen:  *noOpen,
+		UIFS:    r.UIFS,
+		Stdout:  r.Stdout,
+		Stderr:  r.Stderr,
+	}); err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitExecutionFailed
+	}
+	return ExitOK
+}
+
 func (r Runner) workflowExport(args []string) int {
 	fs := flag.NewFlagSet("workflow export", flag.ContinueOnError)
 	fs.SetOutput(r.Stderr)
@@ -327,19 +432,19 @@ func (r Runner) workflowImport(args []string) int {
 	if !ok {
 		return code
 	}
-	workflow, err := readWorkflowFile(path)
+	workflowDef, err := workflow.ReadFile(path)
 	if err != nil {
 		fmt.Fprintln(r.Stderr, err)
 		return ExitInvalidInput
 	}
-	if err := validateWorkflowDefinition(workflow); err != nil {
+	if err := workflow.ValidateDefinition(workflowDef); err != nil {
 		fmt.Fprintln(r.Stderr, err)
 		return ExitInvalidInput
 	}
-	workflow.ID = ""
-	workflow.IsActive = *activate
+	workflowDef.ID = ""
+	workflowDef.IsActive = *activate
 	c := cliClient(clientOpts)
-	created, err := c.CreateWorkflow(workflow)
+	created, err := c.CreateWorkflow(workflowDef)
 	if err != nil {
 		return r.apiError(err)
 	}
@@ -354,12 +459,12 @@ func (r Runner) workflowValidate(args []string) int {
 	if !ok {
 		return code
 	}
-	workflow, err := readWorkflowFile(path)
+	workflowDef, err := workflow.ReadFile(path)
 	if err != nil {
 		fmt.Fprintln(r.Stderr, err)
 		return ExitInvalidInput
 	}
-	if err := validateWorkflowDefinition(workflow); err != nil {
+	if err := workflow.ValidateDefinition(workflowDef); err != nil {
 		fmt.Fprintln(r.Stderr, err)
 		return ExitInvalidInput
 	}
@@ -646,179 +751,6 @@ func parseJSONObject(data []byte) (map[string]interface{}, error) {
 		out = map[string]interface{}{}
 	}
 	return out, nil
-}
-
-func readWorkflowFile(path string) (client.Workflow, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return client.Workflow{}, err
-	}
-	var raw struct {
-		ID                string          `json:"id"`
-		Name              string          `json:"name"`
-		Description       string          `json:"description"`
-		IsActive          bool            `json:"is_active"`
-		NodesJSON         string          `json:"nodes_json"`
-		EdgesJSON         string          `json:"edges_json"`
-		Nodes             json.RawMessage `json:"nodes"`
-		Edges             json.RawMessage `json:"edges"`
-		Slug              string          `json:"slug"`
-		InputSchemaJSON   json.RawMessage `json:"input_schema_json"`
-		OutputSchemaJSON  json.RawMessage `json:"output_schema_json"`
-		ExposeCLI         bool            `json:"expose_cli"`
-		ExposeMCP         bool            `json:"expose_mcp"`
-		MCPToolName       string          `json:"mcp_tool_name"`
-		MCPDescription    string          `json:"mcp_description"`
-		RiskLevel         string          `json:"risk_level"`
-		RequiresApproval  bool            `json:"requires_approval"`
-		MaxConcurrentRuns int             `json:"max_concurrent_runs"`
-		ConcurrencyPolicy string          `json:"concurrency_policy"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return client.Workflow{}, fmt.Errorf("workflow file must be JSON: %w", err)
-	}
-	if strings.TrimSpace(raw.Name) == "" {
-		return client.Workflow{}, fmt.Errorf("workflow name is required")
-	}
-	nodesJSON := raw.NodesJSON
-	if nodesJSON == "" && len(raw.Nodes) > 0 {
-		nodesJSON = string(raw.Nodes)
-	}
-	edgesJSON := raw.EdgesJSON
-	if edgesJSON == "" && len(raw.Edges) > 0 {
-		edgesJSON = string(raw.Edges)
-	}
-	if nodesJSON == "" {
-		nodesJSON = "[]"
-	}
-	if edgesJSON == "" {
-		edgesJSON = "[]"
-	}
-	if !isJSONArray(nodesJSON) {
-		return client.Workflow{}, fmt.Errorf("nodes_json or nodes must be a JSON array")
-	}
-	if !isJSONArray(edgesJSON) {
-		return client.Workflow{}, fmt.Errorf("edges_json or edges must be a JSON array")
-	}
-	return client.Workflow{
-		ID:                raw.ID,
-		Name:              raw.Name,
-		Description:       raw.Description,
-		IsActive:          raw.IsActive,
-		NodesJSON:         nodesJSON,
-		EdgesJSON:         edgesJSON,
-		Slug:              raw.Slug,
-		InputSchemaJSON:   rawJSONFieldToString(raw.InputSchemaJSON, "{}"),
-		OutputSchemaJSON:  rawJSONFieldToString(raw.OutputSchemaJSON, "{}"),
-		ExposeCLI:         raw.ExposeCLI,
-		ExposeMCP:         raw.ExposeMCP,
-		MCPToolName:       raw.MCPToolName,
-		MCPDescription:    raw.MCPDescription,
-		RiskLevel:         raw.RiskLevel,
-		RequiresApproval:  raw.RequiresApproval,
-		MaxConcurrentRuns: raw.MaxConcurrentRuns,
-		ConcurrencyPolicy: raw.ConcurrencyPolicy,
-	}, nil
-}
-
-func validateWorkflowDefinition(workflow client.Workflow) error {
-	if strings.TrimSpace(workflow.Name) == "" {
-		return fmt.Errorf("workflow name is required")
-	}
-	var nodeList []nodes.Node
-	if err := json.Unmarshal([]byte(workflow.NodesJSON), &nodeList); err != nil {
-		return fmt.Errorf("nodes_json or nodes must be a JSON array")
-	}
-	var edgeList []nodes.Edge
-	if err := json.Unmarshal([]byte(workflow.EdgesJSON), &edgeList); err != nil {
-		return fmt.Errorf("edges_json or edges must be a JSON array")
-	}
-	if err := application.ValidateWorkflowSchema(workflow.InputSchemaJSON, "input_schema_json"); err != nil {
-		return err
-	}
-	if err := application.ValidateWorkflowSchema(workflow.OutputSchemaJSON, "output_schema_json"); err != nil {
-		return err
-	}
-	registry := nodes.NewBuiltinRegistry()
-	ids := map[string]bool{}
-	for _, node := range nodeList {
-		if strings.TrimSpace(node.ID) == "" {
-			return fmt.Errorf("node ID is required")
-		}
-		if ids[node.ID] {
-			return fmt.Errorf("duplicate node ID %q", node.ID)
-		}
-		ids[node.ID] = true
-		executor, ok := registry.Get(node.Type)
-		if !ok {
-			return fmt.Errorf("unknown node type %q on node %q", node.Type, node.ID)
-		}
-		for _, param := range executor.GetDefinition().Params {
-			if !param.Required {
-				continue
-			}
-			value, exists := node.Params[param.Name]
-			if !exists || value == nil || strings.TrimSpace(fmt.Sprint(value)) == "" {
-				return fmt.Errorf("node %q missing required parameter %q", node.ID, param.Name)
-			}
-		}
-	}
-	indegree := map[string]int{}
-	outgoing := map[string][]string{}
-	for id := range ids {
-		indegree[id] = 0
-	}
-	for _, edge := range edgeList {
-		if !ids[edge.Source] {
-			return fmt.Errorf("edge %q references missing source node %q", edge.ID, edge.Source)
-		}
-		if !ids[edge.Target] {
-			return fmt.Errorf("edge %q references missing target node %q", edge.ID, edge.Target)
-		}
-		outgoing[edge.Source] = append(outgoing[edge.Source], edge.Target)
-		indegree[edge.Target]++
-	}
-	queue := make([]string, 0, len(indegree))
-	for id, degree := range indegree {
-		if degree == 0 {
-			queue = append(queue, id)
-		}
-	}
-	visited := 0
-	for len(queue) > 0 {
-		id := queue[0]
-		queue = queue[1:]
-		visited++
-		for _, target := range outgoing[id] {
-			indegree[target]--
-			if indegree[target] == 0 {
-				queue = append(queue, target)
-			}
-		}
-	}
-	if visited != len(nodeList) {
-		return fmt.Errorf("workflow graph contains a cycle")
-	}
-	return nil
-}
-
-func isJSONArray(raw string) bool {
-	var decoded []interface{}
-	return json.Unmarshal([]byte(raw), &decoded) == nil
-}
-
-func rawJSONFieldToString(raw json.RawMessage, fallback string) string {
-	if len(raw) == 0 {
-		return fallback
-	}
-	var text string
-	if err := json.Unmarshal(raw, &text); err == nil {
-		if strings.TrimSpace(text) == "" {
-			return fallback
-		}
-		return text
-	}
-	return string(raw)
 }
 
 func printExecution(w io.Writer, exec *client.Execution) {

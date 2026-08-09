@@ -20,6 +20,7 @@ All notable changes to Goflow are tracked here.
 - `GOFLOW_MCP_RATE_LIMIT_PER_MINUTE` for HTTP MCP request rate limiting per token/principal.
 - `goflow_reload_tools` MCP tool to tell clients when dynamic workflow tools require reconnect/reload.
 - CLI workflow validation for duplicate node IDs, bad edge references, DAG cycles, unknown node types, missing required node parameters, and unsupported schema keywords.
+- Goflow Pack validation foundation and `goflow pack build` for same-platform portable pack bundle ZIPs with deterministic metadata.
 
 ### Changed
 
@@ -37,6 +38,7 @@ All notable changes to Goflow are tracked here.
 - HTTP MCP custom origins are included in global CORS handling before the MCP origin middleware validates them.
 - Workflow input schema validation now supports the documented subset: `type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const`, `minimum`, `maximum`, `minLength`, `maxLength`, `pattern`, `oneOf`, and `anyOf`; unsupported keywords fail clearly.
 - CLI workflow import now preserves full interface metadata including approval, max concurrent runs, and concurrency policy.
+- Pack path validation now rejects SemVer parsing regressions, empty ID delimiter segments, unsafe Windows archive names, and unlisted pack files during portable bundle builds.
 
 ### Fixed
 

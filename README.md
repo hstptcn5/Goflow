@@ -187,6 +187,8 @@ The `goflow` binary includes an early CLI:
 goflow status
 goflow workflow list
 goflow workflow run <workflow-id-or-slug> --set source=cli --wait
+goflow pack validate examples/packs/hello-webhook
+goflow pack build examples/packs/hello-webhook --output release
 goflow execution get <execution-id>
 goflow execution cancel <execution-id>
 goflow token create mcp-runner --scope workflow:list --scope workflow:read --scope workflow:run --scope execution:read --workflow <workflow-id>
@@ -207,6 +209,7 @@ Read more:
 | Installation and configuration | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
 | Node reference | [NODES.md](NODES.md) |
 | CLI usage | [docs/CLI.md](docs/CLI.md) |
+| Pack Format | [docs/PACKS.md](docs/PACKS.md) |
 | MCP stdio and HTTP | [docs/MCP.md](docs/MCP.md), [MCP_HTTP.md](MCP_HTTP.md) |
 | Security model | [docs/SECURITY.md](docs/SECURITY.md) |
 | Backup and restore | [BACKUP.md](BACKUP.md) |

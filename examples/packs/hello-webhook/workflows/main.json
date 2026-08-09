@@ -1,0 +1,12 @@
+{
+  "name": "Hello Webhook",
+  "description": "Minimal workflow used to validate Pack Format v1.",
+  "nodes": [
+    {
+      "id": "trigger",
+      "type": "webhookTrigger",
+      "params": {}
+    }
+  ],
+  "edges": []
+}
