@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -32,6 +33,34 @@ func TestRouterAllowsConfiguredMCPOriginInGlobalCORS(t *testing.T) {
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://agent.example.com" {
 		t.Fatalf("expected custom MCP CORS origin, got %q; status=%d body=%s", got, rec.Code, rec.Body.String())
 	}
+}
+
+func TestApplianceTelegramConnectionTestDefaultsToProductionBaseURL(t *testing.T) {
+	var observedURL string
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			observedURL = req.URL.String()
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"ok":true,"result":{"id":123}}`)),
+			}, nil
+		}),
+	}
+	appliance := &ApplianceContext{ConnectionTestClient: client}
+
+	if err := applianceTelegramGetMe(httptest.NewRequest(http.MethodPost, "/test", nil), appliance, "123:secret-token"); err != nil {
+		t.Fatalf("telegram getMe failed: %v", err)
+	}
+	if observedURL != "https://api.telegram.org/bot123:secret-token/getMe" {
+		t.Fatalf("expected production Telegram URL, got %q", observedURL)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func TestApplianceRoutesAreAbsentInGenericMode(t *testing.T) {
@@ -197,6 +226,68 @@ func TestApplianceSetupReadinessAndRedaction(t *testing.T) {
 	setupBody := applianceRequest(t, router, http.MethodGet, "/api/appliance/setup", nil, nil)
 	if !strings.Contains(setupBody, `"assigned":true`) || strings.Contains(setupBody, cred.ID) || strings.Contains(setupBody, "secret-token") {
 		t.Fatalf("setup response was not redacted: %s", setupBody)
+	}
+}
+
+func TestApplianceCompleteActivatesManagedWorkflow(t *testing.T) {
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+	wfStore := storage.NewWorkflowStore(db)
+	workflowID := "wf-activate"
+	if err := wfStore.Create(&storage.Workflow{
+		ID:          workflowID,
+		Name:        "Managed",
+		Description: "Managed",
+		IsActive:    false,
+		NodesJSON:   `[{"id":"fetch","type":"httpRequest","params":{"url":"https://example.test/default.json"}}]`,
+		EdgesJSON:   "[]",
+	}); err != nil {
+		t.Fatalf("create workflow: %v", err)
+	}
+	appliance := &ApplianceContext{
+		Enabled:      true,
+		Origin:       "http://example.com",
+		SessionToken: "test-session-token",
+		PackID:       "example.appliance",
+		PackName:     "Example Appliance",
+		PackVersion:  "0.1.0",
+		WorkflowID:   workflowID,
+		DataDir:      t.TempDir(),
+		ConfigSchema: []pack.ConfigField{
+			{Key: "source_url", Label: "Source URL", Type: "url", Required: true},
+		},
+		Bindings: []pack.Binding{
+			{Source: "config.source_url", Target: pack.BindingTarget{NodeID: "fetch", Param: "url"}},
+		},
+	}
+	router := NewRouter(wfStore, nil, nil, nil, nil, nil, nil, nil, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
+
+	applianceRequest(t, router, http.MethodPost, "/api/appliance/setup/config", []byte(`{"values":{"source_url":"https://source.example.test/feed.json"}}`), map[string]string{
+		"Origin":             "http://example.com",
+		applianceTokenHeader: "test-session-token",
+		"Content-Type":       "application/json",
+	})
+	applianceRequest(t, router, http.MethodPost, "/api/appliance/setup/complete", []byte(`{}`), map[string]string{
+		"Origin":             "http://example.com",
+		applianceTokenHeader: "test-session-token",
+		"Content-Type":       "application/json",
+	})
+	wf, err := wfStore.GetByID(workflowID)
+	if err != nil {
+		t.Fatalf("read workflow: %v", err)
+	}
+	if !wf.IsActive {
+		t.Fatalf("expected setup completion to activate managed workflow")
+	}
+	if !strings.Contains(wf.NodesJSON, "https://source.example.test/feed.json") {
+		t.Fatalf("expected setup binding in workflow nodes, got %s", wf.NodesJSON)
+	}
+	statusBody := applianceRequest(t, router, http.MethodGet, "/api/appliance/status", nil, nil)
+	if !strings.Contains(statusBody, "READY") {
+		t.Fatalf("expected ready active workflow, got %s", statusBody)
 	}
 }
 

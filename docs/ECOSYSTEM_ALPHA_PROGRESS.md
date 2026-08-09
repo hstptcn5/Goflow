@@ -603,7 +603,7 @@ Commit SHA:
 
 ## Final Acceptance Suite
 
-Status: BLOCKED
+Status: IN_PROGRESS
 
 Evidence collected:
 
@@ -625,13 +625,48 @@ Evidence collected:
 - Deterministic DailyOps Windows bundle SHA-256 from clean checkout: `ce14df049fac193602b52ff08607456a3fd730f52ba400f9205685f71683c8d6`.
 - GitHub Actions PR CI run #77 for `c29ca53`: PASS. Jobs: Backend tests, Frontend build, Pack contracts and DailyOps, Appliance Playwright E2E, Build linux-amd64, Build linux-arm64, Build windows-amd64, Build darwin-amd64, Build darwin-arm64.
 - Run #77 uploaded current-head PR build artifacts for linux-amd64, linux-arm64, windows-amd64, darwin-amd64, and darwin-arm64 with retention through 2026-11-07.
+- Internal-only Pack Run test seam for Telegram API base injection added on `feature/goflow-ecosystem-alpha-final-e2e`; production `goflow pack run` still has no CLI flag, env var, manifest field, HTTP API field, or persisted state override for Telegram API base URLs.
+- Exact DailyOps appliance E2E with real Pack Run lifecycle, real appliance backend, built UI, Playwright, temp data dir, loopback DailyOps source server, and loopback Telegram `getMe`/`sendMessage` mock: PASS.
+- DailyOps E2E restart check with the same data dir confirmed setup and credential assignment persist while decrypted secrets are not returned by setup API or visible in UI: PASS.
+- DailyOps E2E source pack, generated bundle extraction, harness logs, and Playwright-visible UI scan found no fake Telegram token suffix, mock Telegram URL, source mock URL, data dir, or temp dir values: PASS.
+- `.github/workflows/ci.yml` YAML parse with Python/PyYAML: PASS.
+- `git diff --check`: PASS.
+- `go test ./...`: PASS.
+- `go vet ./...`: PASS.
+- `go build ./...`: PASS.
+- `govulncheck ./...`: PASS, 0 reachable vulnerabilities.
+- `npm --prefix ui run test`: PASS, 11 files and 51 tests.
+- `npm --prefix ui run build`: PASS.
+- `npm --prefix ui audit --audit-level=moderate`: PASS, 0 vulnerabilities.
+- `npm --prefix ui run test:e2e -- appliance.spec.js`: PASS, 2 Playwright appliance tests.
+- `npm --prefix ui run test:e2e:runner`: PASS.
+- `npm --prefix ui run test:e2e:dailyops`: PASS, 2-phase real DailyOps appliance E2E.
+- `npm --prefix ui run test:e2e`: PASS, 26 Playwright tests with 2 DailyOps harness-only tests skipped.
+- WSL `go test -race ./...`: PASS.
+- WSL DailyOps deterministic build, ZIP verify, extracted verify, forbidden runtime-state scan, and canary/path scan: PASS; linux-amd64 bundle SHA-256 `ade3a1a9fcba030177c7981684bdc16e3ec857a3d130352907a029a80ecf6d99`.
+- Clean LF checkout created at `D:\build2026\goflow-final-e2e-clean-880f5bc-b` from `880f5bc`.
+- Clean checkout `git status --short`: PASS, no files listed before verification.
+- Clean checkout WSL `gofmt -l .`: PASS, no files listed.
+- Clean checkout `go test ./...`: PASS.
+- Clean checkout `go vet ./...`: PASS.
+- Clean checkout `go build ./...`: PASS.
+- Clean checkout `govulncheck ./...`: PASS, 0 reachable vulnerabilities.
+- Clean checkout WSL `go test -race ./...`: PASS.
+- Clean checkout `npm --prefix ui ci`: PASS, 0 vulnerabilities.
+- Clean checkout `npm --prefix ui audit --audit-level=moderate`: PASS, 0 vulnerabilities.
+- Clean checkout `npm --prefix ui run test`: PASS, 11 files and 51 tests.
+- Clean checkout `npm --prefix ui run build`: PASS.
+- Clean checkout `npm --prefix ui run test:e2e -- appliance.spec.js`: PASS, 2 Playwright appliance tests.
+- Clean checkout `npm --prefix ui run test:e2e:runner`: PASS.
+- Clean checkout `npm --prefix ui run test:e2e:dailyops`: PASS, 2-phase real DailyOps appliance E2E.
+- Clean checkout `npm --prefix ui run test:e2e`: PASS, 26 Playwright tests with 2 DailyOps harness-only tests skipped.
+- Clean checkout WSL DailyOps validate/test, deterministic build, ZIP verify, extracted verify, forbidden runtime-state scan, and canary/path scan: PASS; linux-amd64 bundle SHA-256 `8176ee9e35dbbe26542b03fd619bfa5fe2bcc8418cf3e2105661b0462ec01cc6`.
 
-Blocking gates:
+Current gates:
 
-- Manual `workflow_dispatch` development-artifacts run has not been executed. The shell has no `gh`, `GH_TOKEN`, `GITHUB_TOKEN`, or `GITHUB_PAT`; the GitHub connector exposes status/artifact tools but not workflow dispatch; the in-app GitHub browser session is logged out. This blocks proving `UNSIGNED-DEVELOPMENT-ALPHA-*` manual artifacts before final acceptance.
-- The exact real-backend, real-UI DailyOps journey with local mocked Telegram `getMe` and `sendMessage` cannot be run through `pack run` without either real Telegram credentials/network or a CLI/env hook for mock Telegram base URLs. Current coverage is split: UI appliance E2E mocks appliance APIs, backend appliance tests mock Telegram `getMe`, and DailyOps pack tests mock source and Telegram send exactly once.
+- GitHub Actions PR CI still needs to be run for this branch head.
+- Manual `workflow_dispatch` development-artifacts verification is POST-MERGE_REQUIRED. The current `ci.yml` declaration is not available on the default branch yet, so GitHub cannot dispatch this workflow from the normal Actions UI/API path until the workflow file exists on `main`. This is an operational post-merge gate, not a code failure for the stacked PR.
 
-Smallest user decision needed:
+Final-alpha acceptance gate:
 
-- Provide an authenticated GitHub dispatch path or run the manual workflow yourself on `feature/goflow-ecosystem-alpha-security-docs`.
-- Approve either adding a narrowly scoped test-only Telegram API base override for Pack Run acceptance tests, or accept the current split mock coverage as sufficient for alpha.
+- After merge to `main`, manually run the development-artifacts `workflow_dispatch`, verify the `UNSIGNED-DEVELOPMENT-ALPHA-*` artifact names, metadata, checksums, and scans, and record the exact run ID before accepting alpha.

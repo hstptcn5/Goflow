@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"goflow/internal/application"
+	"goflow/internal/client"
 	"goflow/internal/engine"
 	"goflow/internal/pack"
 	"goflow/internal/packsetup"
@@ -41,6 +42,7 @@ type ApplianceContext struct {
 	ConfigSchema           []pack.ConfigField
 	CredentialRequirements []pack.CredentialRequirement
 	LegacyRequiredCreds    []string
+	Bindings               []pack.Binding
 	TelegramAPIBaseURL     string
 	ConnectionTestClient   *http.Client
 }
@@ -73,7 +75,7 @@ func mountApplianceRoutes(
 			r.Post("/setup/credentials", applianceSaveCredentialsHandler(appliance, credStore))
 			r.Post("/setup/credentials/create", applianceCreateCredentialHandler(appliance, credStore))
 			r.Post("/setup/credentials/test", applianceTestCredentialHandler(appliance, credStore, credentialTestLimiter, credentialTestSlots))
-			r.Post("/setup/complete", applianceCompleteHandler(appliance, credStore))
+			r.Post("/setup/complete", applianceCompleteHandler(appliance, wfStore, credStore))
 			r.Post("/setup/reopen", applianceReopenHandler(appliance))
 			r.Post("/workflow/run", applianceRunWorkflowHandler(appliance, credStore, triggerService))
 		})
@@ -384,7 +386,7 @@ func applianceRecentExecutionsHandler(appliance *ApplianceContext, execStore *st
 	}
 }
 
-func applianceCompleteHandler(appliance *ApplianceContext, credStore *storage.CredentialStore) http.HandlerFunc {
+func applianceCompleteHandler(appliance *ApplianceContext, wfStore *storage.WorkflowStore, credStore *storage.CredentialStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct{}
 		if err := decodeApplianceJSON(w, r, &req); err != nil {
@@ -400,8 +402,64 @@ func applianceCompleteHandler(appliance *ApplianceContext, credStore *storage.Cr
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if err := applianceApplyBindingsAndActivate(appliance, wfStore, credStore); err != nil {
+			http.Error(w, "managed workflow could not be activated", http.StatusInternalServerError)
+			return
+		}
 		renderJSON(w, http.StatusOK, map[string]interface{}{"state": "READY", "setup_complete": state.Completed})
 	}
+}
+
+func applianceApplyBindingsAndActivate(appliance *ApplianceContext, wfStore *storage.WorkflowStore, credStore *storage.CredentialStore) error {
+	if wfStore == nil {
+		return nil
+	}
+	wf, err := wfStore.GetByID(appliance.WorkflowID)
+	if err != nil {
+		return err
+	}
+	updated := *wf
+	updated.IsActive = true
+	manifest := applianceManifest(appliance)
+	if len(manifest.Bindings) > 0 {
+		cfg, err := packsetup.LoadConfig(appliance.DataDir, manifest)
+		if err != nil {
+			return err
+		}
+		credentialSlots := map[string]packsetup.CredentialSlot{}
+		if len(manifest.CredentialRequirements) > 0 {
+			creds, err := packsetup.LoadCredentialBindings(appliance.DataDir, manifest, applianceCredentialResolver(credStore))
+			if err != nil {
+				return err
+			}
+			credentialSlots = creds.Credentials.Slots
+		}
+		bound, err := packsetup.ApplyBindings(client.Workflow{
+			ID:                updated.ID,
+			Name:              updated.Name,
+			Description:       updated.Description,
+			IsActive:          updated.IsActive,
+			NodesJSON:         updated.NodesJSON,
+			EdgesJSON:         updated.EdgesJSON,
+			Slug:              updated.Slug,
+			InputSchemaJSON:   updated.InputSchemaJSON,
+			OutputSchemaJSON:  updated.OutputSchemaJSON,
+			ExposeCLI:         updated.ExposeCLI,
+			ExposeMCP:         updated.ExposeMCP,
+			MCPToolName:       updated.MCPToolName,
+			MCPDescription:    updated.MCPDescription,
+			RiskLevel:         updated.RiskLevel,
+			RequiresApproval:  updated.RequiresApproval,
+			MaxConcurrentRuns: updated.MaxConcurrentRuns,
+			ConcurrencyPolicy: updated.ConcurrencyPolicy,
+		}, manifest, cfg.Config.Values, credentialSlots)
+		if err != nil {
+			return err
+		}
+		updated.NodesJSON = bound.NodesJSON
+		updated.EdgesJSON = bound.EdgesJSON
+	}
+	return wfStore.Update(&updated)
 }
 
 func applianceReopenHandler(appliance *ApplianceContext) http.HandlerFunc {
@@ -508,6 +566,7 @@ func applianceManifest(appliance *ApplianceContext) pack.Manifest {
 		ConfigSchema:           appliance.ConfigSchema,
 		CredentialRequirements: appliance.CredentialRequirements,
 		RequiredCredentials:    appliance.LegacyRequiredCreds,
+		Bindings:               appliance.Bindings,
 	}
 }
 

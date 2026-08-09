@@ -17,11 +17,18 @@ func NewPluginRegistry() *PluginRegistry {
 }
 
 func NewBuiltinRegistry() *PluginRegistry {
+	return NewBuiltinRegistryWithTelegramExecutor(NewTelegramBotExecutor())
+}
+
+func NewBuiltinRegistryWithTelegramExecutor(telegramExecutor NodeExecutor) *PluginRegistry {
+	if telegramExecutor == nil {
+		telegramExecutor = NewTelegramBotExecutor()
+	}
 	registry := NewPluginRegistry()
 	_ = registry.Register(NewWebhookTriggerExecutor())
 	_ = registry.Register(NewCronTriggerExecutor())
 	_ = registry.Register(NewHTTPRequestExecutor())
-	_ = registry.Register(NewTelegramBotExecutor())
+	_ = registry.Register(telegramExecutor)
 	_ = registry.Register(NewJSONTransformExecutor())
 	_ = registry.Register(NewConditionIFExecutor())
 	_ = registry.Register(NewEmailSMTPExecutor())

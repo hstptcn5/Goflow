@@ -112,6 +112,10 @@ jobs:
         working-directory: ui
         run: npm run test:e2e -- appliance.spec.js
 
+      - name: Run DailyOps appliance E2E
+        working-directory: ui
+        run: npm run test:e2e:dailyops
+
       - name: Runner smoke
         working-directory: ui
         run: npm run test:e2e:runner

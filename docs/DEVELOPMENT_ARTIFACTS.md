@@ -23,6 +23,8 @@ UNSIGNED-DEVELOPMENT-ALPHA-goflow-<goos>-<goarch>
 
 The manual workflow must not create tags, GitHub Releases, installers, signatures, or latest-version pointers.
 
+`workflow_dispatch` is usable through the normal GitHub Actions UI/API only after the workflow declaration exists on the default branch. For the ecosystem alpha stacked PRs, the first manual development-artifacts run is therefore a post-merge operational gate, not a pull-request code gate.
+
 ## Verify An Artifact
 
 1. Download the artifact from the exact GitHub Actions run.

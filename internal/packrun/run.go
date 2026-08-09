@@ -25,6 +25,7 @@ import (
 
 	"goflow/config"
 	"goflow/internal/api"
+	"goflow/internal/nodes"
 	"goflow/internal/pack"
 	"goflow/internal/serverapp"
 	"goflow/internal/storage"
@@ -43,6 +44,10 @@ type Options struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
 	Opener  func(string) error
+
+	Registry             *nodes.PluginRegistry
+	TelegramAPIBaseURL   string
+	ConnectionTestClient *http.Client
 }
 
 type State struct {
@@ -150,6 +155,7 @@ func Run(ctx context.Context, opts Options) error {
 		Config:   serverCfg,
 		UIFS:     opts.UIFS,
 		Listener: listener,
+		Registry: opts.Registry,
 		Appliance: &api.ApplianceContext{
 			Enabled:                true,
 			Origin:                 origin,
@@ -163,6 +169,9 @@ func Run(ctx context.Context, opts Options) error {
 			ConfigSchema:           loaded.Manifest.ConfigSchema,
 			CredentialRequirements: loaded.Manifest.CredentialRequirements,
 			LegacyRequiredCreds:    loaded.Manifest.RequiredCredentials,
+			Bindings:               loaded.Manifest.Bindings,
+			TelegramAPIBaseURL:     opts.TelegramAPIBaseURL,
+			ConnectionTestClient:   opts.ConnectionTestClient,
 		},
 	})
 	if err != nil {
