@@ -198,12 +198,11 @@ Security considerations:
 
 Commit SHA:
 
-- Pending until this checkpoint is committed.
+- `1492f7e` (`fix: harden pack setup metadata validation`).
 
 Remaining work:
 
-- Run full local gates.
-- Commit, push, update PR #3, and wait for CI.
+- Push, update PR #3, and wait for CI.
 
 Blockers:
 
