@@ -603,7 +603,7 @@ Commit SHA:
 
 ## Final Acceptance Suite
 
-Status: IN_PROGRESS
+Status: COMPLETE
 
 Evidence collected:
 
@@ -665,10 +665,23 @@ Evidence collected:
 
 Current gates:
 
-- All code, UI, pack, clean-checkout, and PR CI gates for the final DailyOps E2E branch are PASS.
-- The only remaining alpha acceptance gate is the documented post-merge manual development-artifacts dispatch and artifact verification.
-- Manual `workflow_dispatch` development-artifacts verification is POST-MERGE_REQUIRED. The current `ci.yml` declaration is not available on the default branch yet, so GitHub cannot dispatch this workflow from the normal Actions UI/API path until the workflow file exists on `main`. This is an operational post-merge gate, not a code failure for the stacked PR.
+- All code, UI, pack, clean-checkout, and PR CI gates for the final DailyOps E2E branch passed.
+- PR #2 merged as `c09eeed69a3ed17e5348e9e51394c5d0e83372c1`.
+- PR #12 and final accepted `main` are `362c58447b7dee8853a76b2cfdab0bd09984c2b0`.
+- Post-merge development artifact workflow run `31324101709` completed successfully.
 
 Final-alpha acceptance gate:
 
-- After merge to `main`, manually run the development-artifacts `workflow_dispatch`, verify the `UNSIGNED-DEVELOPMENT-ALPHA-*` artifact names, metadata, checksums, and scans, and record the exact run ID before accepting alpha.
+- Operational acceptance: ACCEPTED for unsigned ecosystem alpha development use.
+- Verified development artifacts:
+
+| Artifact | GitHub artifact digest |
+| --- | --- |
+| `UNSIGNED-DEVELOPMENT-ALPHA-goflow-linux-amd64` | `sha256:5cb162a4b3676203012cd95611fc646b36c4f0d36610464bb6eb1cb89e8cde77` |
+| `UNSIGNED-DEVELOPMENT-ALPHA-goflow-linux-arm64` | `sha256:45a5174274c0e078205bb55c77d787a972e3bd22847e28ce03adce0553bfcd36` |
+| `UNSIGNED-DEVELOPMENT-ALPHA-goflow-windows-amd64` | `sha256:f4f312e42887b952a410ac6a80f1e7c1f26f0ca39b9eb6084e9f49314e73fdb6` |
+| `UNSIGNED-DEVELOPMENT-ALPHA-goflow-darwin-amd64` | `sha256:e9f4cf5757901b85b30a3f10117709cb75037103ad6b1549069e73b790c564a6` |
+| `UNSIGNED-DEVELOPMENT-ALPHA-goflow-darwin-arm64` | `sha256:2b031878683fb5b97c250994c7b95f47713fd1e576ec2430411af40e59cf8357` |
+
+- Verified DailyOps bundle SHA-256: `c1358399aa17b6a88f8e0588db369767c86c8981f352878a2ed3c367071e7131`.
+- Limitation: these are unsigned alpha artifacts. They are not a signed release, installer, auto-updated build, or production-readiness claim.

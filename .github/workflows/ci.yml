@@ -234,6 +234,62 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  windows-pilot:
+    name: Windows DailyOps pilot appliance
+    runs-on: windows-latest
+    needs:
+      - backend
+      - frontend
+      - appliance-e2e
+      - pack-contracts
+    steps:
+      - name: Checkout exact workflow commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up pinned Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies and build embedded UI
+        working-directory: ui
+        shell: pwsh
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Playwright Chromium
+        working-directory: ui
+        run: npx playwright install chromium
+
+      - name: Run native Windows DailyOps setup and persistence E2E
+        working-directory: ui
+        run: npm run test:e2e:dailyops
+
+      - name: Build and verify native Windows pilot artifact
+        shell: pwsh
+        run: >-
+          ./scripts/build-windows-pilot.ps1
+          -OutputDirectory "${{ runner.temp }}/windows-pilot-artifact"
+          -Commit "${{ github.sha }}"
+
+      - name: Upload unsigned Windows pilot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UNSIGNED-PILOT-ALPHA-goflow-dailyops-windows-amd64
+          path: ${{ runner.temp }}/windows-pilot-artifact/
+          if-no-files-found: error
+
   development-artifacts:
     name: Unsigned development artifacts ${{ matrix.goos }}-${{ matrix.goarch }}
     if: github.event_name == 'workflow_dispatch'
