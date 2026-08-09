@@ -490,7 +490,7 @@ Security considerations:
 
 Commit SHA:
 
-- Pending DailyOps reference pack commit.
+- `5b4cc58` (`feat: add dailyops reference pack`).
 
 ## Checkpoint H - Development Artifact Pipeline
 
