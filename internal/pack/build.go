@@ -525,12 +525,12 @@ func VerifyExtractedBundle(root string) (*PackInfo, error) {
 		return nil, fmt.Errorf("resolve bundle directory symlinks: %w", err)
 	}
 	packInfoPath := filepath.Join(rootEval, "PACK_INFO.json")
-	data, err := os.ReadFile(packInfoPath)
+	data, _, err := readFileLimited(packInfoPath, limits.MaxPackInfoBytes)
 	if err != nil {
-		return nil, fmt.Errorf("PACK_INFO.json is missing: %w", err)
-	}
-	if int64(len(data)) > limits.MaxPackInfoBytes {
-		return nil, fmt.Errorf("PACK_INFO.json exceeds %d byte limit", limits.MaxPackInfoBytes)
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("PACK_INFO.json is missing: %w", err)
+		}
+		return nil, fmt.Errorf("read PACK_INFO.json: %w", err)
 	}
 	var info PackInfo
 	if err := json.Unmarshal(data, &info); err != nil {
@@ -542,6 +542,33 @@ func VerifyExtractedBundle(root string) (*PackInfo, error) {
 	if strings.TrimSpace(info.PackID) == "" || strings.TrimSpace(info.PackVersion) == "" || strings.TrimSpace(info.EntryWorkflow) == "" {
 		return nil, fmt.Errorf("PACK_INFO is missing required pack metadata")
 	}
+	manifest, err := readManifest(filepath.Join(rootEval, "pack", "pack.json"))
+	if err != nil {
+		return nil, err
+	}
+	if err := validateManifest(manifest); err != nil {
+		return nil, err
+	}
+	if info.PackID != manifest.ID {
+		return nil, fmt.Errorf("PACK_INFO pack_id %q does not match pack.json id %q", info.PackID, manifest.ID)
+	}
+	if info.PackVersion != manifest.Version {
+		return nil, fmt.Errorf("PACK_INFO pack_version %q does not match pack.json version %q", info.PackVersion, manifest.Version)
+	}
+	expectedEntryWorkflow := "pack/" + manifest.EntryWorkflow
+	if info.EntryWorkflow != expectedEntryWorkflow {
+		return nil, fmt.Errorf("PACK_INFO entry_workflow %q does not match pack.json entry_workflow %q", info.EntryWorkflow, expectedEntryWorkflow)
+	}
+	if !containsString(manifest.SupportedPlatforms, info.Target) {
+		return nil, fmt.Errorf("PACK_INFO target %q is not listed in supported_platforms", info.Target)
+	}
+	expectedRuntime, err := expectedRuntimeEntry(info.Target)
+	if err != nil {
+		return nil, err
+	}
+	if info.RuntimeEntry != expectedRuntime {
+		return nil, fmt.Errorf("PACK_INFO runtime_entry %q does not match target %q expected %q", info.RuntimeEntry, info.Target, expectedRuntime)
+	}
 	if len(info.Files) > limits.MaxEntries {
 		return nil, fmt.Errorf("PACK_INFO inventory has %d entries, exceeds %d entry limit", len(info.Files), limits.MaxEntries)
 	}
@@ -552,6 +579,9 @@ func VerifyExtractedBundle(root string) (*PackInfo, error) {
 		}
 		if seen[item.Path] {
 			return nil, fmt.Errorf("PACK_INFO inventory contains duplicate path %q", item.Path)
+		}
+		if item.Path == "PACK_INFO.json" {
+			return nil, fmt.Errorf("PACK_INFO.json must not be listed in PACK_INFO inventory")
 		}
 		seen[item.Path] = true
 		if err := validateArchivePath(item.Path, info.Target); err != nil {
@@ -577,7 +607,62 @@ func VerifyExtractedBundle(root string) (*PackInfo, error) {
 	if err := validateInventorySizes(info.Files, limits, info.EntryWorkflow); err != nil {
 		return nil, err
 	}
+	if err := verifyNoUnexpectedExtractedFiles(rootEval, seen, limits); err != nil {
+		return nil, err
+	}
 	return &info, nil
+}
+
+func expectedRuntimeEntry(target string) (string, error) {
+	parts := strings.Split(target, "-")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", fmt.Errorf("PACK_INFO target %q is invalid", target)
+	}
+	switch parts[0] {
+	case "windows":
+		return "goflow.exe", nil
+	case "linux", "darwin":
+		return "goflow", nil
+	default:
+		return "", fmt.Errorf("PACK_INFO target %q is unsupported", target)
+	}
+}
+
+func verifyNoUnexpectedExtractedFiles(root string, inventory map[string]bool, limits buildLimits) error {
+	count := 0
+	return filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == root {
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("extracted bundle contains symlink %q", path)
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("extracted bundle contains non-regular file %q", path)
+		}
+		count++
+		if count > limits.MaxEntries {
+			return fmt.Errorf("extracted bundle has more than %d file entries", limits.MaxEntries)
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		slashPath := filepath.ToSlash(rel)
+		if slashPath == "PACK_INFO.json" {
+			return nil
+		}
+		if !inventory[slashPath] {
+			return fmt.Errorf("extracted file %q is not listed in PACK_INFO inventory", slashPath)
+		}
+		return nil
+	})
 }
 
 func hashExtractedFileLimited(root, slashPath string, limit int64) (PackInfoFile, error) {
@@ -649,6 +734,22 @@ func readZipFileLimited(file *zip.File, limit int64) ([]byte, int64, error) {
 	}
 	defer rc.Close()
 	data, err := io.ReadAll(io.LimitReader(rc, limit+1))
+	if err != nil {
+		return nil, int64(len(data)), err
+	}
+	if int64(len(data)) > limit {
+		return nil, int64(len(data)), fmt.Errorf("entry exceeds %d byte limit", limit)
+	}
+	return data, int64(len(data)), nil
+}
+
+func readFileLimited(path string, limit int64) ([]byte, int64, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return nil, int64(len(data)), err
 	}

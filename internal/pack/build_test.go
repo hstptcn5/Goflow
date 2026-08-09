@@ -447,6 +447,130 @@ func TestVerifyExtractedBundleDetectsTampering(t *testing.T) {
 	}
 }
 
+func TestVerifyExtractedBundleRejectsInventoryAndMetadataInconsistencies(t *testing.T) {
+	dir := writeBuildPack(t)
+	result := mustBuild(t, dir, writeRuntimeFixture(t, "runtime"), t.TempDir())
+
+	tests := []struct {
+		name string
+		edit func(t *testing.T, extractDir string)
+		want string
+	}{
+		{
+			name: "extra file",
+			edit: func(t *testing.T, extractDir string) {
+				writeFile(t, filepath.Join(extractDir, "pack", "extra.txt"), "extra")
+			},
+			want: "not listed",
+		},
+		{
+			name: "pack id mismatch",
+			edit: func(t *testing.T, extractDir string) {
+				mutateExtractedPackInfo(t, extractDir, func(info *PackInfo) { info.PackID = "example.other" })
+			},
+			want: "pack_id",
+		},
+		{
+			name: "pack version mismatch",
+			edit: func(t *testing.T, extractDir string) {
+				mutateExtractedPackInfo(t, extractDir, func(info *PackInfo) { info.PackVersion = "9.9.9" })
+			},
+			want: "pack_version",
+		},
+		{
+			name: "entry workflow mismatch",
+			edit: func(t *testing.T, extractDir string) {
+				mutateExtractedPackInfo(t, extractDir, func(info *PackInfo) { info.EntryWorkflow = "pack/workflows/other.json" })
+			},
+			want: "entry_workflow",
+		},
+		{
+			name: "invalid runtime target pairing",
+			edit: func(t *testing.T, extractDir string) {
+				mutateExtractedManifest(t, extractDir, func(manifest *Manifest) {
+					manifest.SupportedPlatforms = []string{"windows-amd64"}
+				})
+				mutateExtractedPackInfo(t, extractDir, func(info *PackInfo) {
+					info.Target = "windows-amd64"
+					info.RuntimeEntry = "goflow"
+				})
+			},
+			want: "runtime_entry",
+		},
+		{
+			name: "target absent from supported platforms",
+			edit: func(t *testing.T, extractDir string) {
+				mutateExtractedPackInfo(t, extractDir, func(info *PackInfo) { info.Target = "darwin-amd64" })
+			},
+			want: "supported_platforms",
+		},
+		{
+			name: "self inventoried PACK_INFO",
+			edit: func(t *testing.T, extractDir string) {
+				mutateExtractedPackInfo(t, extractDir, func(info *PackInfo) {
+					info.Files = append(info.Files, PackInfoFile{Path: "PACK_INFO.json", SHA256: "bad", Size: 1})
+				})
+			},
+			want: "must not be listed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			extractDir := t.TempDir()
+			extractZip(t, result.ArchivePath, extractDir)
+			tt.edit(t, extractDir)
+			if _, err := VerifyExtractedBundle(extractDir); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestVerifyExtractedBundleRejectsExtraSymlink(t *testing.T) {
+	dir := writeBuildPack(t)
+	result := mustBuild(t, dir, writeRuntimeFixture(t, "runtime"), t.TempDir())
+	extractDir := t.TempDir()
+	extractZip(t, result.ArchivePath, extractDir)
+	target := filepath.Join(extractDir, "pack", "pack.json")
+	if err := os.Symlink(target, filepath.Join(extractDir, "pack", "extra-link")); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+	if _, err := VerifyExtractedBundle(extractDir); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink error, got %v", err)
+	}
+}
+
+func TestBoundedPackInfoRead(t *testing.T) {
+	dir := t.TempDir()
+	within := filepath.Join(dir, "within.json")
+	writeFile(t, within, strings.Repeat("x", MaxPackInfoBytes))
+	data, size, err := readFileLimited(within, MaxPackInfoBytes)
+	if err != nil {
+		t.Fatalf("expected within-limit read, got %v", err)
+	}
+	if len(data) != MaxPackInfoBytes || size != MaxPackInfoBytes {
+		t.Fatalf("unexpected within-limit size len=%d size=%d", len(data), size)
+	}
+	plusOne := filepath.Join(dir, "plus-one.json")
+	writeFile(t, plusOne, strings.Repeat("x", MaxPackInfoBytes+1))
+	if _, _, err := readFileLimited(plusOne, MaxPackInfoBytes); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected plus-one limit error, got %v", err)
+	}
+	huge := filepath.Join(dir, "huge.json")
+	writeFile(t, huge, "")
+	if err := os.Truncate(huge, MaxPackInfoBytes*32); err != nil {
+		t.Fatalf("truncate huge PACK_INFO: %v", err)
+	}
+	if _, _, err := readFileLimited(huge, MaxPackInfoBytes); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected huge sparse limit error, got %v", err)
+	}
+	extractDir := t.TempDir()
+	writeFile(t, filepath.Join(extractDir, "PACK_INFO.json"), "{")
+	if _, err := VerifyExtractedBundle(extractDir); err == nil || !strings.Contains(err.Error(), "malformed") {
+		t.Fatalf("expected malformed PACK_INFO error, got %v", err)
+	}
+}
+
 func TestVerifyExtractedBundleRequiresPackInfo(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := VerifyExtractedBundle(dir); err == nil || !strings.Contains(err.Error(), "PACK_INFO.json is missing") {
@@ -844,6 +968,48 @@ func extractZip(t *testing.T, archivePath, destDir string) {
 		if err := os.WriteFile(path, data, file.FileInfo().Mode().Perm()); err != nil {
 			t.Fatalf("write extracted file: %v", err)
 		}
+	}
+}
+
+func mutateExtractedPackInfo(t *testing.T, extractDir string, mutate func(*PackInfo)) {
+	t.Helper()
+	path := filepath.Join(extractDir, "PACK_INFO.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read PACK_INFO: %v", err)
+	}
+	var info PackInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		t.Fatalf("parse PACK_INFO: %v", err)
+	}
+	mutate(&info)
+	next, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal PACK_INFO: %v", err)
+	}
+	if err := os.WriteFile(path, append(next, '\n'), 0600); err != nil {
+		t.Fatalf("write PACK_INFO: %v", err)
+	}
+}
+
+func mutateExtractedManifest(t *testing.T, extractDir string, mutate func(*Manifest)) {
+	t.Helper()
+	path := filepath.Join(extractDir, "pack", "pack.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read pack.json: %v", err)
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("parse pack.json: %v", err)
+	}
+	mutate(&manifest)
+	next, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal pack.json: %v", err)
+	}
+	if err := os.WriteFile(path, append(next, '\n'), 0600); err != nil {
+		t.Fatalf("write pack.json: %v", err)
 	}
 }
 

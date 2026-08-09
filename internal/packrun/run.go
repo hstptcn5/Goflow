@@ -106,7 +106,7 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 	if !acquired {
-		return reuseExistingInstance(opts, dataDir)
+		return reuseExistingInstance(ctx, opts, dataDir, defaultReuseRetryOptions())
 	}
 	defer lock.Release()
 
@@ -378,24 +378,85 @@ func isSQLiteLocked(err error) bool {
 	return strings.Contains(lower, "locked") || strings.Contains(lower, "busy")
 }
 
-func reuseExistingInstance(opts Options, dataDir string) error {
-	state, err := readRunState(dataDir)
-	if err != nil {
-		return fmt.Errorf("pack run: another instance is active but run-state is unavailable: %w", err)
+type reuseRetryOptions struct {
+	Timeout     time.Duration
+	Backoff     time.Duration
+	MaxAttempts int
+	ReadState   func(string) (RunState, error)
+	Probe       func(string) error
+	After       func(context.Context, time.Duration) error
+}
+
+func defaultReuseRetryOptions() reuseRetryOptions {
+	return reuseRetryOptions{
+		Timeout:   4 * time.Second,
+		Backoff:   100 * time.Millisecond,
+		ReadState: readRunState,
+		Probe:     probeHealth,
+		After: func(ctx context.Context, d time.Duration) error {
+			timer := time.NewTimer(d)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timer.C:
+				return nil
+			}
+		},
 	}
-	if !isLoopbackURL(state.URL) {
-		return fmt.Errorf("pack run: refusing non-loopback URL in run-state")
+}
+
+func reuseExistingInstance(ctx context.Context, opts Options, dataDir string, retry reuseRetryOptions) error {
+	if retry.Timeout <= 0 {
+		retry.Timeout = 4 * time.Second
 	}
-	if err := probeHealth(state.URL); err != nil {
-		return fmt.Errorf("pack run: another instance is active but not healthy: %w", err)
+	if retry.Backoff <= 0 {
+		retry.Backoff = 100 * time.Millisecond
 	}
-	fmt.Fprintf(opts.Stdout, "Reusing running pack instance\nURL: %s\n", state.URL)
-	if !opts.NoOpen {
-		if err := openURL(opts, state.URL); err != nil {
-			fmt.Fprintf(opts.Stderr, "warning: could not open browser: %v\n", err)
+	if retry.ReadState == nil {
+		retry.ReadState = readRunState
+	}
+	if retry.Probe == nil {
+		retry.Probe = probeHealth
+	}
+	if retry.After == nil {
+		retry.After = defaultReuseRetryOptions().After
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	deadline := time.Now().Add(retry.Timeout)
+	var lastErr error
+	for attempt := 1; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("pack run: cancelled while waiting for existing instance in %s: %w", dataDir, err)
+		}
+		state, err := retry.ReadState(dataDir)
+		if err != nil {
+			lastErr = fmt.Errorf("read run-state: %w", err)
+		} else if !isLoopbackURL(state.URL) {
+			lastErr = fmt.Errorf("refusing non-loopback URL in run-state")
+		} else if err := retry.Probe(state.URL); err != nil {
+			lastErr = fmt.Errorf("probe %s: %w", state.URL, err)
+		} else {
+			fmt.Fprintf(opts.Stdout, "Reusing running pack instance\nURL: %s\n", state.URL)
+			if !opts.NoOpen {
+				if err := openURL(opts, state.URL); err != nil {
+					fmt.Fprintf(opts.Stderr, "warning: could not open browser: %v\n", err)
+				}
+			}
+			return nil
+		}
+		if retry.MaxAttempts > 0 && attempt >= retry.MaxAttempts {
+			return fmt.Errorf("pack run: timed out waiting for existing instance in %s: %v", dataDir, lastErr)
+		}
+		if time.Now().Add(retry.Backoff).After(deadline) {
+			return fmt.Errorf("pack run: timed out waiting for existing instance in %s: %v", dataDir, lastErr)
+		}
+		if err := retry.After(ctx, retry.Backoff); err != nil {
+			return fmt.Errorf("pack run: cancelled while waiting for existing instance in %s: %w", dataDir, err)
 		}
 	}
-	return nil
 }
 
 func probeHealth(rawURL string) error {

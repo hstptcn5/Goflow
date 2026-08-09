@@ -184,6 +184,17 @@ The file inventory is sorted by archive path and includes SHA-256 plus size for 
 
 After writing the temporary ZIP, the builder reopens that ZIP and verifies the bytes actually stored in the archive against `PACK_INFO.json`. It rejects missing inventory entries, extra ZIP entries, duplicate ZIP entry names, malformed or missing `PACK_INFO.json`, and hash or size mismatches before publishing the final artifact.
 
+When a portable bundle is extracted and launched directly, Goflow verifies the extracted directory before starting Pack Run. The verifier reads `PACK_INFO.json` with a bounded reader, validates `pack/pack.json`, and confirms:
+
+- Every inventory path is unique, relative, safe, and not `PACK_INFO.json` itself.
+- Every inventoried regular file exists, is not a symlink, stays inside the extracted directory, and matches the recorded SHA-256 and uncompressed size.
+- No unexpected regular file or symlink exists in the extracted controlled bundle directory, except `PACK_INFO.json` itself.
+- `PACK_INFO.pack_id`, `pack_version`, and `entry_workflow` match `pack/pack.json`.
+- `PACK_INFO.target` is listed in `supported_platforms`.
+- `runtime_entry` matches the target platform: `goflow.exe` for Windows targets and `goflow` for Linux/macOS targets.
+
+These hashes detect extraction or local file inconsistencies. They do not establish publisher authenticity because `PACK_INFO.json` is unsigned.
+
 ### Determinism And Output Safety
 
 Builds use sorted ZIP entries, a fixed ZIP timestamp of `1980-01-01T00:00:00Z`, fixed compression method, and stable JSON formatting. The builder writes a temporary archive in the output directory and renames it to the final archive only after the ZIP is complete.
@@ -248,6 +259,8 @@ Pack validation and build are static. They do not execute plugins, start the ser
 `pack.json` symlinks are rejected. Entry workflow, plugin, and asset symlinks are allowed only when the fully resolved target remains inside the pack directory and is a regular file.
 
 Pack validation is not a trust system. A valid pack may still contain plugin files or workflow behavior that operators should review before any future install or run command uses it.
+
+`PACK_INFO.json` is integrity metadata, not a signature. It can detect that extracted files no longer match the bundle metadata, but it does not prove who created the bundle.
 
 ## Non-Goals
 

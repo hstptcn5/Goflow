@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"goflow/internal/pack"
 	"goflow/internal/storage"
@@ -106,6 +108,134 @@ func TestOpenURLUsesInjectedOpener(t *testing.T) {
 	if called != "http://127.0.0.1:1234/workflows" {
 		t.Fatalf("opener called with %q", called)
 	}
+}
+
+func TestReuseExistingInstanceRetriesUntilStateAppears(t *testing.T) {
+	var stdout bytes.Buffer
+	attempts := 0
+	err := reuseExistingInstance(context.Background(), Options{
+		Stdout: &stdout,
+		NoOpen: true,
+	}, "data-dir", testRetryOptions(t, func(string) (RunState, error) {
+		attempts++
+		if attempts < 3 {
+			return RunState{}, os.ErrNotExist
+		}
+		return RunState{URL: "http://127.0.0.1:1234/workflows"}, nil
+	}, func(string) error { return nil }))
+	if err != nil {
+		t.Fatalf("reuseExistingInstance failed: %v", err)
+	}
+	if attempts != 3 || !strings.Contains(stdout.String(), "http://127.0.0.1:1234/workflows") {
+		t.Fatalf("unexpected attempts/stdout: %d %q", attempts, stdout.String())
+	}
+}
+
+func TestReuseExistingInstanceRetriesStaleStateUntilReplaced(t *testing.T) {
+	attempts := 0
+	err := reuseExistingInstance(context.Background(), Options{Stdout: ioDiscard(), NoOpen: true}, "data-dir", testRetryOptions(t, func(string) (RunState, error) {
+		attempts++
+		if attempts == 1 {
+			return RunState{URL: "http://127.0.0.1:1/workflows"}, nil
+		}
+		return RunState{URL: "http://127.0.0.1:1234/workflows"}, nil
+	}, func(rawURL string) error {
+		if strings.Contains(rawURL, ":1/") {
+			return errors.New("connection refused")
+		}
+		return nil
+	}))
+	if err != nil {
+		t.Fatalf("reuseExistingInstance failed: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected 2 attempts, got %d", attempts)
+	}
+}
+
+func TestReuseExistingInstanceRetriesUntilHealthReady(t *testing.T) {
+	probes := 0
+	err := reuseExistingInstance(context.Background(), Options{Stdout: ioDiscard(), NoOpen: true}, "data-dir", testRetryOptions(t, func(string) (RunState, error) {
+		return RunState{URL: "http://127.0.0.1:1234/workflows"}, nil
+	}, func(string) error {
+		probes++
+		if probes < 4 {
+			return errors.New("not ready")
+		}
+		return nil
+	}))
+	if err != nil {
+		t.Fatalf("reuseExistingInstance failed: %v", err)
+	}
+	if probes != 4 {
+		t.Fatalf("expected 4 probes, got %d", probes)
+	}
+}
+
+func TestReuseExistingInstanceTimeoutAndContextCancel(t *testing.T) {
+	err := reuseExistingInstance(context.Background(), Options{Stdout: ioDiscard(), NoOpen: true}, "data-dir", testRetryOptions(t, func(string) (RunState, error) {
+		return RunState{}, os.ErrNotExist
+	}, func(string) error { return nil }))
+	if err == nil || !strings.Contains(err.Error(), "timed out") || !strings.Contains(err.Error(), "data-dir") || !strings.Contains(err.Error(), "run-state") {
+		t.Fatalf("expected actionable timeout, got %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = reuseExistingInstance(ctx, Options{Stdout: ioDiscard(), NoOpen: true}, "data-dir", testRetryOptions(t, func(string) (RunState, error) {
+		return RunState{}, os.ErrNotExist
+	}, func(string) error { return nil }))
+	if err == nil || !strings.Contains(err.Error(), "cancelled") {
+		t.Fatalf("expected cancellation error, got %v", err)
+	}
+}
+
+func TestReuseExistingInstanceOpenerAtMostOnceAndNoOpen(t *testing.T) {
+	calls := 0
+	opts := Options{
+		Stdout: ioDiscard(),
+		Opener: func(string) error {
+			calls++
+			return nil
+		},
+	}
+	err := reuseExistingInstance(context.Background(), opts, "data-dir", testRetryOptions(t, func(string) (RunState, error) {
+		return RunState{URL: "http://127.0.0.1:1234/workflows"}, nil
+	}, func(string) error { return nil }))
+	if err != nil {
+		t.Fatalf("reuseExistingInstance failed: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected one opener call, got %d", calls)
+	}
+	opts.NoOpen = true
+	err = reuseExistingInstance(context.Background(), opts, "data-dir", testRetryOptions(t, func(string) (RunState, error) {
+		return RunState{URL: "http://127.0.0.1:1234/workflows"}, nil
+	}, func(string) error { return nil }))
+	if err != nil {
+		t.Fatalf("reuseExistingInstance no-open failed: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("no-open invoked opener, calls=%d", calls)
+	}
+}
+
+func testRetryOptions(t *testing.T, read func(string) (RunState, error), probe func(string) error) reuseRetryOptions {
+	t.Helper()
+	return reuseRetryOptions{
+		Timeout:     time.Hour,
+		Backoff:     time.Millisecond,
+		MaxAttempts: 5,
+		ReadState:   read,
+		Probe:       probe,
+		After: func(context.Context, time.Duration) error {
+			return nil
+		},
+	}
+}
+
+func ioDiscard() *bytes.Buffer {
+	return &bytes.Buffer{}
 }
 
 func writeRunPack(t *testing.T, id, version, name string, active bool, plugins []string) string {
