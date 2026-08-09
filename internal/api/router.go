@@ -59,6 +59,10 @@ func NewRouter(
 		MaxAge:           300,
 	}))
 
+	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		renderJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+
 	triggerService := application.NewTriggerService(wfStore, eng)
 	wfHandler := NewWorkflowHandler(wfStore, triggerService, webhookRateLimitPerMinute)
 	execHandler := NewExecutionHandler(execStore, eng, triggerService)

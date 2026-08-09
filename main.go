@@ -2,279 +2,42 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"goflow/config"
-	"goflow/internal/api"
-	"goflow/internal/application"
 	"goflow/internal/cli"
-	"goflow/internal/crypto"
-	"goflow/internal/engine"
-	"goflow/internal/nodes"
-	"goflow/internal/storage"
-
-	"github.com/robfig/cron/v3"
+	"goflow/internal/serverapp"
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] != "serve" {
-		os.Exit(cli.Run(os.Args[1:], os.Stdout, os.Stderr))
-	}
-	if len(os.Args) > 1 && os.Args[1] == "serve" {
-		os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
+	os.Exit(run(os.Args, os.Stdout, os.Stderr))
+}
+
+func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 1 && args[1] != "serve" {
+		return cli.Run(args[1:], stdout, stderr)
 	}
 
 	log.Println("==================================================")
 	log.Println("[INFO] Starting Goflow Workflow Automation Engine...")
 	log.Println("==================================================")
 
-	cfg := config.LoadConfig()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	if cfg.IsPublicBind() && cfg.APIKey == "" {
-		log.Fatalf("[ERROR] Refusing to bind %s:%s without GOFLOW_API_KEY. Set GOFLOW_API_KEY or bind to 127.0.0.1.", cfg.Host, cfg.Port)
-	}
-
-	// 1. Initialize Storage Layer & SQLite Connection Pool
-	db, err := storage.NewDB(cfg.DBPath)
-	if err != nil {
-		log.Fatalf("[ERROR] Failed to initialize SQLite database: %v", err)
-	}
-	defer db.Close()
-	log.Printf("[INFO] SQLite initialized at %s (WAL mode enabled)", cfg.DBPath)
-
-	// 2. Initialize Crypto Manager for Credentials Encryption
-	cm := crypto.NewCryptoManager(cfg.MasterKey)
-	credStore := storage.NewCredentialStore(db, cm)
-	wfStore := storage.NewWorkflowStore(db)
-	execStore := storage.NewExecutionStore(db)
-	tokenStore := storage.NewAccessTokenStore(db)
-	auditStore := storage.NewAuditStore(db)
-	if interrupted, err := execStore.MarkRunningInterrupted(); err != nil {
-		log.Printf("[WARN] Failed to mark interrupted executions: %v", err)
-	} else if interrupted > 0 {
-		log.Printf("[INFO] Marked %d previously running executions as INTERRUPTED", interrupted)
-	}
-	if deleted, err := execStore.Cleanup(cfg.ExecutionRetentionDays, cfg.MaxExecutionsPerWorkflow); err != nil {
-		log.Printf("[WARN] Initial execution cleanup failed: %v", err)
-	} else if deleted > 0 {
-		log.Printf("[INFO] Cleaned up %d old execution records", deleted)
-	}
-
-	// 3. Initialize Plugin Registry and Register All Built-in Node Executors
-	registry := nodes.NewBuiltinRegistry()
-	log.Printf("[INFO] Plugin Registry initialized with %d built-in nodes", len(registry.ListDefinitions()))
-
-	// 4. Initialize EventBus and DAG Execution Engine
-	eventBus := engine.NewEventBus()
-	eng := engine.NewEngine(registry, execStore, credStore, eventBus, wfStore, cfg.MaxConcurrentExecutions, cfg.MaxParallelNodesPerRun)
-	triggerService := application.NewTriggerService(wfStore, eng)
-
-	// 5. Initialize Cron Scheduler for Timed Triggers
-	cScheduler := cron.New()
-	cScheduler.Start()
-	defer cScheduler.Stop()
-
-	// Track scheduled workflows and their entries
-	type cronJob struct {
-		entryID  cron.EntryID
-		cronExpr string
-	}
-	scheduledJobs := make(map[string]cronJob)
-
-	// Context for graceful shutdown of background goroutines
-	cronCtx, cronCancel := context.WithCancel(context.Background())
-	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
-
-	go func() {
-		ticker := time.NewTicker(6 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-cleanupCtx.Done():
-				log.Println("[Cleanup] Execution cleanup goroutine stopped gracefully")
-				return
-			case <-ticker.C:
-				deleted, err := execStore.Cleanup(cfg.ExecutionRetentionDays, cfg.MaxExecutionsPerWorkflow)
-				if err != nil {
-					log.Printf("[Cleanup] Failed to clean execution records: %v", err)
-				} else if deleted > 0 {
-					log.Printf("[Cleanup] Removed %d old execution records", deleted)
-				}
-			}
-		}
-	}()
-
-	// Background task to scan active workflows and register cron schedules
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-
-		// Run immediately on startup, then on every tick
-		scan := func() {
-			wfs, err := wfStore.ListAll()
-			if err != nil {
-				return
-			}
-
-			activeCronWfs := make(map[string]string) // workflowID -> cronExpr
-
-			for _, wf := range wfs {
-				if !wf.IsActive {
-					continue
-				}
-
-				var nodeList []nodes.Node
-				if err := json.Unmarshal([]byte(wf.NodesJSON), &nodeList); err != nil {
-					continue
-				}
-
-				// Find if this workflow has a Cron Trigger node
-				for _, node := range nodeList {
-					if node.Type == nodes.TypeCronTrigger {
-						if cronExpr, ok := node.Params["cron_expression"].(string); ok && cronExpr != "" {
-							activeCronWfs[wf.ID] = cronExpr
-							break
-						}
-					}
-				}
-			}
-
-			// 1. Remove jobs that are no longer active, or have a different cron expression
-			for wfID, job := range scheduledJobs {
-				currentCronExpr, active := activeCronWfs[wfID]
-				if !active || currentCronExpr != job.cronExpr {
-					cScheduler.Remove(job.entryID)
-					delete(scheduledJobs, wfID)
-					log.Printf("[Cron] Removed scheduler for workflow %s", wfID)
-				}
-			}
-
-			// 2. Add or update active cron workflows
-			for wfID, cronExpr := range activeCronWfs {
-				if _, scheduled := scheduledJobs[wfID]; !scheduled {
-					wfIDCopy := wfID
-					cronExprCopy := cronExpr
-					entryID, err := cScheduler.AddFunc(cronExprCopy, func() {
-						log.Printf("[Cron] Triggering workflow %s...", wfIDCopy)
-						latestWf, err := wfStore.GetByID(wfIDCopy)
-						if err != nil {
-							log.Printf("[Cron] Error fetching latest workflow %s: %v", wfIDCopy, err)
-							return
-						}
-						if !latestWf.IsActive {
-							log.Printf("[Cron] Workflow %s is no longer active, skipping execution", wfIDCopy)
-							return
-						}
-						payload := map[string]interface{}{
-							"triggered_at": time.Now().Format(time.RFC3339),
-							"schedule":     cronExprCopy,
-						}
-						_, err = triggerService.Trigger(context.Background(), application.TriggerRequest{
-							WorkflowID: latestWf.ID,
-							Input:      payload,
-							Mode:       application.ModeSync,
-							Source:     application.SourceCron,
-							Principal:  "cron",
-						})
-						if err != nil {
-							log.Printf("[Cron] Error executing workflow %s: %v", wfIDCopy, err)
-						}
-					})
-					if err == nil {
-						scheduledJobs[wfID] = cronJob{
-							entryID:  entryID,
-							cronExpr: cronExpr,
-						}
-						log.Printf("[Cron] Scheduled workflow %s with pattern %s", wfID, cronExpr)
-					} else {
-						log.Printf("[Cron] Failed to schedule workflow %s with pattern %s: %v", wfID, cronExpr, err)
-					}
-				}
-			}
-		}
-
-		// Initial scan on startup
-		scan()
-
-		for {
-			select {
-			case <-cronCtx.Done():
-				log.Println("[Cron] Scanner goroutine stopped gracefully")
-				return
-			case <-ticker.C:
-				scan()
-			}
-		}
-	}()
-
-	// 6. Initialize REST API Router & Serve Static Embedded Web UI
-	uiFS := getEmbeddedUI()
-	router := api.NewRouter(
-		wfStore,
-		execStore,
-		credStore,
-		tokenStore,
-		auditStore,
-		registry,
-		eng,
-		eventBus,
-		uiFS,
-		cfg.APIKey,
-		cfg.WebhookRateLimitPerMinute,
-		mcpBaseURL(cfg),
-		cfg.MCPAllowedOrigins,
-		cfg.MCPMaxInflightPerClient,
-		cfg.MCPRateLimitPerMinute,
-	)
-
-	server := &http.Server{
-		Addr:         fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
-		Handler:      router,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 180 * time.Second,
-	}
-
-	// 7. Graceful Shutdown Handler
-	go func() {
-		log.Printf("[INFO] Goflow Web Server running on http://%s:%s", cfg.Host, cfg.Port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("[ERROR] Server error: %v", err)
-		}
-	}()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
-	log.Println("[INFO] Shutting down Goflow gracefully...")
-
-	// Cancel background goroutines first
-	cronCancel()
-	cleanupCancel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("[WARN] Server forced shutdown: %v", err)
+	if err := serverapp.Run(ctx, serverapp.Options{
+		Config: config.LoadConfig(),
+		UIFS:   getEmbeddedUI(),
+		Logger: log.Default(),
+	}); err != nil {
+		fmt.Fprintf(stderr, "[ERROR] %v\n", err)
+		return 1
 	}
 	log.Println("[INFO] Goflow stopped successfully.")
-}
-
-func mcpBaseURL(cfg *config.Config) string {
-	if cfg.MCPBaseURL != "" {
-		return cfg.MCPBaseURL
-	}
-	host := cfg.Host
-	if host == "" || host == "0.0.0.0" || host == "::" || host == "*" {
-		host = "127.0.0.1"
-	}
-	return fmt.Sprintf("http://%s:%s", host, cfg.Port)
+	return 0
 }
