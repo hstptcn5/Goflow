@@ -345,7 +345,7 @@ Commit SHA:
 - `d573aa0` (`feat: add appliance setup readiness api`).
 - `dde44b7` (`feat: add appliance setup state machine`).
 - `84c1e42` (`feat: add appliance credential test endpoints`).
-- Pending workflow runtime endpoints commit.
+- `44428a4` (`feat: add appliance workflow runtime endpoints`).
 
 Remaining work:
 
