@@ -399,7 +399,7 @@ Security considerations:
 
 Commit SHA:
 
-- Pending appliance UI commit.
+- `3c0625f` (`feat: add appliance setup dashboard UI`).
 
 ## Checkpoint F - Pack Author Toolkit
 
