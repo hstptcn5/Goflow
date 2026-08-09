@@ -12,6 +12,7 @@ const dataDir = join(tempDir, 'data');
 const artifactDir = join(tempDir, 'artifacts');
 const packDir = join(root, 'examples', 'packs', 'dailyops-rest-telegram');
 const uiDir = join(uiRoot, 'dist');
+const configuredHarnessBinary = process.env.GOFLOW_DAILYOPS_HARNESS_BINARY;
 const playwrightBin = process.platform === 'win32'
   ? join(uiRoot, 'node_modules', '.bin', 'playwright.cmd')
   : join(uiRoot, 'node_modules', '.bin', 'playwright');
@@ -148,15 +149,16 @@ function listen(server) {
 }
 
 async function startHarness() {
-  const child = spawn('go', [
-    'run',
-    './internal/testharness/dailyopsappliance',
+  const harnessArgs = [
     '--pack-dir', packDir,
     '--data-dir', dataDir,
     '--ui-dir', uiDir,
     '--telegram-base-url', telegramBaseURL,
     '--port', '0',
-  ], {
+  ];
+  const child = spawn(configuredHarnessBinary || 'go', configuredHarnessBinary
+    ? harnessArgs
+    : ['run', './internal/testharness/dailyopsappliance', ...harnessArgs], {
     cwd: root,
     env: {
       ...process.env,
