@@ -1,0 +1,47 @@
+{
+  "name": "DailyOps REST to Telegram",
+  "description": "Fetch a normalized DailyOps JSON payload, build a concise report, and send it once through Telegram.",
+  "is_active": false,
+  "nodes": [
+    {
+      "id": "fetch_sales",
+      "type": "httpRequest",
+      "name": "Fetch normalized DailyOps JSON",
+      "params": {
+        "method": "GET",
+        "url": "https://example.test/dailyops.json",
+        "headers": "{}"
+      }
+    },
+    {
+      "id": "build_report",
+      "type": "jsonTransform",
+      "name": "Build report",
+      "params": {
+        "json_template": "{\"title\":\"DailyOps Daily Report\",\"message\":\"<b>DailyOps Daily Report</b>\\nDate: {{fetch_sales.data.report_date}} ({{fetch_sales.data.timezone}})\\nRevenue: {{fetch_sales.data.revenue}}\\nOrders: {{fetch_sales.data.order_count}}\\nCancelled/refunded: {{fetch_sales.data.cancelled_refunded_count}}\\nLow stock: {{fetch_sales.data.low_stock_summary}}\\nComparison: {{fetch_sales.data.comparison_summary}}\"}"
+      }
+    },
+    {
+      "id": "send_report",
+      "type": "telegramBot",
+      "name": "Send Telegram report",
+      "params": {
+        "credential_id": "",
+        "chat_id": "@dailyops_demo",
+        "message": "{{build_report.transformed.message}}"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_fetch_to_report",
+      "source": "fetch_sales",
+      "target": "build_report"
+    },
+    {
+      "id": "edge_report_to_send",
+      "source": "build_report",
+      "target": "send_report"
+    }
+  ]
+}

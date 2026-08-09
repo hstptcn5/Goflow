@@ -447,13 +447,50 @@ Commit SHA:
 
 ## Checkpoint G - DailyOps Reference Pack
 
-Status: NOT_STARTED
+Status: COMPLETED
 
-Planned scope:
+Implemented scope:
 
 - Experimental `official.dailyops-rest-telegram` reference pack.
 - Mock sales source and mock Telegram tests.
 - Deterministic build and extracted verification.
+- Normalized vendor-neutral DailyOps source contract and pilot checklist.
+
+Files changed:
+
+- `examples/packs/dailyops-rest-telegram/pack.json`
+- `examples/packs/dailyops-rest-telegram/workflows/main.json`
+- `examples/packs/dailyops-rest-telegram/README.md`
+- `internal/nodes/http_request.go`
+- `internal/nodes/telegram_bot.go`
+- `internal/pack/dailyops_reference_test.go`
+- `docs/ECOSYSTEM_ALPHA_PROGRESS.md`
+
+Tests run and result:
+
+- `go run . pack validate examples/packs/dailyops-rest-telegram`: PASS.
+- `go run . pack test examples/packs/dailyops-rest-telegram --output json`: PASS.
+- `go test ./internal/pack ./internal/nodes ./internal/cli`: PASS.
+- `go test ./...`: PASS.
+- `go vet ./...`: PASS.
+- `go build ./...`: PASS.
+- `govulncheck ./...`: PASS, 0 reachable vulnerabilities.
+- `wsl.exe sh -lc 'cd /mnt/d/build2026/Goflow && export PATH="$HOME/.cache/codex-go/go/bin:$PATH" && go test -race ./...'`: PASS.
+- `cd ui && npm run test`: PASS.
+- `cd ui && npm run build`: PASS.
+- `cd ui && npm run test:e2e`: PASS, 26 Playwright tests.
+- `cd ui && npm run test:e2e:runner`: PASS.
+
+Security considerations:
+
+- The reference pack workflow contains no bot token, authorization header, credential value, database path, or key path.
+- Telegram delivery uses an encrypted `TELEGRAM_BOT` credential slot bound as a credential ID.
+- Automated tests use local `httptest` services and fake credential material, never real Telegram credentials.
+- Deterministic bundle tests assert generated archives exclude runtime state files and seeded test credential material.
+
+Commit SHA:
+
+- Pending DailyOps reference pack commit.
 
 ## Checkpoint H - Development Artifact Pipeline
 

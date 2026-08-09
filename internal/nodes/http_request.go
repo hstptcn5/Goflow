@@ -32,6 +32,13 @@ func NewHTTPRequestExecutor() *HTTPRequestExecutor {
 	}
 }
 
+func NewHTTPRequestExecutorWithClient(client *http.Client) *HTTPRequestExecutor {
+	if client == nil {
+		return NewHTTPRequestExecutor()
+	}
+	return &HTTPRequestExecutor{client: client}
+}
+
 func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
 	urlStr, _ := node.Params["url"].(string)
 	method, _ := node.Params["method"].(string)

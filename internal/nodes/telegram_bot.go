@@ -26,6 +26,16 @@ func NewTelegramBotExecutor() *TelegramBotExecutor {
 	}
 }
 
+func NewTelegramBotExecutorWithClient(client *http.Client, baseURL string) *TelegramBotExecutor {
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
+	if strings.TrimSpace(baseURL) == "" {
+		baseURL = "https://api.telegram.org"
+	}
+	return &TelegramBotExecutor{client: client, baseURL: baseURL}
+}
+
 func (e *TelegramBotExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
 	botToken, _ := node.Params["bot_token"].(string)
 	chatID, _ := node.Params["chat_id"].(string)
