@@ -661,6 +661,117 @@ func TestLoadRejectsInvalidBindings(t *testing.T) {
 	}
 }
 
+func TestLoadAllowsOneSourceToFanOutToDistinctTargets(t *testing.T) {
+	dir := writeValidPack(t, func(m *Manifest) {
+		m.ConfigSchema = []ConfigField{{Key: "report_title", Label: "Report title", Type: "string", Required: true}}
+		m.Bindings = []Binding{
+			{Source: "config.report_title", Target: BindingTarget{NodeID: "fetch", Param: "headers"}},
+			{Source: "config.report_title", Target: BindingTarget{NodeID: "telegram", Param: "message"}},
+		}
+	})
+	writeFile(t, filepath.Join(dir, DefaultWorkflowPath), setupWorkflowJSON())
+	if _, err := Load(dir); err != nil {
+		t.Fatalf("expected one source to fan out to distinct targets, got %v", err)
+	}
+}
+
+func TestLoadRejectsTwoSourcesBoundToSameTarget(t *testing.T) {
+	dir := writeValidPack(t, func(m *Manifest) {
+		m.ConfigSchema = []ConfigField{
+			{Key: "primary_url", Label: "Primary URL", Type: "url", Required: true, Default: "https://example.test/primary"},
+			{Key: "backup_url", Label: "Backup URL", Type: "url", Required: true, Default: "https://example.test/backup"},
+		}
+		m.Bindings = []Binding{
+			{Source: "config.primary_url", Target: BindingTarget{NodeID: "fetch", Param: "url"}},
+			{Source: "config.backup_url", Target: BindingTarget{NodeID: "fetch", Param: "url"}},
+		}
+	})
+	writeFile(t, filepath.Join(dir, DefaultWorkflowPath), setupWorkflowJSON())
+	assertLoadError(t, dir, "duplicates target")
+}
+
+func TestLoadCredentialRequirementTestKindCompatibility(t *testing.T) {
+	tests := []struct {
+		name           string
+		credentialType string
+		testKind       string
+		wantErr        string
+	}{
+		{name: "empty test kind allowed", credentialType: "SSH_KEY", testKind: ""},
+		{name: "telegram bot get me", credentialType: "TELEGRAM_BOT", testKind: "telegram_get_me"},
+		{name: "api key http head", credentialType: "API_KEY", testKind: "http_head"},
+		{name: "bearer http head", credentialType: "BEARER_TOKEN", testKind: "http_head"},
+		{name: "basic http head", credentialType: "BASIC_AUTH", testKind: "http_head"},
+		{name: "smtp noop", credentialType: "SMTP_ACCOUNT", testKind: "smtp_noop"},
+		{name: "database ping", credentialType: "DATABASE_URL", testKind: "database_ping"},
+		{name: "ssh cannot telegram", credentialType: "SSH_KEY", testKind: "telegram_get_me", wantErr: "not compatible"},
+		{name: "telegram cannot smtp", credentialType: "TELEGRAM_BOT", testKind: "smtp_noop", wantErr: "not compatible"},
+		{name: "openai cannot http head", credentialType: "OPENAI_API_KEY", testKind: "http_head", wantErr: "not compatible"},
+		{name: "unknown test still closed", credentialType: "TELEGRAM_BOT", testKind: "telegram_send", wantErr: "allowlisted"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeValidPack(t, func(m *Manifest) {
+				m.CredentialRequirements = []CredentialRequirement{{
+					Key:         "slot",
+					Label:       "Slot",
+					Type:        tt.credentialType,
+					TestKind:    tt.testKind,
+					DisplayOnly: true,
+				}}
+			})
+			_, err := Load(dir)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected compatible credential test, got %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected %q error, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestLoadURLConfigDefaultPolicy(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   interface{}
+		wantErr string
+	}{
+		{name: "nil default allowed", value: nil},
+		{name: "https absolute", value: "https://example.test/report"},
+		{name: "http absolute", value: "http://127.0.0.1:18080/report"},
+		{name: "relative rejected", value: "/report", wantErr: "absolute http or https URL"},
+		{name: "missing host rejected", value: "https:///report", wantErr: "absolute http or https URL"},
+		{name: "unsupported scheme rejected", value: "file:///tmp/report.json", wantErr: "absolute http or https URL"},
+		{name: "malformed rejected", value: "http://[::1", wantErr: "absolute http or https URL"},
+		{name: "wrong JSON type rejected", value: true, wantErr: "must be a string"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeValidPack(t, func(m *Manifest) {
+				field := ConfigField{Key: "source_url", Label: "Source URL", Type: "url", Required: true, DisplayOnly: true}
+				if tt.value != nil {
+					field.Default = tt.value
+				}
+				m.ConfigSchema = []ConfigField{field}
+			})
+			_, err := Load(dir)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected URL default to be accepted, got %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected %q error, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestLoadAllowsRequiredSetupDisplayOnly(t *testing.T) {
 	dir := writeValidPack(t, func(m *Manifest) {
 		m.ConfigSchema = []ConfigField{{Key: "store_name", Label: "Store name", Type: "string", Required: true, DisplayOnly: true}}

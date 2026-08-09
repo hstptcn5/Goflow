@@ -119,6 +119,23 @@ Allowed connection test kinds are currently:
 
 No arbitrary test URL, command, script, plugin, or secret value is allowed in manifest setup metadata.
 
+The compatibility allowlist is closed:
+
+| Credential type | Allowed test kinds |
+| :--- | :--- |
+| `TELEGRAM_BOT` | `telegram_get_me` |
+| `API_KEY` | `http_head` |
+| `BEARER_TOKEN` | `http_head` |
+| `BASIC_AUTH` | `http_head` |
+| `SMTP_ACCOUNT` | `smtp_noop` |
+| `DATABASE_URL` | `database_ping` |
+| `OPENAI_API_KEY` | none yet |
+| `DEEPSEEK_API_KEY` | none yet |
+| `GOOGLE_SERVICE_ACCOUNT` | none yet |
+| `SSH_KEY` | none yet |
+
+An empty `test_kind` is always allowed. Impossible combinations, such as `SSH_KEY` with `telegram_get_me`, are rejected.
+
 Legacy `required_credentials` remains valid. When `credential_requirements` is present, appliance setup should use the structured requirements. When it is absent, legacy entries are treated as simple logical credential requirements for display and backwards compatibility.
 
 ### bindings
@@ -144,6 +161,8 @@ Rules:
 - Credential sources may bind only to parameters of type `credential`.
 - Config sources may not bind to credential or secret-like parameters.
 - Duplicate source/target pairs are rejected.
+- A target parameter may be bound at most once. A second binding to the same `node_id` plus `param` is rejected even when the sources differ.
+- One source may fan out to multiple distinct targets.
 - Required setup items must be bound or explicitly marked `display_only: true`.
 - Bindings are applied only to a runtime copy of the managed workflow. Source packs and extracted bundles remain immutable.
 
@@ -163,6 +182,10 @@ Named limits:
 - Total serialized setup metadata: 64 KiB.
 
 Validation errors identify the field and logical item involved without echoing possible secret values.
+
+### URL Defaults
+
+For `config_schema` fields with `type: "url"`, a non-null `default` must be an absolute URL with a host. Only `http` and `https` are accepted in Pack Format v1 setup metadata. Relative URLs, malformed URLs, and local file or custom schemes are rejected.
 
 ### Pack-Only Workflow Secret Scan
 

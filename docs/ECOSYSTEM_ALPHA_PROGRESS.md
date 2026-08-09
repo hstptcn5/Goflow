@@ -42,6 +42,11 @@ Baseline verification before alpha branch:
 - `cd ui && npm run test`: PASS, 10 files and 48 tests.
 - `cd ui && npm run build`: PASS.
 
+Final-alpha dependency gate:
+
+- Existing frontend npm audit findings from `npm ci`: 1 moderate and 1 high vulnerability.
+- Before final acceptance, this must be resolved by a compatible upgrade, removed by dependency changes, or documented with verified non-reachability and accepted residual risk.
+
 Alpha branch:
 
 - Created branch: `feature/goflow-ecosystem-alpha`.
@@ -148,6 +153,57 @@ Remaining work:
 
 - Push Checkpoint B.
 - Wait for CI on PR #3.
+
+Blockers:
+
+- None.
+
+## Checkpoint B.1 - Pack Setup Correctness Hardening
+
+Status: IN_PROGRESS
+
+Starting commit: `a13d36bfbdd5881f77d0665bf2052342eba83d5f`
+
+Architectural decision:
+
+- Keep binding fan-out from one source to multiple distinct targets.
+- Reject any second binding to the same `node_id.param` target, regardless of source.
+- Keep connection tests as a closed compatibility matrix between credential type and test kind.
+- Restrict URL setup defaults to absolute `http` and `https` URLs because those are the only safe schemes required for current Goflow pack setup.
+
+Files changed:
+
+- `internal/pack/pack.go`
+- `internal/pack/pack_test.go`
+- `docs/PACKS.md`
+- `docs/ECOSYSTEM_ALPHA_PROGRESS.md`
+
+Tests run and result:
+
+- `go test ./internal/pack`: PASS.
+- `go test ./...`: PASS.
+- `go vet ./...`: PASS.
+- `go build ./...`: PASS.
+- `govulncheck ./...`: first run invalid because it overlapped with `npm ci` mutating `ui/node_modules`; rerun after install completed: PASS, 0 reachable vulnerabilities.
+- `wsl.exe sh -lc 'cd /mnt/d/build2026/Goflow && export PATH="$HOME/.cache/codex-go/go/bin:$PATH" && go test -race ./...'`: PASS.
+- `cd ui && npm ci`: PASS install, with existing audit report of 1 moderate and 1 high vulnerability.
+- `cd ui && npm run test`: PASS, 10 files and 48 tests.
+- `cd ui && npm run build`: PASS.
+
+Security considerations:
+
+- Prevents ambiguous parameter ownership in setup bindings.
+- Prevents impossible or misleading credential test declarations.
+- Prevents file/custom-scheme URL defaults from being introduced through pack metadata.
+
+Commit SHA:
+
+- Pending until this checkpoint is committed.
+
+Remaining work:
+
+- Run full local gates.
+- Commit, push, update PR #3, and wait for CI.
 
 Blockers:
 

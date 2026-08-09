@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -332,6 +333,7 @@ func validateSetupMetadata(manifest Manifest, nodesJSON string) error {
 	}
 	boundSources := map[string]bool{}
 	bindingKeys := map[string]bool{}
+	targetKeys := map[string]bool{}
 	for i, binding := range manifest.Bindings {
 		sourceKind, sourceKey, err := parseBindingSource(binding.Source)
 		if err != nil {
@@ -362,6 +364,11 @@ func validateSetupMetadata(manifest Manifest, nodesJSON string) error {
 			return fmt.Errorf("manifest: bindings[%d] duplicates binding %q", i, pair)
 		}
 		bindingKeys[pair] = true
+		targetKey := binding.Target.NodeID + "." + binding.Target.Param
+		if targetKeys[targetKey] {
+			return fmt.Errorf("manifest: bindings[%d] duplicates target %q", i, targetKey)
+		}
+		targetKeys[targetKey] = true
 		boundSources[binding.Source] = true
 	}
 	for _, field := range configKeys {
@@ -452,6 +459,9 @@ func validateCredentialRequirement(index int, req CredentialRequirement) error {
 	if req.TestKind != "" && !isKnownConnectionTest(req.TestKind) {
 		return fmt.Errorf("%s.test_kind must be allowlisted", prefix)
 	}
+	if req.TestKind != "" && !credentialTestCompatible(req.Type, req.TestKind) {
+		return fmt.Errorf("%s.test_kind %q is not compatible with credential type %q", prefix, req.TestKind, req.Type)
+	}
 	return nil
 }
 
@@ -522,6 +532,11 @@ func validateConfigDefault(field ConfigField, label string) error {
 		if len(value) > MaxSetupScalarStringLength {
 			return fmt.Errorf("%s exceeds %d character limit", label, MaxSetupScalarStringLength)
 		}
+		if field.Type == "url" {
+			if err := validateSafeDefaultURL(value); err != nil {
+				return fmt.Errorf("%s must be an absolute http or https URL: %w", label, err)
+			}
+		}
 	case "integer":
 		value, ok := field.Default.(float64)
 		if !ok || !isWholeNumber(value) {
@@ -589,6 +604,39 @@ func isKnownConnectionTest(value string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func credentialTestCompatible(credentialType, testKind string) bool {
+	switch testKind {
+	case "":
+		return true
+	case "telegram_get_me":
+		return credentialType == "TELEGRAM_BOT"
+	case "http_head":
+		return credentialType == "API_KEY" || credentialType == "BEARER_TOKEN" || credentialType == "BASIC_AUTH"
+	case "smtp_noop":
+		return credentialType == "SMTP_ACCOUNT"
+	case "database_ping":
+		return credentialType == "DATABASE_URL"
+	default:
+		return false
+	}
+}
+
+func validateSafeDefaultURL(value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return err
+	}
+	if !parsed.IsAbs() || parsed.Host == "" {
+		return fmt.Errorf("URL must include scheme and host")
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return nil
+	default:
+		return fmt.Errorf("unsupported scheme %q", parsed.Scheme)
 	}
 }
 
