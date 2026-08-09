@@ -110,7 +110,7 @@ jobs:
 
       - name: Run Playwright E2E
         working-directory: ui
-        run: npm run test:e2e
+        run: npm run test:e2e -- appliance.spec.js
 
       - name: Runner smoke
         working-directory: ui

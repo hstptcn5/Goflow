@@ -523,6 +523,7 @@ Tests run and result:
 - `cd ui && npm run test`: PASS, 11 files and 51 tests.
 - `cd ui && npm run build`: PASS.
 - `cd ui && npm run test:e2e`: PASS, 26 Playwright tests.
+- `cd ui && npm run test:e2e -- appliance.spec.js`: PASS, 2 Playwright appliance tests used by PR CI.
 - `cd ui && npm run test:e2e:runner`: PASS.
 - Local WSL pack contract script matching CI intent: `pack validate`, `pack test --output json`, deterministic DailyOps build comparison, ZIP/extracted `pack verify`, forbidden runtime file scan, and canary/path scan: PASS.
 
