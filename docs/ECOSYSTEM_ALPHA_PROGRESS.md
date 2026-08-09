@@ -245,7 +245,7 @@ Security considerations:
 
 Commit SHA:
 
-- Pending.
+- `e6f8aae` (`feat: add pack config storage`).
 
 Remaining work:
 
