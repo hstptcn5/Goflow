@@ -414,7 +414,10 @@ func TestBuildDeterministicOutputAndPackInfoHasNoLocalState(t *testing.T) {
 		t.Fatalf("expected deterministic zip hash, got %s and %s", hashA, hashB)
 	}
 	raw := readZipEntry(t, a.ArchivePath, "PACK_INFO.json")
-	if strings.Contains(raw, filepath.VolumeName(dir)) || strings.Contains(raw, dir) || strings.Contains(raw, runtimePath) {
+	if volume := filepath.VolumeName(dir); volume != "" && strings.Contains(raw, volume) {
+		t.Fatalf("PACK_INFO contains local volume name: %s", raw)
+	}
+	if strings.Contains(raw, dir) || strings.Contains(raw, runtimePath) {
 		t.Fatalf("PACK_INFO contains local path: %s", raw)
 	}
 	if strings.Contains(raw, "20") && strings.Contains(raw, "T") {
