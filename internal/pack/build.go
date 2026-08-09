@@ -542,13 +542,11 @@ func VerifyExtractedBundle(root string) (*PackInfo, error) {
 	if strings.TrimSpace(info.PackID) == "" || strings.TrimSpace(info.PackVersion) == "" || strings.TrimSpace(info.EntryWorkflow) == "" {
 		return nil, fmt.Errorf("PACK_INFO is missing required pack metadata")
 	}
-	manifest, err := readManifest(filepath.Join(rootEval, "pack", "pack.json"))
+	loaded, err := Load(filepath.Join(rootEval, "pack"))
 	if err != nil {
 		return nil, err
 	}
-	if err := validateManifest(manifest); err != nil {
-		return nil, err
-	}
+	manifest := loaded.Manifest
 	if info.PackID != manifest.ID {
 		return nil, fmt.Errorf("PACK_INFO pack_id %q does not match pack.json id %q", info.PackID, manifest.ID)
 	}
@@ -603,6 +601,18 @@ func VerifyExtractedBundle(root string) (*PackInfo, error) {
 	}
 	if !seen[info.EntryWorkflow] {
 		return nil, fmt.Errorf("PACK_INFO inventory is missing entry workflow %q", info.EntryWorkflow)
+	}
+	for _, logical := range manifest.Plugins {
+		path := "pack/" + logical
+		if !seen[path] {
+			return nil, fmt.Errorf("PACK_INFO inventory is missing manifest plugin %q", path)
+		}
+	}
+	for _, logical := range manifest.Assets {
+		path := "pack/" + logical
+		if !seen[path] {
+			return nil, fmt.Errorf("PACK_INFO inventory is missing manifest asset %q", path)
+		}
 	}
 	if err := validateInventorySizes(info.Files, limits, info.EntryWorkflow); err != nil {
 		return nil, err

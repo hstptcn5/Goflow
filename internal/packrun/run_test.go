@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,13 +118,13 @@ func TestReuseExistingInstanceRetriesUntilStateAppears(t *testing.T) {
 	err := reuseExistingInstance(context.Background(), Options{
 		Stdout: &stdout,
 		NoOpen: true,
-	}, "data-dir", testRetryOptions(t, func(string) (RunState, error) {
+	}, "data-dir", "example.pack", testRetryOptions(t, func(string) (RunState, error) {
 		attempts++
 		if attempts < 3 {
 			return RunState{}, os.ErrNotExist
 		}
-		return RunState{URL: "http://127.0.0.1:1234/workflows"}, nil
-	}, func(string) error { return nil }))
+		return RunState{PackID: "example.pack", URL: "http://127.0.0.1:1234/workflows"}, nil
+	}, func(context.Context, string) error { return nil }))
 	if err != nil {
 		t.Fatalf("reuseExistingInstance failed: %v", err)
 	}
@@ -133,13 +135,13 @@ func TestReuseExistingInstanceRetriesUntilStateAppears(t *testing.T) {
 
 func TestReuseExistingInstanceRetriesStaleStateUntilReplaced(t *testing.T) {
 	attempts := 0
-	err := reuseExistingInstance(context.Background(), Options{Stdout: ioDiscard(), NoOpen: true}, "data-dir", testRetryOptions(t, func(string) (RunState, error) {
+	err := reuseExistingInstance(context.Background(), Options{Stdout: ioDiscard(), NoOpen: true}, "data-dir", "example.pack", testRetryOptions(t, func(string) (RunState, error) {
 		attempts++
 		if attempts == 1 {
-			return RunState{URL: "http://127.0.0.1:1/workflows"}, nil
+			return RunState{PackID: "example.pack", URL: "http://127.0.0.1:1/workflows"}, nil
 		}
-		return RunState{URL: "http://127.0.0.1:1234/workflows"}, nil
-	}, func(rawURL string) error {
+		return RunState{PackID: "example.pack", URL: "http://127.0.0.1:1234/workflows"}, nil
+	}, func(_ context.Context, rawURL string) error {
 		if strings.Contains(rawURL, ":1/") {
 			return errors.New("connection refused")
 		}
@@ -155,9 +157,9 @@ func TestReuseExistingInstanceRetriesStaleStateUntilReplaced(t *testing.T) {
 
 func TestReuseExistingInstanceRetriesUntilHealthReady(t *testing.T) {
 	probes := 0
-	err := reuseExistingInstance(context.Background(), Options{Stdout: ioDiscard(), NoOpen: true}, "data-dir", testRetryOptions(t, func(string) (RunState, error) {
-		return RunState{URL: "http://127.0.0.1:1234/workflows"}, nil
-	}, func(string) error {
+	err := reuseExistingInstance(context.Background(), Options{Stdout: ioDiscard(), NoOpen: true}, "data-dir", "example.pack", testRetryOptions(t, func(string) (RunState, error) {
+		return RunState{PackID: "example.pack", URL: "http://127.0.0.1:1234/workflows"}, nil
+	}, func(context.Context, string) error {
 		probes++
 		if probes < 4 {
 			return errors.New("not ready")
@@ -173,18 +175,18 @@ func TestReuseExistingInstanceRetriesUntilHealthReady(t *testing.T) {
 }
 
 func TestReuseExistingInstanceTimeoutAndContextCancel(t *testing.T) {
-	err := reuseExistingInstance(context.Background(), Options{Stdout: ioDiscard(), NoOpen: true}, "data-dir", testRetryOptions(t, func(string) (RunState, error) {
+	err := reuseExistingInstance(context.Background(), Options{Stdout: ioDiscard(), NoOpen: true}, "data-dir", "example.pack", testRetryOptions(t, func(string) (RunState, error) {
 		return RunState{}, os.ErrNotExist
-	}, func(string) error { return nil }))
+	}, func(context.Context, string) error { return nil }))
 	if err == nil || !strings.Contains(err.Error(), "timed out") || !strings.Contains(err.Error(), "data-dir") || !strings.Contains(err.Error(), "run-state") {
 		t.Fatalf("expected actionable timeout, got %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err = reuseExistingInstance(ctx, Options{Stdout: ioDiscard(), NoOpen: true}, "data-dir", testRetryOptions(t, func(string) (RunState, error) {
+	err = reuseExistingInstance(ctx, Options{Stdout: ioDiscard(), NoOpen: true}, "data-dir", "example.pack", testRetryOptions(t, func(string) (RunState, error) {
 		return RunState{}, os.ErrNotExist
-	}, func(string) error { return nil }))
+	}, func(context.Context, string) error { return nil }))
 	if err == nil || !strings.Contains(err.Error(), "cancelled") {
 		t.Fatalf("expected cancellation error, got %v", err)
 	}
@@ -199,9 +201,9 @@ func TestReuseExistingInstanceOpenerAtMostOnceAndNoOpen(t *testing.T) {
 			return nil
 		},
 	}
-	err := reuseExistingInstance(context.Background(), opts, "data-dir", testRetryOptions(t, func(string) (RunState, error) {
-		return RunState{URL: "http://127.0.0.1:1234/workflows"}, nil
-	}, func(string) error { return nil }))
+	err := reuseExistingInstance(context.Background(), opts, "data-dir", "example.pack", testRetryOptions(t, func(string) (RunState, error) {
+		return RunState{PackID: "example.pack", URL: "http://127.0.0.1:1234/workflows"}, nil
+	}, func(context.Context, string) error { return nil }))
 	if err != nil {
 		t.Fatalf("reuseExistingInstance failed: %v", err)
 	}
@@ -209,9 +211,9 @@ func TestReuseExistingInstanceOpenerAtMostOnceAndNoOpen(t *testing.T) {
 		t.Fatalf("expected one opener call, got %d", calls)
 	}
 	opts.NoOpen = true
-	err = reuseExistingInstance(context.Background(), opts, "data-dir", testRetryOptions(t, func(string) (RunState, error) {
-		return RunState{URL: "http://127.0.0.1:1234/workflows"}, nil
-	}, func(string) error { return nil }))
+	err = reuseExistingInstance(context.Background(), opts, "data-dir", "example.pack", testRetryOptions(t, func(string) (RunState, error) {
+		return RunState{PackID: "example.pack", URL: "http://127.0.0.1:1234/workflows"}, nil
+	}, func(context.Context, string) error { return nil }))
 	if err != nil {
 		t.Fatalf("reuseExistingInstance no-open failed: %v", err)
 	}
@@ -220,14 +222,158 @@ func TestReuseExistingInstanceOpenerAtMostOnceAndNoOpen(t *testing.T) {
 	}
 }
 
-func testRetryOptions(t *testing.T, read func(string) (RunState, error), probe func(string) error) reuseRetryOptions {
+func TestReuseExistingInstanceRetriesMismatchedPackID(t *testing.T) {
+	attempts := 0
+	calls := 0
+	err := reuseExistingInstance(context.Background(), Options{
+		Stdout: ioDiscard(),
+		Opener: func(string) error {
+			calls++
+			return nil
+		},
+	}, "shared-data", "example.expected", testRetryOptions(t, func(string) (RunState, error) {
+		attempts++
+		if attempts == 1 {
+			return RunState{PackID: "example.other", URL: "http://127.0.0.1:1234/workflows"}, nil
+		}
+		return RunState{PackID: "example.expected", URL: "http://127.0.0.1:1234/workflows"}, nil
+	}, func(context.Context, string) error { return nil }))
+	if err != nil {
+		t.Fatalf("reuseExistingInstance failed: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected retry after mismatched pack id, got attempts=%d", attempts)
+	}
+	if calls != 1 {
+		t.Fatalf("expected opener once after correct pack id, got %d", calls)
+	}
+}
+
+func TestReuseExistingInstancePermanentMismatchedPackIDTimeout(t *testing.T) {
+	calls := 0
+	err := reuseExistingInstance(context.Background(), Options{
+		Stdout: ioDiscard(),
+		Opener: func(string) error {
+			calls++
+			return nil
+		},
+	}, "shared-data", "example.expected", testRetryOptions(t, func(string) (RunState, error) {
+		return RunState{PackID: "example.other", URL: "http://127.0.0.1:1234/workflows"}, nil
+	}, func(context.Context, string) error { return nil }))
+	if err == nil || !strings.Contains(err.Error(), "example.expected") || !strings.Contains(err.Error(), "example.other") {
+		t.Fatalf("expected pack-id timeout with expected/observed IDs, got %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("opener called for mismatched pack id: %d", calls)
+	}
+}
+
+func TestTwoDifferentPacksSharingCustomDataDirDoNotReuseEachOther(t *testing.T) {
+	err := reuseExistingInstance(context.Background(), Options{Stdout: ioDiscard(), NoOpen: true}, "shared-data", "example.pack-b", testRetryOptions(t, func(string) (RunState, error) {
+		return RunState{PackID: "example.pack-a", URL: "http://127.0.0.1:1234/workflows"}, nil
+	}, func(context.Context, string) error { return nil }))
+	if err == nil || !strings.Contains(err.Error(), "example.pack-b") || !strings.Contains(err.Error(), "example.pack-a") {
+		t.Fatalf("expected cross-pack reuse rejection, got %v", err)
+	}
+}
+
+func TestRemoveRunStateAfterPrimaryLock(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := writeRunState(dataDir, RunState{PackID: "old", URL: "http://127.0.0.1:1"}); err != nil {
+		t.Fatalf("write run-state: %v", err)
+	}
+	if err := removeRunState(dataDir); err != nil {
+		t.Fatalf("removeRunState failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "run-state.json")); !os.IsNotExist(err) {
+		t.Fatalf("run-state still exists or unexpected stat error: %v", err)
+	}
+}
+
+func TestPrimaryLaunchClearsStaleHealthyRunState(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := writeRunState(dataDir, RunState{PackID: "example.pack", URL: "http://127.0.0.1:1234/workflows"}); err != nil {
+		t.Fatalf("write stale run-state: %v", err)
+	}
+	if err := removeRunState(dataDir); err != nil {
+		t.Fatalf("removeRunState failed: %v", err)
+	}
+	probes := 0
+	err := reuseExistingInstance(context.Background(), Options{Stdout: ioDiscard(), NoOpen: true}, dataDir, "example.pack", testRetryOptions(t, readRunState, func(context.Context, string) error {
+		probes++
+		return nil
+	}))
+	if err == nil || !strings.Contains(err.Error(), "run-state") {
+		t.Fatalf("expected missing run-state after stale cleanup, got %v", err)
+	}
+	if probes != 0 {
+		t.Fatalf("stale healthy URL was probed after cleanup, probes=%d", probes)
+	}
+}
+
+func TestProbeHealthContextCancellationAndDelayedSuccess(t *testing.T) {
+	block := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-block:
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		}
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := probeHealth(ctx, server.URL+"/workflows"); err == nil {
+		t.Fatalf("expected cancelled probe error")
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	if err := probeHealth(ctx, server.URL+"/workflows"); err == nil {
+		t.Fatalf("expected deadline probe error")
+	}
+
+	close(block)
+	if err := probeHealth(context.Background(), server.URL+"/workflows"); err != nil {
+		t.Fatalf("expected delayed health success, got %v", err)
+	}
+}
+
+func TestReuseExistingInstanceDeadlineCancelsBlockedProbe(t *testing.T) {
+	err := reuseExistingInstance(context.Background(), Options{Stdout: ioDiscard(), NoOpen: true}, "data-dir", "example.pack", reuseRetryOptions{
+		Timeout: 10 * time.Millisecond,
+		Backoff: time.Millisecond,
+		ReadState: func(string) (RunState, error) {
+			return RunState{PackID: "example.pack", URL: "http://127.0.0.1:1234/workflows"}, nil
+		},
+		Probe: func(ctx context.Context, _ string) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+		After: func(context.Context, time.Duration) error {
+			return nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("expected deadline cancellation, got %v", err)
+	}
+}
+
+func testRetryOptions(t *testing.T, read func(string) (RunState, error), probe func(context.Context, string) error) reuseRetryOptions {
 	t.Helper()
+	now := time.Now()
 	return reuseRetryOptions{
 		Timeout:     time.Hour,
 		Backoff:     time.Millisecond,
 		MaxAttempts: 5,
 		ReadState:   read,
 		Probe:       probe,
+		Now: func() time.Time {
+			return now
+		},
 		After: func(context.Context, time.Duration) error {
 			return nil
 		},

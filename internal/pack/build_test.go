@@ -540,6 +540,79 @@ func TestVerifyExtractedBundleRejectsExtraSymlink(t *testing.T) {
 	}
 }
 
+func TestVerifyExtractedBundlePerformsFullPackValidation(t *testing.T) {
+	dir := writeBuildPack(t, func(m *Manifest) {
+		m.Plugins = []string{"plugins/tool.txt"}
+		m.Assets = []string{"assets/sample.txt"}
+	})
+	writeFile(t, filepath.Join(dir, "plugins", "tool.txt"), "plugin")
+	writeFile(t, filepath.Join(dir, "assets", "sample.txt"), "asset")
+	result := mustBuild(t, dir, writeRuntimeFixture(t, "runtime"), t.TempDir())
+	extractDir := t.TempDir()
+	extractZip(t, result.ArchivePath, extractDir)
+	if _, err := VerifyExtractedBundle(extractDir); err != nil {
+		t.Fatalf("valid extracted bundle failed: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		edit func(t *testing.T, extractDir string)
+		want string
+	}{
+		{
+			name: "missing manifest-listed asset",
+			edit: func(t *testing.T, extractDir string) {
+				if err := os.Remove(filepath.Join(extractDir, "pack", "assets", "sample.txt")); err != nil {
+					t.Fatalf("remove asset: %v", err)
+				}
+			},
+			want: "assets entry",
+		},
+		{
+			name: "missing manifest-listed plugin",
+			edit: func(t *testing.T, extractDir string) {
+				if err := os.Remove(filepath.Join(extractDir, "pack", "plugins", "tool.txt")); err != nil {
+					t.Fatalf("remove plugin: %v", err)
+				}
+			},
+			want: "plugins entry",
+		},
+		{
+			name: "invalid entry workflow json",
+			edit: func(t *testing.T, extractDir string) {
+				writeFile(t, filepath.Join(extractDir, "pack", "workflows", "main.json"), "{")
+				mutateExtractedPackInfoForPath(t, extractDir, "pack/workflows/main.json")
+			},
+			want: "workflow",
+		},
+		{
+			name: "manifest-listed asset omitted from inventory",
+			edit: func(t *testing.T, extractDir string) {
+				mutateExtractedPackInfo(t, extractDir, func(info *PackInfo) {
+					filtered := info.Files[:0]
+					for _, item := range info.Files {
+						if item.Path != "pack/assets/sample.txt" {
+							filtered = append(filtered, item)
+						}
+					}
+					info.Files = filtered
+				})
+			},
+			want: "manifest asset",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			extractDir := t.TempDir()
+			extractZip(t, result.ArchivePath, extractDir)
+			tt.edit(t, extractDir)
+			if _, err := VerifyExtractedBundle(extractDir); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
 func TestBoundedPackInfoRead(t *testing.T) {
 	dir := t.TempDir()
 	within := filepath.Join(dir, "within.json")
@@ -990,6 +1063,25 @@ func mutateExtractedPackInfo(t *testing.T, extractDir string, mutate func(*PackI
 	if err := os.WriteFile(path, append(next, '\n'), 0600); err != nil {
 		t.Fatalf("write PACK_INFO: %v", err)
 	}
+}
+
+func mutateExtractedPackInfoForPath(t *testing.T, extractDir, slashPath string) {
+	t.Helper()
+	absPath := filepath.Join(extractDir, filepath.FromSlash(slashPath))
+	sum := sha256.Sum256([]byte(mustReadFile(t, absPath)))
+	infoHash := hex.EncodeToString(sum[:])
+	stat, err := os.Stat(absPath)
+	if err != nil {
+		t.Fatalf("stat %s: %v", absPath, err)
+	}
+	mutateExtractedPackInfo(t, extractDir, func(info *PackInfo) {
+		for i := range info.Files {
+			if info.Files[i].Path == slashPath {
+				info.Files[i].SHA256 = infoHash
+				info.Files[i].Size = stat.Size()
+			}
+		}
+	})
 }
 
 func mutateExtractedManifest(t *testing.T, extractDir string, mutate func(*Manifest)) {

@@ -106,9 +106,12 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 	if !acquired {
-		return reuseExistingInstance(ctx, opts, dataDir, defaultReuseRetryOptions())
+		return reuseExistingInstance(ctx, opts, dataDir, loaded.Manifest.ID, defaultReuseRetryOptions())
 	}
 	defer lock.Release()
+	if err := removeRunState(dataDir); err != nil {
+		return err
+	}
 
 	prepared, err := prepare(ctx, loaded, dataDir)
 	if err != nil {
@@ -383,8 +386,9 @@ type reuseRetryOptions struct {
 	Backoff     time.Duration
 	MaxAttempts int
 	ReadState   func(string) (RunState, error)
-	Probe       func(string) error
+	Probe       func(context.Context, string) error
 	After       func(context.Context, time.Duration) error
+	Now         func() time.Time
 }
 
 func defaultReuseRetryOptions() reuseRetryOptions {
@@ -393,6 +397,7 @@ func defaultReuseRetryOptions() reuseRetryOptions {
 		Backoff:   100 * time.Millisecond,
 		ReadState: readRunState,
 		Probe:     probeHealth,
+		Now:       time.Now,
 		After: func(ctx context.Context, d time.Duration) error {
 			timer := time.NewTimer(d)
 			defer timer.Stop()
@@ -406,7 +411,7 @@ func defaultReuseRetryOptions() reuseRetryOptions {
 	}
 }
 
-func reuseExistingInstance(ctx context.Context, opts Options, dataDir string, retry reuseRetryOptions) error {
+func reuseExistingInstance(ctx context.Context, opts Options, dataDir, expectedPackID string, retry reuseRetryOptions) error {
 	if retry.Timeout <= 0 {
 		retry.Timeout = 4 * time.Second
 	}
@@ -419,24 +424,33 @@ func reuseExistingInstance(ctx context.Context, opts Options, dataDir string, re
 	if retry.Probe == nil {
 		retry.Probe = probeHealth
 	}
+	if retry.Now == nil {
+		retry.Now = time.Now
+	}
 	if retry.After == nil {
 		retry.After = defaultReuseRetryOptions().After
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	deadline := time.Now().Add(retry.Timeout)
+	retryCtx, cancel := context.WithTimeout(ctx, retry.Timeout)
+	defer cancel()
+	deadline := retry.Now().Add(retry.Timeout)
 	var lastErr error
+	var observedPackID string
 	for attempt := 1; ; attempt++ {
-		if err := ctx.Err(); err != nil {
+		if err := retryCtx.Err(); err != nil {
 			return fmt.Errorf("pack run: cancelled while waiting for existing instance in %s: %w", dataDir, err)
 		}
 		state, err := retry.ReadState(dataDir)
 		if err != nil {
 			lastErr = fmt.Errorf("read run-state: %w", err)
+		} else if state.PackID != expectedPackID {
+			observedPackID = state.PackID
+			lastErr = fmt.Errorf("run-state pack_id mismatch: expected %q observed %q", expectedPackID, state.PackID)
 		} else if !isLoopbackURL(state.URL) {
 			lastErr = fmt.Errorf("refusing non-loopback URL in run-state")
-		} else if err := retry.Probe(state.URL); err != nil {
+		} else if err := retry.Probe(retryCtx, state.URL); err != nil {
 			lastErr = fmt.Errorf("probe %s: %w", state.URL, err)
 		} else {
 			fmt.Fprintf(opts.Stdout, "Reusing running pack instance\nURL: %s\n", state.URL)
@@ -448,18 +462,25 @@ func reuseExistingInstance(ctx context.Context, opts Options, dataDir string, re
 			return nil
 		}
 		if retry.MaxAttempts > 0 && attempt >= retry.MaxAttempts {
-			return fmt.Errorf("pack run: timed out waiting for existing instance in %s: %v", dataDir, lastErr)
+			return reuseTimeoutError(dataDir, expectedPackID, observedPackID, lastErr)
 		}
-		if time.Now().Add(retry.Backoff).After(deadline) {
-			return fmt.Errorf("pack run: timed out waiting for existing instance in %s: %v", dataDir, lastErr)
+		if retry.Now().Add(retry.Backoff).After(deadline) {
+			return reuseTimeoutError(dataDir, expectedPackID, observedPackID, lastErr)
 		}
-		if err := retry.After(ctx, retry.Backoff); err != nil {
+		if err := retry.After(retryCtx, retry.Backoff); err != nil {
 			return fmt.Errorf("pack run: cancelled while waiting for existing instance in %s: %w", dataDir, err)
 		}
 	}
 }
 
-func probeHealth(rawURL string) error {
+func reuseTimeoutError(dataDir, expectedPackID, observedPackID string, lastErr error) error {
+	if observedPackID != "" {
+		return fmt.Errorf("pack run: timed out waiting for existing instance in %s for pack %q; last observed pack %q; last error: %v", dataDir, expectedPackID, observedPackID, lastErr)
+	}
+	return fmt.Errorf("pack run: timed out waiting for existing instance in %s for pack %q; last error: %v", dataDir, expectedPackID, lastErr)
+}
+
+func probeHealth(ctx context.Context, rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return err
@@ -467,14 +488,32 @@ func probeHealth(rawURL string) error {
 	healthURL := *parsed
 	healthURL.Path = "/healthz"
 	healthURL.RawQuery = ""
-	client := http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(healthURL.String())
+	probeCtx := ctx
+	if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > 2*time.Second {
+		var cancel context.CancelFunc
+		probeCtx, cancel = context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+	}
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, healthURL.String(), nil)
+	if err != nil {
+		return err
+	}
+	client := http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("healthz status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func removeRunState(dataDir string) error {
+	path := filepath.Join(dataDir, "run-state.json")
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("pack run: remove stale run-state: %w", err)
 	}
 	return nil
 }
