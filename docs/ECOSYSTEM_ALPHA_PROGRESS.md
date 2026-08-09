@@ -347,7 +347,7 @@ Commit SHA:
 - `dde44b7` (`feat: add appliance setup state machine`).
 - `84c1e42` (`feat: add appliance credential test endpoints`).
 - `44428a4` (`feat: add appliance workflow runtime endpoints`).
-- Pending checkpoint D recovery/guard coverage commit.
+- `801307f` (`test: harden appliance recovery coverage`).
 
 Remaining work:
 
