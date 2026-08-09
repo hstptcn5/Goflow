@@ -331,6 +331,7 @@ Security considerations:
 Commit SHA:
 
 - `e229fe5` (`feat: add appliance backend context`).
+- `d573aa0` (`feat: add appliance setup readiness api`).
 
 Remaining work:
 
