@@ -224,6 +224,8 @@ Architectural decision:
 - Retain safe stale fields on disk but keep them out of the applied runtime config map.
 - Reject unsafe stale fields that look like retained secret material.
 - Validate credential assignments through an injectable resolver before setup is considered ready.
+- Apply setup bindings to a cloned workflow by copying config values and credential IDs only.
+- Provide a pack-specific path-only resolver for `input.*`, `nodes.*`, and `pack.config.*` expressions.
 
 Files changed:
 
@@ -231,6 +233,10 @@ Files changed:
 - `internal/packsetup/config_test.go`
 - `internal/packsetup/credentials.go`
 - `internal/packsetup/credentials_test.go`
+- `internal/packsetup/bindings.go`
+- `internal/packsetup/bindings_test.go`
+- `internal/packsetup/resolve.go`
+- `internal/packsetup/resolve_test.go`
 - `docs/PACKS.md`
 - `docs/ECOSYSTEM_ALPHA_PROGRESS.md`
 
@@ -248,15 +254,18 @@ Security considerations:
 - Config writes are atomic and use `0600` mode where supported.
 - Credential-slot storage rejects pack ID mismatches, unsupported schema versions, oversized files, undeclared slots, missing required slots, missing credentials, wrong credential types, and unsafe stale slot metadata.
 - Credential-slot files store credential IDs and expected types only; decrypted values are never read or written by this package.
+- Binding application mutates only a cloned workflow value and writes credential IDs, never decrypted values.
+- The pack resolver has no credential, environment, filesystem, function, JavaScript, loop, reflection, or command access.
+- Missing expression errors name bounded expressions without echoing resolved data values.
 
 Commit SHA:
 
 - `e6f8aae` (`feat: add pack config storage`).
 - `ad46eb3` (`feat: add pack credential slot storage`).
+- Pending resolver and binding commit.
 
 Remaining work:
 
-- Safe path-only interpolation for input, node outputs, and pack config.
 - Harden HTTP Request and Telegram nodes for appliance use.
 - Integrate config storage with packrun/appliance backend in Checkpoint D.
 

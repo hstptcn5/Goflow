@@ -187,6 +187,18 @@ Validation errors identify the field and logical item involved without echoing p
 
 For `config_schema` fields with `type: "url"`, a non-null `default` must be an absolute URL with a host. Only `http` and `https` are accepted in Pack Format v1 setup metadata. Relative URLs, malformed URLs, and local file or custom schemes are rejected.
 
+### Runtime Resolution
+
+Pack setup bindings are applied to a cloned runtime workflow, never to the source pack, extracted bundle, or stored source workflow definition. Config bindings copy validated non-secret config values. Credential bindings copy credential IDs only; decrypted values remain in the encrypted credential store.
+
+Pack runtime parameter resolution uses a small path-only expression language:
+
+- `{{input.store_name}}`
+- `{{nodes.fetch.data.total}}`
+- `{{pack.config.report_title}}`
+
+The resolver reads only trigger input, prior node outputs, and non-secret pack config. It does not read credentials, environment variables, files, functions, JavaScript, templates with loops, reflection, or commands. A parameter that is exactly one expression preserves the resolved JSON type. Inline string interpolation converts non-string values with deterministic JSON formatting. Missing or unsupported paths fail with bounded errors that name the expression, not the resolved value.
+
 ### Pack-Only Workflow Secret Scan
 
 In pack context, workflow parameters known to carry secrets must not contain literal values. For example, a Telegram node may bind or select `credential_id`, but a pack workflow with a non-empty literal `bot_token` is rejected. This restriction applies to packs only and does not silently rewrite generic non-pack workflows.
