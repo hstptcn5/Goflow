@@ -356,13 +356,50 @@ Remaining work:
 
 ## Checkpoint E - Nontechnical Appliance UI
 
-Status: NOT_STARTED
+Status: COMPLETED
 
-Planned scope:
+Implemented scope:
 
-- Appliance first-run wizard.
-- Appliance dashboard.
-- Unit/component and Playwright coverage for setup, run, diagnostics, and generic isolation.
+- Appliance mode detection in `App.vue`: `/api/appliance/bootstrap` success renders appliance UI; 404 falls back to generic workspace unchanged.
+- First-run wizard for pack identity, unsigned integrity notice, non-secret config, credential create/replace, connection test, and setup completion.
+- Appliance dashboard for setup readiness, server/workflow state, run-now, latest execution, recent executions, diagnostics copy/download, reconfigure, stop instructions, and advanced workflow link.
+- Secrets are submitted through password inputs, cleared after successful credential creation, and not stored in localStorage/sessionStorage by the appliance API helper.
+- Unit and Playwright coverage for first-run setup, validation, credential test, secret disappearance, setup completion, run-now/latest execution, diagnostics redaction, and generic fallback.
+
+Files changed:
+
+- `ui/src/App.vue`
+- `ui/src/components/ApplianceApp.vue`
+- `ui/src/services/applianceApi.js`
+- `ui/src/assets/main.css`
+- `ui/tests/appliance-app.test.js`
+- `ui/tests/e2e/appliance.spec.js`
+- `ui/dist/index.html`
+- `ui/dist/assets/index-BMCJ1eG2.js`
+- `ui/dist/assets/index-gq8biJqE.css`
+
+Tests run and result:
+
+- `go test ./...`: PASS.
+- `go vet ./...`: PASS.
+- `go build ./...`: PASS.
+- `govulncheck ./...`: PASS, 0 reachable vulnerabilities.
+- `wsl.exe sh -lc 'cd /mnt/d/build2026/Goflow && export PATH="$HOME/.cache/codex-go/go/bin:$PATH" && go test -race ./...'`: PASS.
+- `cd ui && npm run test`: PASS.
+- `cd ui && npm run build`: PASS.
+- `cd ui && npm run test:e2e`: PASS, 26 Playwright tests.
+- `cd ui && npm run test:e2e:runner`: PASS.
+
+Security considerations:
+
+- Appliance UI does not use the generic API key prompt/localStorage path.
+- Credential values are sent only to the appliance credential create endpoint and cleared from reactive form state after success.
+- Diagnostics UI renders only the backend allowlisted diagnostics payload.
+- Generic serve still shows the existing workspace when appliance bootstrap returns 404.
+
+Commit SHA:
+
+- Pending appliance UI commit.
 
 ## Checkpoint F - Pack Author Toolkit
 
