@@ -599,13 +599,39 @@ Security considerations:
 Commit SHA:
 
 - `a00f6d7` (`docs: complete alpha security handoff`).
+- `c29ca53` (`fix: resolve frontend audit findings`).
 
 ## Final Acceptance Suite
 
-Status: NOT_STARTED
+Status: BLOCKED
 
-Required evidence:
+Evidence collected:
 
-- Backend, frontend, pack contracts, security, and user journey gates from `GOFLOW_ECOSYSTEM_MASTER_GOAL.md`.
-- Clean checkout evidence.
-- Draft PR or stacked draft PRs open, draft, unmerged, and green.
+- Clean LF checkout created at `D:\build2026\goflow-final-clean-lf-c29ca53` from `feature/goflow-ecosystem-alpha-security-docs`.
+- Clean checkout `git status --short --branch`: clean on `feature/goflow-ecosystem-alpha-security-docs...origin/feature/goflow-ecosystem-alpha-security-docs`.
+- Clean checkout `gofmt -l .`: PASS, no files listed.
+- Clean checkout `go test ./...`: PASS.
+- Clean checkout `go vet ./...`: PASS.
+- Clean checkout `go build ./...`: PASS.
+- Clean checkout `govulncheck ./...`: PASS, 0 reachable vulnerabilities.
+- Clean checkout `npm --prefix ui ci`: PASS, 0 vulnerabilities.
+- Clean checkout `npm --prefix ui audit --audit-level=moderate`: PASS, 0 vulnerabilities.
+- Clean checkout `npm --prefix ui run test`: PASS, 11 files and 51 tests.
+- Clean checkout `npm --prefix ui run build`: PASS.
+- Clean checkout `npm --prefix ui run test:e2e -- appliance.spec.js`: PASS, 2 Playwright appliance tests.
+- Clean checkout `npm --prefix ui run test:e2e:runner`: PASS.
+- Clean checkout WSL `go test -race ./...`: PASS.
+- Explicit pack contracts from clean checkout: hello-webhook validate/build/verify/run health PASS; new scaffold init/validate/inspect/test/build/verify/run health PASS; DailyOps validate/test/build twice/verify ZIP/verify extracted/canary and runtime-state scan PASS.
+- Deterministic DailyOps Windows bundle SHA-256 from clean checkout: `ce14df049fac193602b52ff08607456a3fd730f52ba400f9205685f71683c8d6`.
+- GitHub Actions PR CI run #77 for `c29ca53`: PASS. Jobs: Backend tests, Frontend build, Pack contracts and DailyOps, Appliance Playwright E2E, Build linux-amd64, Build linux-arm64, Build windows-amd64, Build darwin-amd64, Build darwin-arm64.
+- Run #77 uploaded current-head PR build artifacts for linux-amd64, linux-arm64, windows-amd64, darwin-amd64, and darwin-arm64 with retention through 2026-11-07.
+
+Blocking gates:
+
+- Manual `workflow_dispatch` development-artifacts run has not been executed. The shell has no `gh`, `GH_TOKEN`, `GITHUB_TOKEN`, or `GITHUB_PAT`; the GitHub connector exposes status/artifact tools but not workflow dispatch; the in-app GitHub browser session is logged out. This blocks proving `UNSIGNED-DEVELOPMENT-ALPHA-*` manual artifacts before final acceptance.
+- The exact real-backend, real-UI DailyOps journey with local mocked Telegram `getMe` and `sendMessage` cannot be run through `pack run` without either real Telegram credentials/network or a CLI/env hook for mock Telegram base URLs. Current coverage is split: UI appliance E2E mocks appliance APIs, backend appliance tests mock Telegram `getMe`, and DailyOps pack tests mock source and Telegram send exactly once.
+
+Smallest user decision needed:
+
+- Provide an authenticated GitHub dispatch path or run the manual workflow yourself on `feature/goflow-ecosystem-alpha-security-docs`.
+- Approve either adding a narrowly scoped test-only Telegram API base override for Pack Run acceptance tests, or accept the current split mock coverage as sufficient for alpha.
