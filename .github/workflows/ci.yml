@@ -6,6 +6,7 @@ on:
       - main
       - master
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -68,9 +69,100 @@ jobs:
         working-directory: ui
         run: npm ci
 
+      - name: Test
+        working-directory: ui
+        run: npm run test
+
       - name: Build
         working-directory: ui
         run: npm run build
+
+  appliance-e2e:
+    name: Appliance Playwright E2E
+    runs-on: ubuntu-latest
+    needs:
+      - backend
+      - frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: ui
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E
+        working-directory: ui
+        run: npm run test:e2e
+
+      - name: Runner smoke
+        working-directory: ui
+        run: npm run test:e2e:runner
+
+  pack-contracts:
+    name: Pack contracts and DailyOps
+    runs-on: ubuntu-latest
+    needs:
+      - backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Pack CLI tests
+        run: go test ./internal/cli ./internal/pack ./internal/packrun
+
+      - name: DailyOps validate and offline test
+        run: |
+          go run . pack validate examples/packs/dailyops-rest-telegram
+          go run . pack test examples/packs/dailyops-rest-telegram --output json
+
+      - name: DailyOps deterministic build and scan
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          go build -trimpath -ldflags="-s -w" -o "$tmp/goflow" main.go static_embed.go
+          mkdir -p "$tmp/out1" "$tmp/out2" "$tmp/extract"
+          "$tmp/goflow" pack build examples/packs/dailyops-rest-telegram --output "$tmp/out1"
+          "$tmp/goflow" pack build examples/packs/dailyops-rest-telegram --output "$tmp/out2"
+          archive1="$(find "$tmp/out1" -name '*.zip' -print -quit)"
+          archive2="$(find "$tmp/out2" -name '*.zip' -print -quit)"
+          sha1="$(sha256sum "$archive1" | cut -d' ' -f1)"
+          sha2="$(sha256sum "$archive2" | cut -d' ' -f1)"
+          test "$sha1" = "$sha2"
+          unzip -q "$archive1" -d "$tmp/extract"
+          "$tmp/goflow" pack verify "$archive1" --output json
+          "$tmp/goflow" pack verify "$tmp/extract" --output json
+          if find "$tmp/extract" -type f \( -name 'goflow.db' -o -name '*.key' -o -name '.env' -o -name 'pack-config.json' -o -name 'pack-credentials.json' \) | grep -q .; then
+            echo "bundle contains forbidden runtime state"
+            exit 1
+          fi
+          if grep -R -I -E 'fake-telegram-value|dailyops-test-master-key|/home/runner|/tmp/|C:\\Users\\runneradmin|C:\\Users\\RUNNER~1' "$tmp/extract"; then
+            echo "bundle scan found forbidden canary/path material"
+            exit 1
+          fi
 
   build:
     name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
@@ -78,6 +170,7 @@ jobs:
     needs:
       - backend
       - frontend
+      - pack-contracts
     strategy:
       fail-fast: false
       matrix:
@@ -134,5 +227,92 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: goflow-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/
+          if-no-files-found: error
+
+  development-artifacts:
+    name: Unsigned development artifacts ${{ matrix.goos }}-${{ matrix.goarch }}
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs:
+      - backend
+      - frontend
+      - appliance-e2e
+      - pack-contracts
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            ext: ""
+            build_dailyops: "true"
+          - goos: linux
+            goarch: arm64
+            ext: ""
+            build_dailyops: "false"
+          - goos: windows
+            goarch: amd64
+            ext: ".exe"
+            build_dailyops: "false"
+          - goos: darwin
+            goarch: amd64
+            ext: ""
+            build_dailyops: "false"
+          - goos: darwin
+            goarch: arm64
+            ext: ""
+            build_dailyops: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build Web UI
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build unsigned runtime
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags="-s -w" -o "dist/goflow-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" main.go static_embed.go
+
+      - name: Build DailyOps development bundle
+        if: matrix.build_dailyops == 'true'
+        run: |
+          ./dist/goflow-${{ matrix.goos }}-${{ matrix.goarch }} pack build examples/packs/dailyops-rest-telegram --output dist --force
+
+      - name: Write checksums and metadata
+        run: |
+          {
+            echo "UNSIGNED-DEVELOPMENT-ALPHA"
+            echo "commit=${GITHUB_SHA}"
+            echo "target=${{ matrix.goos }}-${{ matrix.goarch }}"
+            date -u +"built_at=%Y-%m-%dT%H:%M:%SZ"
+          } > dist/UNSIGNED-DEVELOPMENT-ALPHA.txt
+          sha256sum dist/* > "dist/SHA256SUMS-${{ matrix.goos }}-${{ matrix.goarch }}.txt"
+
+      - name: Upload unsigned development artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UNSIGNED-DEVELOPMENT-ALPHA-goflow-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/
           if-no-files-found: error

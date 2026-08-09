@@ -21,8 +21,12 @@ goflow workflow run <workflow-id-or-slug> --set source=cli --wait
 goflow workflow export <workflow-id-or-slug> --output workflow.json
 goflow workflow import workflow.json --activate
 goflow workflow validate workflow.json
+goflow pack init examples/packs/my-pack --id example.my-pack --name "My Pack"
 goflow pack validate examples/packs/hello-webhook
+goflow pack inspect examples/packs/hello-webhook --output table
+goflow pack test examples/packs/hello-webhook --output json
 goflow pack build examples/packs/hello-webhook --output release
+goflow pack verify release/example.hello-webhook_0.1.0_windows-amd64.zip
 goflow pack run examples/packs/hello-webhook --no-open
 goflow execution get <execution-id>
 goflow execution watch <execution-id>
@@ -79,6 +83,17 @@ goflow pack validate <pack-directory>
 `pack validate` checks `pack.json`, resolves pack-local paths safely, and validates the entry workflow with the same workflow validator used by `goflow workflow validate`. It does not start the server, require `GOFLOW_API_KEY`, execute plugins, or modify the database.
 
 See [Pack Format v1](PACKS.md) for manifest rules, security boundaries, examples, and non-goals.
+
+## Pack Author Toolkit
+
+```bash
+goflow pack init <directory> --id <id> --name <name> [--force]
+goflow pack inspect <pack-directory-or-bundle> [--output table|json]
+goflow pack test <pack-directory> [--output table|json]
+goflow pack verify <bundle.zip-or-extracted-directory> [--output table|json]
+```
+
+`pack init` creates a minimal deterministic pack scaffold and refuses non-empty directories unless `--force` is supplied. `pack inspect` reports manifest, setup, platform, file, and integrity metadata without printing workflow parameter values. `pack test` is offline: it validates setup metadata, applies synthetic non-secret config plus fake credential IDs in temporary state, prepares the managed workflow, and skips external connection checks. `pack verify` checks bundle inventory and hashes without running or importing the pack.
 
 ## Pack Build
 

@@ -494,12 +494,53 @@ Commit SHA:
 
 ## Checkpoint H - Development Artifact Pipeline
 
-Status: NOT_STARTED
+Status: IN_PROGRESS
 
-Planned scope:
+Implemented scope:
 
-- Extend PR CI for appliance E2E, pack CLI contracts, DailyOps mock E2E, determinism, and canary scans.
-- Add manual unsigned development artifact workflow without release/tag/signature.
+- Extended pull-request CI with frontend unit tests, appliance Playwright E2E, runner smoke, pack CLI contracts, DailyOps offline test, deterministic bundle comparison, bundle verification, and canary/path scans.
+- Added manual `workflow_dispatch` development artifacts named `UNSIGNED-DEVELOPMENT-ALPHA-goflow-<goos>-<goarch>`.
+- Manual artifact builds emit unsigned metadata and SHA-256 checksums and do not create tags, releases, installers, signatures, or latest pointers.
+- DailyOps development bundle is built only on the matching Linux amd64 runner/build context.
+- Documented unsigned artifact status, retention source, and CLI pack author commands.
+
+Files changed:
+
+- `.github/workflows/ci.yml`
+- `docs/CLI.md`
+- `docs/PACKS.md`
+- `docs/ECOSYSTEM_ALPHA_PROGRESS.md`
+
+Tests run and result:
+
+- `.github/workflows/ci.yml` YAML parse with Python/PyYAML: PASS.
+- `git diff --check`: PASS.
+- `go test ./...`: PASS.
+- `go vet ./...`: PASS.
+- `go build ./...`: PASS after rerun once UI `dist` rebuild completed.
+- `govulncheck ./...`: PASS, 0 reachable vulnerabilities.
+- `wsl.exe sh -lc 'cd /mnt/d/build2026/Goflow && export PATH="$HOME/.cache/codex-go/go/bin:$PATH" && go test -race ./...'`: PASS.
+- `cd ui && npm run test`: PASS, 11 files and 51 tests.
+- `cd ui && npm run build`: PASS.
+- `cd ui && npm run test:e2e`: PASS, 26 Playwright tests.
+- `cd ui && npm run test:e2e:runner`: PASS.
+- Local WSL pack contract script matching CI intent: `pack validate`, `pack test --output json`, deterministic DailyOps build comparison, ZIP/extracted `pack verify`, forbidden runtime file scan, and canary/path scan: PASS.
+
+Security considerations:
+
+- Pull-request CI scans generated DailyOps bundle contents for forbidden runtime files and seeded canary/path material.
+- Manual artifact outputs are explicitly marked unsigned development alpha artifacts.
+- The workflow uploads artifacts only through GitHub Actions; it does not publish releases or mutate repository tags.
+
+Commit SHA:
+
+- Pending.
+
+Remaining work:
+
+- Run local full gates.
+- Push Checkpoint H draft PR and wait for PR CI.
+- Attempt manual `workflow_dispatch` artifact run on this branch; if GitHub requires the dispatch trigger on the default branch, record that as a pre-merge manual verification limitation.
 
 ## Checkpoint I - Security Review, Documentation, and Pilot Handoff
 
