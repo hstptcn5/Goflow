@@ -321,7 +321,7 @@ Security considerations:
 
 Commit SHA:
 
-- Pending appliance context/bootstrap commit.
+- `e229fe5` (`feat: add appliance backend context`).
 
 Remaining work:
 
