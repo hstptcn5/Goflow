@@ -25,10 +25,12 @@ import (
 )
 
 type Options struct {
-	Config   *config.Config
-	UIFS     fs.FS
-	Listener net.Listener
-	Logger   *log.Logger
+	Config    *config.Config
+	UIFS      fs.FS
+	Listener  net.Listener
+	Logger    *log.Logger
+	Appliance *api.ApplianceContext
+	Registry  *nodes.PluginRegistry
 }
 
 type App struct {
@@ -116,7 +118,7 @@ func Start(ctx context.Context, opts Options) (*App, error) {
 		logger.Printf("[INFO] Cleaned up %d old execution records", deleted)
 	}
 
-	registry := nodes.NewBuiltinRegistry()
+	registry := registryFromOptions(opts)
 	eventBus := engine.NewEventBus()
 	eng := engine.NewEngine(registry, execStore, credStore, eventBus, wfStore, cfg.MaxConcurrentExecutions, cfg.MaxParallelNodesPerRun)
 	triggerService := application.NewTriggerService(wfStore, eng)
@@ -142,6 +144,7 @@ func Start(ctx context.Context, opts Options) (*App, error) {
 		cfg.MCPAllowedOrigins,
 		cfg.MCPMaxInflightPerClient,
 		cfg.MCPRateLimitPerMinute,
+		opts.Appliance,
 	)
 
 	server := &http.Server{
@@ -169,6 +172,13 @@ func Start(ctx context.Context, opts Options) (*App, error) {
 	closeListenerOnError = false
 	logger.Printf("[INFO] Goflow Web Server running on %s", app.URL)
 	return app, nil
+}
+
+func registryFromOptions(opts Options) *nodes.PluginRegistry {
+	if opts.Registry != nil {
+		return opts.Registry
+	}
+	return nodes.NewBuiltinRegistry()
 }
 
 func (app *App) Done() <-chan error {

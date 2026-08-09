@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"goflow/internal/nodes"
 	"goflow/internal/workflow"
 )
 
@@ -17,19 +20,33 @@ const (
 	MaxWorkflowBytes    = 10 << 20
 	SupportedSchema     = 1
 	DefaultWorkflowPath = "workflows/main.json"
+
+	MaxSetupMetadataBytes      = 64 << 10
+	MaxConfigFields            = 32
+	MaxCredentialRequirements  = 32
+	MaxBindings                = 128
+	MaxSetupKeyLength          = 64
+	MaxSetupLabelLength        = 120
+	MaxSetupDescriptionLength  = 1000
+	MaxSetupOptionLength       = 120
+	MaxSetupScalarStringLength = 1000
+	MaxSetupIntegerAbsValue    = 1_000_000_000
 )
 
 type Manifest struct {
-	SchemaVersion       int      `json:"schema_version"`
-	ID                  string   `json:"id"`
-	Name                string   `json:"name"`
-	Version             string   `json:"version"`
-	Description         string   `json:"description"`
-	EntryWorkflow       string   `json:"entry_workflow"`
-	RequiredCredentials []string `json:"required_credentials"`
-	SupportedPlatforms  []string `json:"supported_platforms"`
-	Plugins             []string `json:"plugins,omitempty"`
-	Assets              []string `json:"assets,omitempty"`
+	SchemaVersion          int                     `json:"schema_version"`
+	ID                     string                  `json:"id"`
+	Name                   string                  `json:"name"`
+	Version                string                  `json:"version"`
+	Description            string                  `json:"description"`
+	EntryWorkflow          string                  `json:"entry_workflow"`
+	RequiredCredentials    []string                `json:"required_credentials"`
+	SupportedPlatforms     []string                `json:"supported_platforms"`
+	Plugins                []string                `json:"plugins,omitempty"`
+	Assets                 []string                `json:"assets,omitempty"`
+	ConfigSchema           []ConfigField           `json:"config_schema,omitempty"`
+	CredentialRequirements []CredentialRequirement `json:"credential_requirements,omitempty"`
+	Bindings               []Binding               `json:"bindings,omitempty"`
 }
 
 type Pack struct {
@@ -37,6 +54,41 @@ type Pack struct {
 	Manifest          Manifest
 	ManifestPath      string
 	EntryWorkflowPath string
+}
+
+type ConfigField struct {
+	Key         string        `json:"key"`
+	Label       string        `json:"label"`
+	Description string        `json:"description,omitempty"`
+	Type        string        `json:"type"`
+	Required    bool          `json:"required"`
+	Default     interface{}   `json:"default,omitempty"`
+	Options     []interface{} `json:"options,omitempty"`
+	Min         *int          `json:"min,omitempty"`
+	Max         *int          `json:"max,omitempty"`
+	MinLength   *int          `json:"min_length,omitempty"`
+	MaxLength   *int          `json:"max_length,omitempty"`
+	DisplayOnly bool          `json:"display_only,omitempty"`
+}
+
+type CredentialRequirement struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Type        string `json:"type"`
+	Required    bool   `json:"required"`
+	TestKind    string `json:"test_kind,omitempty"`
+	DisplayOnly bool   `json:"display_only,omitempty"`
+}
+
+type Binding struct {
+	Source string        `json:"source"`
+	Target BindingTarget `json:"target"`
+}
+
+type BindingTarget struct {
+	NodeID string `json:"node_id"`
+	Param  string `json:"param"`
 }
 
 func Load(dir string) (*Pack, error) {
@@ -90,6 +142,12 @@ func Load(dir string) (*Pack, error) {
 	}
 	if err := workflow.ValidateDefinition(workflowDef); err != nil {
 		return nil, fmt.Errorf("workflow: %w", err)
+	}
+	if err := validateSetupMetadata(manifest, workflowDef.NodesJSON); err != nil {
+		return nil, err
+	}
+	if err := rejectPackEmbeddedSecrets(workflowDef.NodesJSON); err != nil {
+		return nil, err
 	}
 
 	return &Pack{
@@ -181,11 +239,39 @@ func validateRequiredFields(data []byte) error {
 			return err
 		}
 	}
+	for _, field := range []string{"config_schema", "credential_requirements", "bindings"} {
+		if value, ok := raw[field]; ok {
+			if isJSONNull(value) {
+				return fmt.Errorf("manifest: %s must not be null", field)
+			}
+			if !isJSONArrayRaw(value) {
+				return fmt.Errorf("manifest: %s must be a JSON array", field)
+			}
+		}
+	}
+	if setupMetadataSize(raw) > MaxSetupMetadataBytes {
+		return fmt.Errorf("manifest: setup metadata exceeds %d byte limit", MaxSetupMetadataBytes)
+	}
 	return nil
 }
 
 func isJSONNull(raw json.RawMessage) bool {
 	return strings.TrimSpace(string(raw)) == "null"
+}
+
+func isJSONArrayRaw(raw json.RawMessage) bool {
+	var values []interface{}
+	return json.Unmarshal(raw, &values) == nil
+}
+
+func setupMetadataSize(raw map[string]json.RawMessage) int {
+	size := 0
+	for _, field := range []string{"config_schema", "credential_requirements", "bindings"} {
+		if value, ok := raw[field]; ok {
+			size += len(value)
+		}
+	}
+	return size
 }
 
 func requireStringArray(raw json.RawMessage, field string, requireNonEmpty bool) error {
@@ -206,6 +292,443 @@ func requireStringArray(raw json.RawMessage, field string, requireNonEmpty bool)
 		}
 	}
 	return nil
+}
+
+func validateSetupMetadata(manifest Manifest, nodesJSON string) error {
+	if len(manifest.ConfigSchema) > MaxConfigFields {
+		return fmt.Errorf("manifest: config_schema exceeds %d item limit", MaxConfigFields)
+	}
+	if len(manifest.CredentialRequirements) > MaxCredentialRequirements {
+		return fmt.Errorf("manifest: credential_requirements exceeds %d item limit", MaxCredentialRequirements)
+	}
+	if len(manifest.Bindings) > MaxBindings {
+		return fmt.Errorf("manifest: bindings exceeds %d item limit", MaxBindings)
+	}
+
+	configKeys := map[string]ConfigField{}
+	for i, field := range manifest.ConfigSchema {
+		if err := validateConfigField(i, field); err != nil {
+			return err
+		}
+		if _, exists := configKeys[field.Key]; exists {
+			return fmt.Errorf("manifest: config_schema[%d].key duplicates %q", i, field.Key)
+		}
+		configKeys[field.Key] = field
+	}
+
+	credentialKeys := map[string]CredentialRequirement{}
+	for i, req := range manifest.CredentialRequirements {
+		if err := validateCredentialRequirement(i, req); err != nil {
+			return err
+		}
+		if _, exists := credentialKeys[req.Key]; exists {
+			return fmt.Errorf("manifest: credential_requirements[%d].key duplicates %q", i, req.Key)
+		}
+		credentialKeys[req.Key] = req
+	}
+
+	nodeIndex, err := workflowNodeIndex(nodesJSON)
+	if err != nil {
+		return fmt.Errorf("manifest: bindings: %w", err)
+	}
+	boundSources := map[string]bool{}
+	bindingKeys := map[string]bool{}
+	targetKeys := map[string]bool{}
+	for i, binding := range manifest.Bindings {
+		sourceKind, sourceKey, err := parseBindingSource(binding.Source)
+		if err != nil {
+			return fmt.Errorf("manifest: bindings[%d].source: %w", i, err)
+		}
+		switch sourceKind {
+		case "config":
+			if _, ok := configKeys[sourceKey]; !ok {
+				return fmt.Errorf("manifest: bindings[%d].source references unknown config key %q", i, sourceKey)
+			}
+		case "credential":
+			if _, ok := credentialKeys[sourceKey]; !ok {
+				return fmt.Errorf("manifest: bindings[%d].source references unknown credential key %q", i, sourceKey)
+			}
+		}
+		param, err := bindingTargetParam(binding.Target, nodeIndex)
+		if err != nil {
+			return fmt.Errorf("manifest: bindings[%d].target: %w", i, err)
+		}
+		if sourceKind == "credential" && param.Type != "credential" {
+			return fmt.Errorf("manifest: bindings[%d] credential source may bind only to credential parameters", i)
+		}
+		if sourceKind == "config" && (param.Type == "credential" || isSecretParam(param.Name, param.Label)) {
+			return fmt.Errorf("manifest: bindings[%d] config source may not bind to secret-like parameter %q", i, param.Name)
+		}
+		pair := binding.Source + "->" + binding.Target.NodeID + "." + binding.Target.Param
+		if bindingKeys[pair] {
+			return fmt.Errorf("manifest: bindings[%d] duplicates binding %q", i, pair)
+		}
+		bindingKeys[pair] = true
+		targetKey := binding.Target.NodeID + "." + binding.Target.Param
+		if targetKeys[targetKey] {
+			return fmt.Errorf("manifest: bindings[%d] duplicates target %q", i, targetKey)
+		}
+		targetKeys[targetKey] = true
+		boundSources[binding.Source] = true
+	}
+	for _, field := range configKeys {
+		if field.Required && !field.DisplayOnly && !boundSources["config."+field.Key] {
+			return fmt.Errorf("manifest: config_schema key %q is required but has no binding or display_only marker", field.Key)
+		}
+	}
+	for _, req := range credentialKeys {
+		if req.Required && !req.DisplayOnly && !boundSources["credential."+req.Key] {
+			return fmt.Errorf("manifest: credential_requirements key %q is required but has no binding or display_only marker", req.Key)
+		}
+	}
+	return nil
+}
+
+func validateConfigField(index int, field ConfigField) error {
+	prefix := fmt.Sprintf("manifest: config_schema[%d]", index)
+	if err := validateSetupKey(field.Key, prefix+".key"); err != nil {
+		return err
+	}
+	if isSecretText(field.Key) {
+		return fmt.Errorf("%s.key must not imply secret material", prefix)
+	}
+	if err := validateBoundedText(field.Label, prefix+".label", true, MaxSetupLabelLength); err != nil {
+		return err
+	}
+	if isSecretText(field.Label) {
+		return fmt.Errorf("%s.label must not imply secret material", prefix)
+	}
+	if err := validateBoundedText(field.Description, prefix+".description", false, MaxSetupDescriptionLength); err != nil {
+		return err
+	}
+	if isSecretText(field.Description) {
+		return fmt.Errorf("%s.description must not imply secret material", prefix)
+	}
+	switch field.Type {
+	case "string", "url", "integer", "boolean", "select":
+	default:
+		return fmt.Errorf("%s.type must be one of string, url, integer, boolean, or select", prefix)
+	}
+	if field.Type != "select" && len(field.Options) > 0 {
+		return fmt.Errorf("%s.options is allowed only for select fields", prefix)
+	}
+	if field.Type == "select" {
+		if len(field.Options) == 0 {
+			return fmt.Errorf("%s.options is required for select fields", prefix)
+		}
+		seen := map[string]bool{}
+		for optionIndex, option := range field.Options {
+			key, err := validateScalarOption(option, fmt.Sprintf("%s.options[%d]", prefix, optionIndex))
+			if err != nil {
+				return err
+			}
+			if seen[key] {
+				return fmt.Errorf("%s.options[%d] duplicates another option", prefix, optionIndex)
+			}
+			seen[key] = true
+		}
+	}
+	if field.Default != nil {
+		if err := validateConfigDefault(field, prefix+".default"); err != nil {
+			return err
+		}
+	}
+	if field.Min != nil && field.Max != nil && *field.Min > *field.Max {
+		return fmt.Errorf("%s.min must be less than or equal to max", prefix)
+	}
+	if field.MinLength != nil && field.MaxLength != nil && *field.MinLength > *field.MaxLength {
+		return fmt.Errorf("%s.min_length must be less than or equal to max_length", prefix)
+	}
+	return nil
+}
+
+func validateCredentialRequirement(index int, req CredentialRequirement) error {
+	prefix := fmt.Sprintf("manifest: credential_requirements[%d]", index)
+	if err := validateSetupKey(req.Key, prefix+".key"); err != nil {
+		return err
+	}
+	if err := validateBoundedText(req.Label, prefix+".label", true, MaxSetupLabelLength); err != nil {
+		return err
+	}
+	if err := validateBoundedText(req.Description, prefix+".description", false, MaxSetupDescriptionLength); err != nil {
+		return err
+	}
+	if !isKnownCredentialType(req.Type) {
+		return fmt.Errorf("%s.type must be a known credential type", prefix)
+	}
+	if req.TestKind != "" && !isKnownConnectionTest(req.TestKind) {
+		return fmt.Errorf("%s.test_kind must be allowlisted", prefix)
+	}
+	if req.TestKind != "" && !credentialTestCompatible(req.Type, req.TestKind) {
+		return fmt.Errorf("%s.test_kind %q is not compatible with credential type %q", prefix, req.TestKind, req.Type)
+	}
+	return nil
+}
+
+func validateSetupKey(key, field string) error {
+	if strings.TrimSpace(key) == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	if len(key) > MaxSetupKeyLength {
+		return fmt.Errorf("%s exceeds %d character limit", field, MaxSetupKeyLength)
+	}
+	for _, r := range key {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+			continue
+		}
+		return fmt.Errorf("%s must use lowercase letters, numbers, and underscores", field)
+	}
+	return nil
+}
+
+func validateBoundedText(value, field string, required bool, max int) error {
+	if required && strings.TrimSpace(value) == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	if len(value) > max {
+		return fmt.Errorf("%s exceeds %d character limit", field, max)
+	}
+	return nil
+}
+
+func validateScalarOption(value interface{}, field string) (string, error) {
+	switch typed := value.(type) {
+	case string:
+		if strings.TrimSpace(typed) == "" {
+			return "", fmt.Errorf("%s must not be empty", field)
+		}
+		if len(typed) > MaxSetupOptionLength {
+			return "", fmt.Errorf("%s exceeds %d character limit", field, MaxSetupOptionLength)
+		}
+		if looksLikeSecretValue(typed) {
+			return "", fmt.Errorf("%s must not look like secret material", field)
+		}
+		return "string:" + typed, nil
+	case bool:
+		return fmt.Sprintf("bool:%t", typed), nil
+	case float64:
+		if !isWholeNumber(typed) {
+			return "", fmt.Errorf("%s numeric options must be integers", field)
+		}
+		if math.Abs(typed) > MaxSetupIntegerAbsValue {
+			return "", fmt.Errorf("%s exceeds integer limit", field)
+		}
+		return fmt.Sprintf("number:%0.f", typed), nil
+	default:
+		return "", fmt.Errorf("%s must be a bounded scalar value", field)
+	}
+}
+
+func validateConfigDefault(field ConfigField, label string) error {
+	if containsSecretValue(field.Default) {
+		return fmt.Errorf("%s must not look like secret material", label)
+	}
+	switch field.Type {
+	case "string", "url":
+		value, ok := field.Default.(string)
+		if !ok {
+			return fmt.Errorf("%s must be a string", label)
+		}
+		if len(value) > MaxSetupScalarStringLength {
+			return fmt.Errorf("%s exceeds %d character limit", label, MaxSetupScalarStringLength)
+		}
+		if field.Type == "url" {
+			if err := validateSafeDefaultURL(value); err != nil {
+				return fmt.Errorf("%s must be an absolute http or https URL: %w", label, err)
+			}
+		}
+	case "integer":
+		value, ok := field.Default.(float64)
+		if !ok || !isWholeNumber(value) {
+			return fmt.Errorf("%s must be an integer", label)
+		}
+		if math.Abs(value) > MaxSetupIntegerAbsValue {
+			return fmt.Errorf("%s exceeds integer limit", label)
+		}
+	case "boolean":
+		if _, ok := field.Default.(bool); !ok {
+			return fmt.Errorf("%s must be a boolean", label)
+		}
+	case "select":
+		defaultKey, err := validateScalarOption(field.Default, label)
+		if err != nil {
+			return err
+		}
+		for _, option := range field.Options {
+			optionKey, _ := validateScalarOption(option, label)
+			if optionKey == defaultKey {
+				return nil
+			}
+		}
+		return fmt.Errorf("%s must match one of the select options", label)
+	}
+	return nil
+}
+
+func isWholeNumber(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0) && math.Trunc(value) == value
+}
+
+func containsSecretValue(value interface{}) bool {
+	switch typed := value.(type) {
+	case string:
+		return looksLikeSecretValue(typed)
+	case []interface{}:
+		for _, item := range typed {
+			if containsSecretValue(item) {
+				return true
+			}
+		}
+	case map[string]interface{}:
+		for key, item := range typed {
+			if isSecretText(key) || containsSecretValue(item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isKnownCredentialType(value string) bool {
+	switch value {
+	case "API_KEY", "TELEGRAM_BOT", "BEARER_TOKEN", "BASIC_AUTH", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "GOOGLE_SERVICE_ACCOUNT", "DATABASE_URL", "SSH_KEY", "SMTP_ACCOUNT":
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownConnectionTest(value string) bool {
+	switch value {
+	case "telegram_get_me", "http_head", "smtp_noop", "database_ping":
+		return true
+	default:
+		return false
+	}
+}
+
+func credentialTestCompatible(credentialType, testKind string) bool {
+	switch testKind {
+	case "":
+		return true
+	case "telegram_get_me":
+		return credentialType == "TELEGRAM_BOT"
+	case "http_head":
+		return credentialType == "API_KEY" || credentialType == "BEARER_TOKEN" || credentialType == "BASIC_AUTH"
+	case "smtp_noop":
+		return credentialType == "SMTP_ACCOUNT"
+	case "database_ping":
+		return credentialType == "DATABASE_URL"
+	default:
+		return false
+	}
+}
+
+func validateSafeDefaultURL(value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return err
+	}
+	if !parsed.IsAbs() || parsed.Host == "" {
+		return fmt.Errorf("URL must include scheme and host")
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return nil
+	default:
+		return fmt.Errorf("unsupported scheme %q", parsed.Scheme)
+	}
+}
+
+func workflowNodeIndex(nodesJSON string) (map[string]nodes.Node, error) {
+	var list []nodes.Node
+	if err := json.Unmarshal([]byte(nodesJSON), &list); err != nil {
+		return nil, err
+	}
+	index := make(map[string]nodes.Node, len(list))
+	for _, node := range list {
+		index[node.ID] = node
+	}
+	return index, nil
+}
+
+func parseBindingSource(source string) (string, string, error) {
+	if strings.HasPrefix(source, "config.") {
+		key := strings.TrimPrefix(source, "config.")
+		return "config", key, validateSetupKey(key, "source key")
+	}
+	if strings.HasPrefix(source, "credential.") {
+		key := strings.TrimPrefix(source, "credential.")
+		return "credential", key, validateSetupKey(key, "source key")
+	}
+	return "", "", fmt.Errorf("must start with config. or credential.")
+}
+
+func bindingTargetParam(target BindingTarget, nodeIndex map[string]nodes.Node) (nodes.ParamDefinition, error) {
+	if strings.TrimSpace(target.NodeID) == "" {
+		return nodes.ParamDefinition{}, fmt.Errorf("node_id is required")
+	}
+	if strings.TrimSpace(target.Param) == "" {
+		return nodes.ParamDefinition{}, fmt.Errorf("param is required")
+	}
+	node, ok := nodeIndex[target.NodeID]
+	if !ok {
+		return nodes.ParamDefinition{}, fmt.Errorf("node_id %q does not exist", target.NodeID)
+	}
+	executor, ok := nodes.NewBuiltinRegistry().Get(node.Type)
+	if !ok {
+		return nodes.ParamDefinition{}, fmt.Errorf("node %q has unknown type %q", target.NodeID, node.Type)
+	}
+	for _, param := range executor.GetDefinition().Params {
+		if param.Name == target.Param {
+			return param, nil
+		}
+	}
+	return nodes.ParamDefinition{}, fmt.Errorf("param %q is not defined by node %q", target.Param, target.NodeID)
+}
+
+func rejectPackEmbeddedSecrets(nodesJSON string) error {
+	var nodeList []nodes.Node
+	if err := json.Unmarshal([]byte(nodesJSON), &nodeList); err != nil {
+		return err
+	}
+	registry := nodes.NewBuiltinRegistry()
+	for _, node := range nodeList {
+		executor, ok := registry.Get(node.Type)
+		if !ok {
+			continue
+		}
+		for _, param := range executor.GetDefinition().Params {
+			if param.Type == "credential" {
+				continue
+			}
+			if !isSecretParam(param.Name, param.Label) {
+				continue
+			}
+			value, exists := node.Params[param.Name]
+			if !exists || !hasSecretValue(value) {
+				continue
+			}
+			return fmt.Errorf("workflow: node %q parameter %q must not contain literal secret values in a pack", node.ID, param.Name)
+		}
+	}
+	return nil
+}
+
+func isSecretParam(name, label string) bool {
+	return isSecretText(name) || isSecretText(label)
+}
+
+func isSecretText(value string) bool {
+	lower := strings.ToLower(value)
+	return strings.Contains(lower, "token") ||
+		strings.Contains(lower, "password") ||
+		strings.Contains(lower, "secret") ||
+		strings.Contains(lower, "api key") ||
+		strings.Contains(lower, "api_key") ||
+		strings.Contains(lower, "private key") ||
+		strings.Contains(lower, "authorization") ||
+		strings.Contains(lower, "credential")
 }
 
 func validateManifest(manifest Manifest) error {

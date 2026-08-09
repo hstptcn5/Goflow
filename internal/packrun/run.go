@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"goflow/config"
+	"goflow/internal/api"
+	"goflow/internal/nodes"
 	"goflow/internal/pack"
 	"goflow/internal/serverapp"
 	"goflow/internal/storage"
@@ -42,6 +44,10 @@ type Options struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
 	Opener  func(string) error
+
+	Registry             *nodes.PluginRegistry
+	TelegramAPIBaseURL   string
+	ConnectionTestClient *http.Client
 }
 
 type State struct {
@@ -75,6 +81,10 @@ func RunExtractedBundle(ctx context.Context, bundleDir string, opts Options) err
 	}
 	opts.PackDir = filepath.Join(bundleDir, "pack")
 	return Run(ctx, opts)
+}
+
+func Prepare(ctx context.Context, loaded *pack.Pack, dataDir string) (*Prepared, error) {
+	return prepare(ctx, loaded, dataDir)
 }
 
 func Run(ctx context.Context, opts Options) error {
@@ -121,6 +131,12 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("pack run: listen on loopback: %w", err)
 	}
+	origin := "http://" + listener.Addr().String()
+	sessionToken, err := generateSessionToken()
+	if err != nil {
+		_ = listener.Close()
+		return fmt.Errorf("pack run: create appliance session token: %w", err)
+	}
 	serverCfg := &config.Config{
 		Host:                      "127.0.0.1",
 		Port:                      strconv.Itoa(opts.Port),
@@ -135,7 +151,29 @@ func Run(ctx context.Context, opts Options) error {
 		MCPMaxInflightPerClient:   2,
 		MCPRateLimitPerMinute:     30,
 	}
-	app, err := serverapp.Start(ctx, serverapp.Options{Config: serverCfg, UIFS: opts.UIFS, Listener: listener})
+	app, err := serverapp.Start(ctx, serverapp.Options{
+		Config:   serverCfg,
+		UIFS:     opts.UIFS,
+		Listener: listener,
+		Registry: opts.Registry,
+		Appliance: &api.ApplianceContext{
+			Enabled:                true,
+			Origin:                 origin,
+			SessionToken:           sessionToken,
+			PackID:                 loaded.Manifest.ID,
+			PackName:               loaded.Manifest.Name,
+			PackVersion:            loaded.Manifest.Version,
+			Description:            loaded.Manifest.Description,
+			WorkflowID:             prepared.WorkflowID,
+			DataDir:                dataDir,
+			ConfigSchema:           loaded.Manifest.ConfigSchema,
+			CredentialRequirements: loaded.Manifest.CredentialRequirements,
+			LegacyRequiredCreds:    loaded.Manifest.RequiredCredentials,
+			Bindings:               loaded.Manifest.Bindings,
+			TelegramAPIBaseURL:     opts.TelegramAPIBaseURL,
+			ConnectionTestClient:   opts.ConnectionTestClient,
+		},
+	})
 	if err != nil {
 		return err
 	}
@@ -332,6 +370,14 @@ func loadOrCreateMasterKey(path string) (string, error) {
 		return "", err
 	}
 	return key, nil
+}
+
+func generateSessionToken() (string, error) {
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(tokenBytes), nil
 }
 
 func acquireDataLock(dataDir string) (*dataLock, bool, error) {

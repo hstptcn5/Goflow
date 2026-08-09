@@ -592,6 +592,197 @@ summary:focus-visible {
   animation: spin 0.8s linear infinite;
 }
 
+.appliance-shell {
+  width: 100vw;
+  height: 100vh;
+  overflow: auto;
+  background: var(--color-page);
+}
+
+.appliance-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-topbar);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: 76px;
+  padding: var(--space-4) var(--space-6);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.appliance-header h1 {
+  font-size: var(--font-size-xl);
+  line-height: 1.15;
+}
+
+.appliance-header p {
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.appliance-meta,
+.status-strip,
+.summary-grid {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.appliance-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--space-4);
+  padding: var(--space-5);
+}
+
+.appliance-main,
+.appliance-side,
+.setup-section,
+.credential-controls,
+.run-panel,
+.execution-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.appliance-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-4);
+}
+
+.appliance-panel.compact {
+  gap: var(--space-3);
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.setup-section {
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.credential-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(260px, 1.2fr);
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.credential-row p,
+.field-help {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+.field-error {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.status-strip,
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.status-strip span,
+.summary-grid span {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.status-strip strong,
+.summary-grid strong {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.appliance-execution-row {
+  grid-template-columns: 110px minmax(160px, 1fr) 100px minmax(140px, 1fr);
+}
+
+.diagnostics-box {
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  white-space: pre-wrap;
+}
+
+.advanced-link {
+  width: fit-content;
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.appliance-toast,
+.appliance-error {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: var(--z-toast);
+  max-width: min(420px, calc(100vw - 32px));
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.appliance-toast {
+  background: var(--color-success-surface);
+  color: var(--color-success);
+  border: 1px solid #bbf7d0;
+}
+
+.appliance-error {
+  background: var(--color-danger-surface);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger-border);
+  bottom: calc(var(--space-5) + 52px);
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -617,6 +808,19 @@ summary:focus-visible {
 
   .execution-row {
     grid-template-columns: 1fr;
+  }
+
+  .appliance-grid,
+  .credential-row,
+  .status-strip,
+  .summary-grid,
+  .appliance-execution-row {
+    grid-template-columns: 1fr;
+  }
+
+  .appliance-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

@@ -514,6 +514,34 @@ func VerifyBundleArchive(path string, limits buildLimits) error {
 	return validateInventorySizes(sliceInventory(inventory), limits, info.EntryWorkflow)
 }
 
+func VerifyBundleArchiveFile(path string) error {
+	return VerifyBundleArchive(path, buildLimits{})
+}
+
+func ReadBundleArchiveInfo(path string) (*PackInfo, error) {
+	limits := defaultBuildLimits()
+	reader, err := zip.OpenReader(path)
+	if err != nil {
+		return nil, fmt.Errorf("open zip: %w", err)
+	}
+	defer reader.Close()
+	for _, file := range reader.File {
+		if file.Name != "PACK_INFO.json" {
+			continue
+		}
+		data, _, err := readZipFileLimited(file, limits.MaxPackInfoBytes)
+		if err != nil {
+			return nil, fmt.Errorf("read PACK_INFO.json: %w", err)
+		}
+		var info PackInfo
+		if err := json.Unmarshal(data, &info); err != nil {
+			return nil, fmt.Errorf("PACK_INFO.json is malformed: %w", err)
+		}
+		return &info, nil
+	}
+	return nil, fmt.Errorf("PACK_INFO.json is missing")
+}
+
 func VerifyExtractedBundle(root string) (*PackInfo, error) {
 	limits := defaultBuildLimits()
 	rootAbs, err := filepath.Abs(root)

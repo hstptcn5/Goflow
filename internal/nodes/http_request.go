@@ -6,11 +6,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
 
-const maxHTTPResponseBytes int64 = 10 << 20
+const (
+	maxHTTPResponseBytes  int64 = 10 << 20
+	maxHTTPRequestBytes   int64 = 1 << 20
+	maxHTTPHeaders              = 32
+	maxHTTPHeaderNameLen        = 128
+	maxHTTPHeaderValueLen       = 4096
+)
 
 type HTTPRequestExecutor struct {
 	client *http.Client
@@ -19,19 +26,37 @@ type HTTPRequestExecutor struct {
 func NewHTTPRequestExecutor() *HTTPRequestExecutor {
 	return &HTTPRequestExecutor{
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:       30 * time.Second,
+			CheckRedirect: safeHTTPRedirect,
 		},
 	}
+}
+
+func NewHTTPRequestExecutorWithClient(client *http.Client) *HTTPRequestExecutor {
+	if client == nil {
+		return NewHTTPRequestExecutor()
+	}
+	return &HTTPRequestExecutor{client: client}
 }
 
 func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
 	urlStr, _ := node.Params["url"].(string)
 	method, _ := node.Params["method"].(string)
+	method = strings.ToUpper(strings.TrimSpace(method))
 	if method == "" {
 		method = "GET"
 	}
+	if !allowedHTTPMethod(method) {
+		return nil, fmt.Errorf("HTTP method %q is not supported", method)
+	}
+	if err := validateHTTPRequestURL(urlStr); err != nil {
+		return nil, err
+	}
 
 	bodyStr, _ := node.Params["body"].(string)
+	if int64(len(bodyStr)) > maxHTTPRequestBytes {
+		return nil, fmt.Errorf("HTTP request body exceeds %d byte limit", maxHTTPRequestBytes)
+	}
 	headersMapStr, _ := node.Params["headers"].(string)
 
 	var reqBody io.Reader
@@ -49,13 +74,19 @@ func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	// Parse Custom Headers t??? JSON string n???u c??
 	if headersMapStr != "" {
 		var headers map[string]string
-		if err := json.Unmarshal([]byte(headersMapStr), &headers); err == nil {
-			for k, v := range headers {
-				req.Header.Set(k, v)
+		if err := json.Unmarshal([]byte(headersMapStr), &headers); err != nil {
+			return nil, fmt.Errorf("HTTP headers must be a JSON object of strings")
+		}
+		if len(headers) > maxHTTPHeaders {
+			return nil, fmt.Errorf("HTTP headers exceed %d item limit", maxHTTPHeaders)
+		}
+		for k, v := range headers {
+			if err := validateHTTPHeader(k, v); err != nil {
+				return nil, err
 			}
+			req.Header.Set(k, v)
 		}
 	}
 
@@ -88,8 +119,13 @@ func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 
 func (e *HTTPRequestExecutor) Validate(node *Node) error {
 	urlStr, _ := node.Params["url"].(string)
-	if strings.TrimSpace(urlStr) == "" {
-		return fmt.Errorf("HTTP Node requires a 'url' parameter")
+	if err := validateHTTPRequestURL(urlStr); err != nil {
+		return err
+	}
+	method, _ := node.Params["method"].(string)
+	method = strings.ToUpper(strings.TrimSpace(method))
+	if method != "" && !allowedHTTPMethod(method) {
+		return fmt.Errorf("HTTP method %q is not supported", method)
 	}
 	return nil
 }
@@ -138,4 +174,66 @@ func (e *HTTPRequestExecutor) GetDefinition() NodeDefinition {
 			},
 		},
 	}
+}
+
+func allowedHTTPMethod(method string) bool {
+	switch method {
+	case "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateHTTPRequestURL(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return fmt.Errorf("HTTP Node requires a 'url' parameter")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("HTTP url must be an absolute http or https URL: %w", err)
+	}
+	if !parsed.IsAbs() || parsed.Host == "" {
+		return fmt.Errorf("HTTP url must be an absolute http or https URL")
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return nil
+	default:
+		return fmt.Errorf("HTTP url must be an absolute http or https URL")
+	}
+}
+
+func validateHTTPHeader(name, value string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("HTTP header name is required")
+	}
+	if len(name) > maxHTTPHeaderNameLen {
+		return fmt.Errorf("HTTP header name exceeds %d byte limit", maxHTTPHeaderNameLen)
+	}
+	if len(value) > maxHTTPHeaderValueLen {
+		return fmt.Errorf("HTTP header %q value exceeds %d byte limit", name, maxHTTPHeaderValueLen)
+	}
+	for _, r := range name {
+		if r <= 32 || r >= 127 || strings.ContainsRune("()<>@,;:\\\"/[]?={} \t", r) {
+			return fmt.Errorf("HTTP header name %q is invalid", name)
+		}
+	}
+	return nil
+}
+
+func safeHTTPRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return fmt.Errorf("stopped after 10 redirects")
+	}
+	previous := via[len(via)-1]
+	carriesAuth := previous.Header.Get("Authorization") != "" || previous.Header.Get("Cookie") != ""
+	if carriesAuth && !sameHTTPOrigin(previous.URL, req.URL) {
+		return http.ErrUseLastResponse
+	}
+	return nil
+}
+
+func sameHTTPOrigin(a, b *url.URL) bool {
+	return strings.EqualFold(a.Scheme, b.Scheme) && strings.EqualFold(a.Host, b.Host)
 }

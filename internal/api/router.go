@@ -34,8 +34,13 @@ func NewRouter(
 	mcpAllowedOrigins []string,
 	mcpMaxInflight int,
 	mcpRateLimitPerMinute int,
+	applianceOptions ...*ApplianceContext,
 ) *chi.Mux {
 	r := chi.NewRouter()
+	var appliance *ApplianceContext
+	if len(applianceOptions) > 0 {
+		appliance = applianceOptions[0]
+	}
 
 	if os.Getenv("GOFLOW_HTTP_LOGS") == "1" {
 		r.Use(middleware.Logger)
@@ -114,6 +119,7 @@ func NewRouter(
 
 	r.Post("/webhook/{workflowId}", wfHandler.TriggerWebhook)
 	r.Get("/ws", wsHandler.ServeHTTP)
+	mountApplianceRoutes(r, appliance, wfStore, execStore, credStore, triggerService)
 	r.With(authMiddleware(apiKey, tokenStore, auditStore, false)).Mount("/mcp", mcpserver.NewHTTPHandler(mcpserver.HTTPOptions{
 		BaseURL:            mcpBaseURL,
 		MaxInflight:        mcpMaxInflight,

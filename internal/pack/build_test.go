@@ -425,6 +425,33 @@ func TestBuildDeterministicOutputAndPackInfoHasNoLocalState(t *testing.T) {
 	}
 }
 
+func TestBuildDeterministicOutputWithSetupMetadata(t *testing.T) {
+	dir := writeBuildPack(t, func(m *Manifest) {
+		m.ConfigSchema = []ConfigField{
+			{Key: "source_url", Label: "Source URL", Type: "url", Required: true, Default: "https://example.test/report"},
+			{Key: "report_title", Label: "Report title", Type: "string", Required: true, Default: "Daily report"},
+		}
+		m.CredentialRequirements = []CredentialRequirement{
+			{Key: "telegram_bot", Label: "Telegram bot", Type: "TELEGRAM_BOT", Required: true, TestKind: "telegram_get_me"},
+		}
+		m.Bindings = []Binding{
+			{Source: "config.source_url", Target: BindingTarget{NodeID: "fetch", Param: "url"}},
+			{Source: "config.report_title", Target: BindingTarget{NodeID: "telegram", Param: "message"}},
+			{Source: "credential.telegram_bot", Target: BindingTarget{NodeID: "telegram", Param: "credential_id"}},
+		}
+	})
+	writeFile(t, filepath.Join(dir, DefaultWorkflowPath), setupWorkflowJSON())
+	runtimePath := writeRuntimeFixture(t, "runtime")
+	a := mustBuild(t, dir, runtimePath, t.TempDir())
+	b := mustBuild(t, dir, runtimePath, t.TempDir())
+	if hashA, hashB := fileSHA256(t, a.ArchivePath), fileSHA256(t, b.ArchivePath); hashA != hashB {
+		t.Fatalf("expected deterministic setup metadata bundle, got %s and %s", hashA, hashB)
+	}
+	if raw := readZipEntry(t, a.ArchivePath, "pack/pack.json"); strings.Contains(raw, "sk-") || strings.Contains(raw, "password") {
+		t.Fatalf("pack manifest contains secret-looking content: %s", raw)
+	}
+}
+
 func TestVerifyExtractedBundleDetectsTampering(t *testing.T) {
 	dir := writeBuildPack(t)
 	runtimePath := writeRuntimeFixture(t, "runtime")

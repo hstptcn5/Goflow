@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"io"
 	"os"
@@ -307,6 +308,133 @@ func TestPackBuildReturnsInvalidInput(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "--output is required") {
 		t.Fatalf("expected output error, got %q", stderr.String())
+	}
+}
+
+func TestPackInitScaffoldValidateTestBuildVerify(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "fresh-pack")
+	var stdout, stderr bytes.Buffer
+	runner := Runner{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")}
+	code := runner.Run([]string{"pack", "init", dir, "--id", "example.fresh-pack", "--name", "Fresh Pack", "--target", pack.CurrentPlatform()})
+	if code != ExitOK {
+		t.Fatalf("pack init failed code=%d stderr=%q", code, stderr.String())
+	}
+	for _, rel := range []string{"pack.json", filepath.Join("workflows", "main.json"), "README.md"} {
+		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
+			t.Fatalf("expected scaffold file %s: %v", rel, err)
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "README.md")); err != nil || strings.Contains(strings.ToLower(string(data)), "secret") && strings.Contains(string(data), "123:") {
+		t.Fatalf("README should not contain example secrets")
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = runner.Run([]string{"pack", "validate", dir})
+	if code != ExitOK {
+		t.Fatalf("pack validate failed code=%d stderr=%q", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = runner.Run([]string{"pack", "test", dir, "--output", "json"})
+	if code != ExitOK {
+		t.Fatalf("pack test failed code=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var testResult map[string]interface{}
+	if err := json.Unmarshal(stdout.Bytes(), &testResult); err != nil {
+		t.Fatalf("decode pack test json: %v", err)
+	}
+	if testResult["status"] != "PASS" || testResult["managed_workflow"] != "PASS" {
+		t.Fatalf("unexpected pack test result: %#v", testResult)
+	}
+
+	runtimePath := filepath.Join(t.TempDir(), "goflow-runtime")
+	if err := os.WriteFile(runtimePath, []byte("runtime"), 0600); err != nil {
+		t.Fatalf("write runtime fixture: %v", err)
+	}
+	outputDir := t.TempDir()
+	stdout.Reset()
+	stderr.Reset()
+	buildRunner := Runner{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader(""), PackRuntimePath: runtimePath}
+	code = buildRunner.Run([]string{"pack", "build", dir, "--output", outputDir})
+	if code != ExitOK {
+		t.Fatalf("pack build failed code=%d stderr=%q", code, stderr.String())
+	}
+	archive := filepath.Join(outputDir, "example.fresh-pack-0.1.0-"+pack.CurrentPlatform()+".zip")
+
+	stdout.Reset()
+	stderr.Reset()
+	code = runner.Run([]string{"pack", "verify", archive, "--output", "json"})
+	if code != ExitOK {
+		t.Fatalf("pack verify failed code=%d stderr=%q", code, stderr.String())
+	}
+	var verifyResult map[string]interface{}
+	if err := json.Unmarshal(stdout.Bytes(), &verifyResult); err != nil {
+		t.Fatalf("decode verify json: %v", err)
+	}
+	if verifyResult["status"] != "PASS" || verifyResult["id"] != "example.fresh-pack" {
+		t.Fatalf("unexpected verify result: %#v", verifyResult)
+	}
+}
+
+func TestPackInitRefusesNonEmptyDirectory(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "existing.txt"), []byte("keep"), 0600); err != nil {
+		t.Fatalf("write existing file: %v", err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := Runner{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")}.Run([]string{"pack", "init", dir, "--id", "example.refuse", "--name", "Refuse"})
+	if code != ExitInvalidInput {
+		t.Fatalf("expected invalid input, code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "existing.txt")); err != nil {
+		t.Fatalf("existing file should remain untouched: %v", err)
+	}
+}
+
+func TestPackInspectJSONDoesNotPrintSecretBearingWorkflowValues(t *testing.T) {
+	dir := writePackFixture(t, `{
+		"schema_version":1,
+		"id":"example.inspect",
+		"name":"Inspect",
+		"version":"0.1.0",
+		"entry_workflow":"workflows/main.json",
+		"required_credentials":[],
+		"supported_platforms":["`+pack.CurrentPlatform()+`"]
+	}`, `{
+		"name":"Inspect",
+		"nodes":[{"id":"send","type":"telegramBot","params":{"bot_token":"should-not-print","chat_id":"1","message":"hello"}}],
+		"edges":[]
+	}`)
+	var stdout, stderr bytes.Buffer
+	code := Runner{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")}.Run([]string{"pack", "inspect", dir, "--output", "json"})
+	if code == ExitOK {
+		t.Fatalf("expected embedded secret validation failure")
+	}
+	if strings.Contains(stdout.String(), "should-not-print") || strings.Contains(stderr.String(), "should-not-print") {
+		t.Fatalf("inspect leaked workflow value stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
+func TestPackSubcommandsRejectInvalidOutput(t *testing.T) {
+	dir := writePackFixture(t, `{
+		"schema_version":1,
+		"id":"example.output",
+		"name":"Output",
+		"version":"0.1.0",
+		"entry_workflow":"workflows/main.json",
+		"required_credentials":[],
+		"supported_platforms":["`+pack.CurrentPlatform()+`"]
+	}`, `{
+		"name":"Output",
+		"nodes":[{"id":"trigger","type":"webhookTrigger","params":{}}],
+		"edges":[]
+	}`)
+	var stdout, stderr bytes.Buffer
+	code := Runner{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")}.Run([]string{"pack", "inspect", dir, "--output", "xml"})
+	if code != ExitInvalidInput || !strings.Contains(stderr.String(), "--output must be table or json") {
+		t.Fatalf("expected invalid output error, code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
 

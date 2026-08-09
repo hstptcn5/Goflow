@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"goflow/config"
+	"goflow/internal/nodes"
 )
 
 func TestStartWithEphemeralListenerHealthAndExistingRoute(t *testing.T) {
@@ -83,6 +84,24 @@ func TestRunReturnsStartupServeError(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "closed") {
 		t.Fatalf("expected closed listener error for %s, got %v", addr, err)
+	}
+}
+
+func TestRegistryFromOptionsDefaultsToBuiltin(t *testing.T) {
+	registry := registryFromOptions(Options{})
+	if _, ok := registry.Get(nodes.TypeTelegramBot); !ok {
+		t.Fatalf("default registry is missing Telegram executor")
+	}
+}
+
+func TestRegistryFromOptionsUsesInjectedRegistry(t *testing.T) {
+	injected := nodes.NewPluginRegistry()
+	registry := registryFromOptions(Options{Registry: injected})
+	if registry != injected {
+		t.Fatalf("expected injected registry")
+	}
+	if _, ok := registry.Get(nodes.TypeTelegramBot); ok {
+		t.Fatalf("empty injected registry should not be replaced with builtin executors")
 	}
 }
 

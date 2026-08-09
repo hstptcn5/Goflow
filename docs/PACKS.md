@@ -48,10 +48,174 @@ Known fields:
 | `supported_platforms` | Yes | Non-empty JSON array of non-empty platform strings such as `windows-amd64`. |
 | `plugins` | No | Optional JSON array of portable slash paths to plugin resource files. Listed files must exist, resolve inside the pack, and be regular files. The validator does not execute plugins. |
 | `assets` | No | Optional JSON array of portable slash paths to asset files. Listed files must exist, resolve inside the pack, and be regular files. The validator does not interpret asset contents. |
+| `config_schema` | No | Optional setup metadata for non-secret pack configuration. |
+| `credential_requirements` | No | Optional structured credential slots without values. |
+| `bindings` | No | Optional declarative mappings from setup values to existing workflow node parameters. |
 
 Unknown fields are accepted for forward compatibility, but known fields are validated strictly. Manifest fields that look like secret-bearing fields, such as `secrets`, `password`, `token`, or `api_key`, are rejected when they contain values.
 
 Required fields must be present in `pack.json`; zero values caused by missing fields are not accepted. `required_credentials` and `supported_platforms` must be arrays and cannot be `null`.
+
+## Optional Setup Metadata
+
+Pack Format v1 supports optional setup metadata while keeping `schema_version: 1`. Existing packs that omit these fields remain valid.
+
+### config_schema
+
+`config_schema` is an optional array of non-secret configuration fields for appliance setup. Supported field types are:
+
+- `string`
+- `url`
+- `integer`
+- `boolean`
+- `select`
+
+Each item includes:
+
+- `key`: lowercase letters, numbers, and underscores.
+- `label`: human-readable text.
+- `description`: optional bounded text.
+- `type`: one of the supported field types.
+- `required`: boolean.
+- `default`: optional non-secret default with the correct JSON type.
+- `options`: required for `select`, unique bounded scalar values.
+- `min` and `max`: optional integer limits.
+- `min_length` and `max_length`: optional string limits.
+- `display_only`: optional marker for required values that are intentionally shown but not bound into the workflow.
+
+Configuration is not a secret store. Keys, labels, descriptions, defaults, and options that imply or look like tokens, passwords, API keys, private keys, authorization headers, credentials, or other secret material are rejected.
+
+### credential_requirements
+
+`credential_requirements` is an optional structured replacement for UI setup needs. It describes slots, not values:
+
+- `key`
+- `label`
+- `description`
+- `type`
+- `required`
+- `test_kind`
+- `display_only`
+
+Allowed credential types are currently:
+
+- `API_KEY`
+- `TELEGRAM_BOT`
+- `BEARER_TOKEN`
+- `BASIC_AUTH`
+- `OPENAI_API_KEY`
+- `DEEPSEEK_API_KEY`
+- `GOOGLE_SERVICE_ACCOUNT`
+- `DATABASE_URL`
+- `SSH_KEY`
+- `SMTP_ACCOUNT`
+
+Allowed connection test kinds are currently:
+
+- `telegram_get_me`
+- `http_head`
+- `smtp_noop`
+- `database_ping`
+
+No arbitrary test URL, command, script, plugin, or secret value is allowed in manifest setup metadata.
+
+The compatibility allowlist is closed:
+
+| Credential type | Allowed test kinds |
+| :--- | :--- |
+| `TELEGRAM_BOT` | `telegram_get_me` |
+| `API_KEY` | `http_head` |
+| `BEARER_TOKEN` | `http_head` |
+| `BASIC_AUTH` | `http_head` |
+| `SMTP_ACCOUNT` | `smtp_noop` |
+| `DATABASE_URL` | `database_ping` |
+| `OPENAI_API_KEY` | none yet |
+| `DEEPSEEK_API_KEY` | none yet |
+| `GOOGLE_SERVICE_ACCOUNT` | none yet |
+| `SSH_KEY` | none yet |
+
+An empty `test_kind` is always allowed. Impossible combinations, such as `SSH_KEY` with `telegram_get_me`, are rejected.
+
+Legacy `required_credentials` remains valid. When `credential_requirements` is present, appliance setup should use the structured requirements. When it is absent, legacy entries are treated as simple logical credential requirements for display and backwards compatibility.
+
+### bindings
+
+`bindings` maps setup values to parameters on existing nodes in the entry workflow:
+
+```json
+{
+  "source": "config.source_url",
+  "target": {
+    "node_id": "fetch",
+    "param": "url"
+  }
+}
+```
+
+Rules:
+
+- `source` must be exactly `config.<key>` or `credential.<key>`.
+- The source key must exist in `config_schema` or `credential_requirements`.
+- The target node must exist in the entry workflow.
+- The target parameter must be declared by that node type.
+- Credential sources may bind only to parameters of type `credential`.
+- Config sources may not bind to credential or secret-like parameters.
+- Duplicate source/target pairs are rejected.
+- A target parameter may be bound at most once. A second binding to the same `node_id` plus `param` is rejected even when the sources differ.
+- One source may fan out to multiple distinct targets.
+- Required setup items must be bound or explicitly marked `display_only: true`.
+- Bindings are applied only to a runtime copy of the managed workflow. Source packs and extracted bundles remain immutable.
+
+### Setup Metadata Limits
+
+Named limits:
+
+- `config_schema`: 32 fields.
+- `credential_requirements`: 32 entries.
+- `bindings`: 128 entries.
+- Setup key: 64 characters.
+- Label: 120 characters.
+- Description: 1000 characters.
+- Select option: 120 characters.
+- String default: 1000 characters.
+- Integer absolute value: 1,000,000,000.
+- Total serialized setup metadata: 64 KiB.
+
+Validation errors identify the field and logical item involved without echoing possible secret values.
+
+### URL Defaults
+
+For `config_schema` fields with `type: "url"`, a non-null `default` must be an absolute URL with a host. Only `http` and `https` are accepted in Pack Format v1 setup metadata. Relative URLs, malformed URLs, and local file or custom schemes are rejected.
+
+### Runtime Resolution
+
+Pack setup bindings are applied to a cloned runtime workflow, never to the source pack, extracted bundle, or stored source workflow definition. Config bindings copy validated non-secret config values. Credential bindings copy credential IDs only; decrypted values remain in the encrypted credential store.
+
+Pack runtime parameter resolution uses a small path-only expression language:
+
+- `{{input.store_name}}`
+- `{{nodes.fetch.data.total}}`
+- `{{pack.config.report_title}}`
+
+The resolver reads only trigger input, prior node outputs, and non-secret pack config. It does not read credentials, environment variables, files, functions, JavaScript, templates with loops, reflection, or commands. A parameter that is exactly one expression preserves the resolved JSON type. Inline string interpolation converts non-string values with deterministic JSON formatting. Missing or unsupported paths fail with bounded errors that name the expression, not the resolved value.
+
+### Runtime Node Network Policy
+
+Pack-compatible HTTP Request execution accepts only absolute `http` and `https` URLs and bounded request bodies, response bodies, and headers. Supported methods are `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, and `HEAD`. Custom headers must be a JSON object of strings. Redirect handling does not automatically carry `Authorization` or `Cookie` headers to a different origin.
+
+Telegram execution uses the execution context for cancellation and bounds/redacts API error bodies. When `credential_id` is present, the encrypted credential value resolved by the runtime is preferred and a missing credential is an error; the node does not fall back to a literal `bot_token` in that case. Pack validation already rejects literal `bot_token` values in pack workflows.
+
+### Appliance Runtime API
+
+Pack Run may start Goflow with an explicit in-memory appliance context. In that mode only, `/api/appliance/*` endpoints expose bootstrap, setup, workflow status, run-now, execution summaries, and diagnostics for the single managed workflow. Generic `goflow serve` does not mount these routes.
+
+State-changing appliance endpoints require a loopback Host match, exact Origin match, JSON content type, strict body limits, and the per-process appliance session token from bootstrap. Credential connection tests are explicit POST operations and are rate/concurrency limited.
+
+Runtime and diagnostics responses expose pack identity, logical setup readiness, workflow state, and bounded execution summaries only. They do not expose decrypted credentials, credential IDs, database contents, master keys, full logs, arbitrary files, environment variables, hostnames, usernames, or absolute source/build paths.
+
+### Pack-Only Workflow Secret Scan
+
+In pack context, workflow parameters known to carry secrets must not contain literal values. For example, a Telegram node may bind or select `credential_id`, but a pack workflow with a non-empty literal `bot_token` is rejected. This restriction applies to packs only and does not silently rewrite generic non-pack workflows.
 
 ## Portable Paths
 
@@ -219,6 +383,33 @@ Named limits:
 
 The builder checks file sizes with `stat` before writing the ZIP, rechecks inventory sizes after hashing, and verifies actual uncompressed ZIP entry sizes by streaming archive contents with limits. It streams files while hashing and archiving, so it does not allocate memory for entire plugin or asset files.
 
+## Author CLI
+
+Pack authors can use the stable local workflow below:
+
+```bash
+goflow pack init <directory> --id <id> --name <name>
+goflow pack validate <directory>
+goflow pack inspect <directory|bundle.zip|extracted-directory> --output table
+goflow pack test <directory> --output json
+goflow pack build <directory> --output <output-directory>
+goflow pack verify <bundle.zip|extracted-directory> --output table
+```
+
+`pack init` creates a deterministic safe scaffold and refuses non-empty target directories unless `--force` is supplied. `pack inspect` reports pack identity, target support, setup counts, controlled file counts, plugin/asset counts, and integrity status without printing workflow parameter values. `pack test` is offline: it validates setup metadata, applies synthetic non-secret config and fake credential IDs in temporary state, prepares the managed workflow idempotently, and reports connection tests as skipped when they require an external service. `pack verify` reuses bundle verification and does not run or import the pack.
+
+See [PACK_AUTHOR_TUTORIAL.md](PACK_AUTHOR_TUTORIAL.md) for a PowerShell and POSIX walkthrough.
+
+Operator docs:
+
+- [APPLIANCE_QUICKSTART.md](APPLIANCE_QUICKSTART.md)
+- [APPLIANCE_TROUBLESHOOTING.md](APPLIANCE_TROUBLESHOOTING.md)
+- [DATA_BACKUP_RESTORE.md](DATA_BACKUP_RESTORE.md)
+- [CREDENTIAL_ROTATION.md](CREDENTIAL_ROTATION.md)
+- [DAILYOPS_DEMO_GUIDE.md](DAILYOPS_DEMO_GUIDE.md)
+- [DEVELOPMENT_ARTIFACTS.md](DEVELOPMENT_ARTIFACTS.md)
+- [PILOT_GUIDE.md](PILOT_GUIDE.md)
+
 ## Run
 
 Run a source pack directory:
@@ -244,7 +435,14 @@ Runtime state is stored outside the pack directory by default:
 - macOS: `~/Library/Application Support/Goflow/packs/<pack-id>/`
 - Linux: `$XDG_DATA_HOME/Goflow/packs/<pack-id>/` or `~/.local/share/Goflow/packs/<pack-id>/`
 
-Use `--data-dir` for tests or controlled deployments. The data directory contains `goflow.db`, `goflow.master.key`, `pack-state.json`, `run-state.json`, and lock metadata. Back up `goflow.db` together with `goflow.master.key`.
+Use `--data-dir` for tests or controlled deployments. The data directory contains `goflow.db`, `goflow.master.key`, `pack-state.json`, `run-state.json`, setup files, and lock metadata. Back up `goflow.db` together with `goflow.master.key`.
+
+Runtime setup state is stored outside the source pack and extracted bundle:
+
+- `pack-config.json` contains non-secret config values, the pack ID, and a config schema version. Values are revalidated against the current manifest before use. Unknown fields are retained only when they are safe and are not applied as current config.
+- `pack-credentials.json` contains credential slot assignments as credential IDs plus expected credential types. It never contains decrypted credential values. Slot assignments are valid only when the referenced credential still exists and has the type declared by `credential_requirements`. Unknown slots are retained only when their keys and IDs are safe.
+
+Both setup files are written atomically with restricted file permissions where supported. Parent setup directories are created with restricted permissions where supported.
 
 The pack workflow is a managed workflow. Its workflow ID is deterministic from the pack ID, so repeated runs update the same record instead of creating duplicates. A version or workflow-content update preserves the database, credentials, and execution history.
 
@@ -262,6 +460,12 @@ Pack validation is not a trust system. A valid pack may still contain plugin fil
 
 `PACK_INFO.json` is integrity metadata, not a signature. It can detect that extracted files no longer match the bundle metadata, but it does not prove who created the bundle.
 
+## Development Artifacts
+
+GitHub Actions may produce unsigned alpha artifacts only from the manual `workflow_dispatch` path. Artifact names must include `UNSIGNED-DEVELOPMENT-ALPHA`, include SHA-256 checksum files and deterministic build metadata, and must not create tags, GitHub Releases, installers, signatures, or latest-version pointers.
+
+Development artifacts inherit the repository artifact retention policy configured in GitHub Actions. They are temporary CI outputs for pilot verification, not production releases or authenticity claims. Before acceptance, generated artifact members and extracted contents are scanned for canary secrets, local paths, usernames, hostnames, database/key files, `.env`, and unlisted runtime state.
+
 ## Non-Goals
 
 This v1 foundation does not support:
@@ -272,4 +476,3 @@ This v1 foundation does not support:
 - Plugin signing.
 - Auto-update.
 - Secret distribution.
-- Appliance UI.
