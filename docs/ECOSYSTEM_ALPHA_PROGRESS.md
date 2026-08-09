@@ -85,7 +85,7 @@ Security considerations:
 
 Commit SHA:
 
-- Pending until this checkpoint is committed.
+- `1388efc` (`docs: plan ecosystem alpha checkpoints`).
 
 Remaining work:
 
