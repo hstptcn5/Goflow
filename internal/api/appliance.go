@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"goflow/internal/pack"
 	"goflow/internal/packsetup"
@@ -50,7 +51,8 @@ func mountApplianceRoutes(r chi.Router, appliance *ApplianceContext, credStore *
 			r.Use(applianceMutationMiddleware(appliance))
 			r.Post("/setup/config", applianceSaveConfigHandler(appliance))
 			r.Post("/setup/credentials", applianceSaveCredentialsHandler(appliance, credStore))
-			r.Post("/setup/complete", applianceNotImplementedMutation)
+			r.Post("/setup/complete", applianceCompleteHandler(appliance, credStore))
+			r.Post("/setup/reopen", applianceReopenHandler(appliance))
 		})
 	})
 }
@@ -66,19 +68,21 @@ func applianceBootstrapHandler(appliance *ApplianceContext) http.HandlerFunc {
 
 func applianceStatusHandler(appliance *ApplianceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		state, missing := applianceReadiness(appliance, nil)
+		state, missing, completed := applianceReadiness(appliance, nil)
 		renderJSON(w, http.StatusOK, map[string]interface{}{
-			"pack":        applianceIdentity(appliance),
-			"workflow_id": appliance.WorkflowID,
-			"state":       state,
-			"missing":     missing,
+			"pack":           applianceIdentity(appliance),
+			"workflow_id":    appliance.WorkflowID,
+			"state":          state,
+			"missing":        missing,
+			"setup_complete": completed,
+			"can_complete":   len(missing) == 0,
 		})
 	}
 }
 
 func applianceDiagnosticsHandler(appliance *ApplianceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		state, _ := applianceReadiness(appliance, nil)
+		state, _, _ := applianceReadiness(appliance, nil)
 		renderJSON(w, http.StatusOK, map[string]interface{}{
 			"pack_id":      appliance.PackID,
 			"pack_version": appliance.PackVersion,
@@ -91,7 +95,7 @@ func applianceDiagnosticsHandler(appliance *ApplianceContext) http.HandlerFunc {
 func applianceSetupHandler(appliance *ApplianceContext, credStore *storage.CredentialStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		resolver := applianceCredentialResolver(credStore)
-		state, missing := applianceReadiness(appliance, resolver)
+		state, missing, completed := applianceReadiness(appliance, resolver)
 		configValues := map[string]interface{}{}
 		if loaded, err := packsetup.LoadConfig(appliance.DataDir, applianceManifest(appliance)); err == nil {
 			configValues = loaded.Config.Values
@@ -106,6 +110,8 @@ func applianceSetupHandler(appliance *ApplianceContext, credStore *storage.Crede
 			"credential_values_hidden":  true,
 			"credential_ids_redacted":   true,
 			"decrypted_values_returned": false,
+			"setup_complete":            completed,
+			"can_complete":              len(missing) == 0,
 		})
 	}
 }
@@ -147,6 +153,40 @@ func applianceSaveCredentialsHandler(appliance *ApplianceContext, credStore *sto
 			return
 		}
 		renderJSON(w, http.StatusOK, map[string]interface{}{"credentials": redactedCredentialSlots(creds.Slots)})
+	}
+}
+
+func applianceCompleteHandler(appliance *ApplianceContext, credStore *storage.CredentialStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct{}
+		if err := decodeApplianceJSON(w, r, &req); err != nil {
+			return
+		}
+		missing := applianceMissingRequirements(appliance, applianceCredentialResolver(credStore))
+		if len(missing) > 0 {
+			renderJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "setup requirements are missing", "missing": missing})
+			return
+		}
+		state, err := packsetup.SaveState(appliance.DataDir, applianceManifest(appliance), true, time.Now())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		renderJSON(w, http.StatusOK, map[string]interface{}{"state": "READY", "setup_complete": state.Completed})
+	}
+}
+
+func applianceReopenHandler(appliance *ApplianceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct{}
+		if err := decodeApplianceJSON(w, r, &req); err != nil {
+			return
+		}
+		if _, err := packsetup.SaveState(appliance.DataDir, applianceManifest(appliance), false, time.Now()); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		renderJSON(w, http.StatusOK, map[string]interface{}{"state": "NEEDS_SETUP", "setup_complete": false})
 	}
 }
 
@@ -242,7 +282,19 @@ func applianceManifest(appliance *ApplianceContext) pack.Manifest {
 	}
 }
 
-func applianceReadiness(appliance *ApplianceContext, resolver packsetup.CredentialResolver) (string, []string) {
+func applianceReadiness(appliance *ApplianceContext, resolver packsetup.CredentialResolver) (string, []string, bool) {
+	missing := applianceMissingRequirements(appliance, resolver)
+	completed := false
+	if state, err := packsetup.LoadState(appliance.DataDir, applianceManifest(appliance)); err == nil {
+		completed = state.Completed
+	}
+	if len(missing) > 0 || !completed {
+		return "NEEDS_SETUP", missing, completed
+	}
+	return "READY", missing, completed
+}
+
+func applianceMissingRequirements(appliance *ApplianceContext, resolver packsetup.CredentialResolver) []string {
 	missing := []string{}
 	manifest := applianceManifest(appliance)
 	if len(manifest.ConfigSchema) > 0 {
@@ -271,10 +323,7 @@ func applianceReadiness(appliance *ApplianceContext, resolver packsetup.Credenti
 			}
 		}
 	}
-	if len(missing) > 0 {
-		return "NEEDS_SETUP", missing
-	}
-	return "READY", missing
+	return missing
 }
 
 func applianceCredentialResolver(credStore *storage.CredentialStore) packsetup.CredentialResolver {

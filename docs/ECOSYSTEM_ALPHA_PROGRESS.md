@@ -298,12 +298,15 @@ Architectural decision:
 - Require exact Host validation for appliance routes and exact Origin plus session-token header for mutations.
 - Add setup schema/current readiness, config save, and credential-slot save endpoints using the Checkpoint C setup storage primitives.
 - Return redacted credential readiness without decrypted values or credential IDs.
+- Persist explicit setup complete/reopen state in `pack-setup-state.json`; all requirements must be valid before setup can become `READY`.
 
 Files changed:
 
 - `internal/api/appliance.go`
 - `internal/api/router.go`
 - `internal/api/router_test.go`
+- `internal/packsetup/state.go`
+- `internal/packsetup/state_test.go`
 - `internal/serverapp/serverapp.go`
 - `internal/packrun/run.go`
 - `docs/ECOSYSTEM_ALPHA_PROGRESS.md`
@@ -327,16 +330,18 @@ Security considerations:
 - Current diagnostics skeleton includes only pack ID/version, workflow ID, and readiness state.
 - Setup config writes use bounded strict JSON bodies and the existing non-secret config validator.
 - Credential slot writes validate credential existence/type and return assigned/type status without credential IDs or decrypted values.
+- Setup completion stores only pack ID, schema version, completed flag, and timestamp; it does not store credentials, config values, or decrypted data.
 
 Commit SHA:
 
 - `e229fe5` (`feat: add appliance backend context`).
 - `d573aa0` (`feat: add appliance setup readiness api`).
+- Pending setup state-machine commit.
 
 Remaining work:
 
 - Credential creation/selection/replacement and allowlisted connection tests.
-- Complete/reopen setup and setup state machine.
+- Full setup state machine recovery behavior.
 - Server/workflow status, run-now, latest execution, recent executions, and diagnostics redaction tests.
 - Oversized-body, rate-limit, bad-host, cross-origin, missing-token, and generic-mode coverage across all appliance mutations.
 

@@ -52,6 +52,7 @@ func TestApplianceBootstrapAndMutationGuard(t *testing.T) {
 		PackVersion:  "0.1.0",
 		Description:  "Example",
 		WorkflowID:   "wf-1",
+		DataDir:      t.TempDir(),
 	}
 	router := NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
 
@@ -85,7 +86,7 @@ func TestApplianceBootstrapAndMutationGuard(t *testing.T) {
 		router.ServeHTTP(rec, req)
 		return rec.Code
 	}
-	if got := mutation("http://example.com", "test-session-token", "application/json", "example.com"); got != http.StatusNotImplemented {
+	if got := mutation("http://example.com", "test-session-token", "application/json", "example.com"); got != http.StatusOK {
 		t.Fatalf("expected guarded mutation to reach handler, got %d", got)
 	}
 	if got := mutation("http://evil.example", "test-session-token", "application/json", "example.com"); got != http.StatusForbidden {
@@ -177,7 +178,16 @@ func TestApplianceSetupReadinessAndRedaction(t *testing.T) {
 		t.Fatalf("credential response leaked secret material: %s", credentialBody)
 	}
 	statusBody = applianceRequest(t, router, http.MethodGet, "/api/appliance/status", nil, nil)
-	if !strings.Contains(statusBody, "READY") {
+	if !strings.Contains(statusBody, "NEEDS_SETUP") || !strings.Contains(statusBody, `"can_complete":true`) {
+		t.Fatalf("expected completable setup status, got %s", statusBody)
+	}
+	applianceRequest(t, router, http.MethodPost, "/api/appliance/setup/complete", []byte(`{}`), map[string]string{
+		"Origin":             "http://example.com",
+		applianceTokenHeader: "test-session-token",
+		"Content-Type":       "application/json",
+	})
+	statusBody = applianceRequest(t, router, http.MethodGet, "/api/appliance/status", nil, nil)
+	if !strings.Contains(statusBody, "READY") || !strings.Contains(statusBody, `"setup_complete":true`) {
 		t.Fatalf("expected ready status, got %s", statusBody)
 	}
 	setupBody := applianceRequest(t, router, http.MethodGet, "/api/appliance/setup", nil, nil)
