@@ -593,7 +593,7 @@ Security considerations:
 
 Commit SHA:
 
-- Pending.
+- `a00f6d7` (`docs: complete alpha security handoff`).
 
 ## Final Acceptance Suite
 
