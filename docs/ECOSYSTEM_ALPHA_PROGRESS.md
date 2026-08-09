@@ -252,7 +252,7 @@ Security considerations:
 Commit SHA:
 
 - `e6f8aae` (`feat: add pack config storage`).
-- Pending credential-slot storage commit.
+- `ad46eb3` (`feat: add pack credential slot storage`).
 
 Remaining work:
 
