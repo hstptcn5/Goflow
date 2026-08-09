@@ -23,6 +23,7 @@ goflow workflow import workflow.json --activate
 goflow workflow validate workflow.json
 goflow pack validate examples/packs/hello-webhook
 goflow pack build examples/packs/hello-webhook --output release
+goflow pack run examples/packs/hello-webhook --no-open
 goflow execution get <execution-id>
 goflow execution watch <execution-id>
 goflow execution cancel <execution-id>
@@ -90,3 +91,23 @@ goflow pack build <pack-directory> --output <output-directory> [--target <goos-g
 The bundle contains the current Goflow runtime, `pack.json`, the entry workflow, listed plugin files, listed asset files, `PACK_INFO.json`, and `README.txt`. It does not start the server, require `GOFLOW_API_KEY`, read credentials, use the database, or execute plugins.
 
 Use `--force` to replace the exact destination archive after the new archive has been built successfully.
+
+## Pack Run
+
+```bash
+goflow pack run <pack-directory> [--data-dir <directory>] [--port <port>] [--no-open]
+```
+
+`pack run` starts one pack as a local managed workflow. It always binds to `127.0.0.1`; `--port` defaults to `0` so the OS chooses a free loopback port. The command prints the actual URL. Use `--no-open` for scripts and tests.
+
+By default, runtime state is stored outside the pack directory:
+
+- Windows: `%LOCALAPPDATA%/Goflow/packs/<pack-id>/`
+- macOS: `~/Library/Application Support/Goflow/packs/<pack-id>/`
+- Linux: `$XDG_DATA_HOME/Goflow/packs/<pack-id>/` or `~/.local/share/Goflow/packs/<pack-id>/`
+
+The data directory contains `goflow.db`, `goflow.master.key`, `pack-state.json`, `run-state.json`, and lock metadata. Use `--data-dir` to choose a controlled location.
+
+The managed workflow ID is deterministic from the pack ID, so repeated runs update the same workflow record instead of creating duplicates. Pack Run MVP does not embed secrets and does not claim credential requirements are satisfied by name. If `required_credentials` is not empty, the command prints those requirements and opens the credentials page unless `--no-open` is set.
+
+Packaged plugin execution is not supported in Pack Run MVP. A pack with listed `plugins` fails early instead of silently ignoring or executing native code.

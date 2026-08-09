@@ -1,6 +1,6 @@
 # Goflow Pack Format v1
 
-Goflow Pack is a directory format for distributing one workflow with pack metadata and optional local resources. Goflow can validate a pack and build a portable pack bundle. It does not install, run, or update packs.
+Goflow Pack is a directory format for distributing one workflow with pack metadata and optional local resources. Goflow can validate a pack, build a portable pack bundle, and run a pack locally as a managed workflow.
 
 ## Directory Layout
 
@@ -208,9 +208,42 @@ Named limits:
 
 The builder checks file sizes with `stat` before writing the ZIP, rechecks inventory sizes after hashing, and verifies actual uncompressed ZIP entry sizes by streaming archive contents with limits. It streams files while hashing and archiving, so it does not allocate memory for entire plugin or asset files.
 
+## Run
+
+Run a source pack directory:
+
+```bash
+goflow pack run examples/packs/hello-webhook --no-open
+```
+
+Optional flags:
+
+```bash
+goflow pack run <pack-directory> \
+  [--data-dir <directory>] \
+  [--port <port>] \
+  [--no-open]
+```
+
+Pack Run MVP starts Goflow in-process on loopback only. The host is always `127.0.0.1`; `--port` defaults to `0` so the OS selects a free port. The command prints the actual URL. `--no-open` suppresses browser launch.
+
+Runtime state is stored outside the pack directory by default:
+
+- Windows: `%LOCALAPPDATA%/Goflow/packs/<pack-id>/`
+- macOS: `~/Library/Application Support/Goflow/packs/<pack-id>/`
+- Linux: `$XDG_DATA_HOME/Goflow/packs/<pack-id>/` or `~/.local/share/Goflow/packs/<pack-id>/`
+
+Use `--data-dir` for tests or controlled deployments. The data directory contains `goflow.db`, `goflow.master.key`, `pack-state.json`, `run-state.json`, and lock metadata. Back up `goflow.db` together with `goflow.master.key`.
+
+The pack workflow is a managed workflow. Its workflow ID is deterministic from the pack ID, so repeated runs update the same record instead of creating duplicates. A version or workflow-content update preserves the database, credentials, and execution history.
+
+`required_credentials` remains metadata only. Pack Run prints credential requirements and opens the credentials page when requirements exist, but it does not embed secrets, create placeholder credentials, or treat matching names as proof that requirements are satisfied.
+
+Packaged plugin execution is not supported in Pack Run MVP. Packs with non-empty `plugins` fail early.
+
 ## Security Boundary
 
-Pack validation and build are static. They do not execute plugins, start the server, read credentials, write credentials, or modify the database. `required_credentials` is metadata only; it describes logical needs such as `smtp_account` or `slack_bot_token`, not secret values.
+Pack validation and build are static. They do not execute plugins, start the server, read credentials, write credentials, or modify the database. Pack Run starts a loopback server and writes runtime state only to its data directory. `required_credentials` is metadata only; it describes logical needs such as `smtp_account` or `slack_bot_token`, not secret values.
 
 `pack.json` symlinks are rejected. Entry workflow, plugin, and asset symlinks are allowed only when the fully resolved target remains inside the pack directory and is a regular file.
 
@@ -222,8 +255,6 @@ This v1 foundation does not support:
 
 - Building new `.exe` files or cross-target runtimes.
 - Installing packs.
-- Running packs directly.
-- `pack run`.
 - Marketplace publishing or discovery.
 - Plugin signing.
 - Auto-update.

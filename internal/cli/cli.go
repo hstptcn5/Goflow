@@ -6,13 +6,17 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"goflow/internal/client"
 	"goflow/internal/mcpserver"
 	"goflow/internal/pack"
+	"goflow/internal/packrun"
 	"goflow/internal/workflow"
 )
 
@@ -32,6 +36,7 @@ type Runner struct {
 	Stderr          io.Writer
 	Stdin           io.Reader
 	PackRuntimePath string
+	UIFS            fs.FS
 }
 
 type clientOptions struct {
@@ -86,6 +91,7 @@ Usage:
   goflow workflow validate <file>
   goflow pack validate <pack-directory>
   goflow pack build <pack-directory> --output <output-directory> [--target goos-goarch] [--force]
+  goflow pack run <pack-directory> [--data-dir directory] [--port port] [--no-open]
   goflow execution get <execution-id> [--output table|json]
   goflow execution watch <execution-id> [--timeout 60s] [--interval 1s] [--output table|json]
   goflow execution cancel <execution-id> [--output table|json]
@@ -301,6 +307,8 @@ func (r Runner) pack(args []string) int {
 		return r.packValidate(args[1:])
 	case "build":
 		return r.packBuild(args[1:])
+	case "run":
+		return r.packRun(args[1:])
 	default:
 		fmt.Fprintf(r.Stderr, "unknown pack subcommand: %s\n", args[0])
 		return ExitInvalidInput
@@ -349,6 +357,37 @@ func (r Runner) packBuild(args []string) int {
 		return ExitInvalidInput
 	}
 	fmt.Fprintf(r.Stdout, "Built portable pack bundle\nArchive: %s\nTarget: %s\n", result.ArchivePath, result.Target)
+	return ExitOK
+}
+
+func (r Runner) packRun(args []string) int {
+	fs := flag.NewFlagSet("pack run", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	dataDir := fs.String("data-dir", "", "Pack Run data directory")
+	port := fs.Int("port", 0, "Loopback port; 0 asks the OS to choose a free port")
+	noOpen := fs.Bool("no-open", false, "Print the URL without opening a browser")
+	dir, ok, code := parseOneRef(fs, args, "pack directory", r.Stderr)
+	if !ok {
+		return code
+	}
+	if *port < 0 || *port > 65535 {
+		fmt.Fprintln(r.Stderr, "--port must be between 0 and 65535")
+		return ExitInvalidInput
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := packrun.Run(ctx, packrun.Options{
+		PackDir: dir,
+		DataDir: *dataDir,
+		Port:    *port,
+		NoOpen:  *noOpen,
+		UIFS:    r.UIFS,
+		Stdout:  r.Stdout,
+		Stderr:  r.Stderr,
+	}); err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitExecutionFailed
+	}
 	return ExitOK
 }
 

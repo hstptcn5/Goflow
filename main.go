@@ -20,7 +20,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 1 && args[1] != "serve" {
-		return cli.Run(args[1:], stdout, stderr)
+		return cli.Runner{Stdout: stdout, Stderr: stderr, Stdin: os.Stdin, UIFS: getEmbeddedUI()}.Run(args[1:])
 	}
 
 	log.Println("==================================================")
