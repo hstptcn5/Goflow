@@ -119,7 +119,7 @@ func NewRouter(
 
 	r.Post("/webhook/{workflowId}", wfHandler.TriggerWebhook)
 	r.Get("/ws", wsHandler.ServeHTTP)
-	mountApplianceRoutes(r, appliance)
+	mountApplianceRoutes(r, appliance, credStore)
 	r.With(authMiddleware(apiKey, tokenStore, auditStore, false)).Mount("/mcp", mcpserver.NewHTTPHandler(mcpserver.HTTPOptions{
 		BaseURL:            mcpBaseURL,
 		MaxInflight:        mcpMaxInflight,

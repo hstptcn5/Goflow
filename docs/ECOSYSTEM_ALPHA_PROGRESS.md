@@ -296,7 +296,8 @@ Architectural decision:
 - Mount `/api/appliance/*` only when appliance context is present.
 - Keep generic `goflow serve` isolated: appliance routes return 404 when no appliance context exists.
 - Require exact Host validation for appliance routes and exact Origin plus session-token header for mutations.
-- Start with bootstrap/status/diagnostics skeletons; setup persistence, run-now, latest execution, and full state machine remain in this checkpoint.
+- Add setup schema/current readiness, config save, and credential-slot save endpoints using the Checkpoint C setup storage primitives.
+- Return redacted credential readiness without decrypted values or credential IDs.
 
 Files changed:
 
@@ -310,6 +311,12 @@ Files changed:
 Tests run and result:
 
 - `go test ./internal/api ./internal/serverapp ./internal/packrun`: PASS.
+- `go test ./...`: PASS.
+- `go vet ./...`: PASS.
+- `go build ./...`: PASS.
+- `govulncheck ./...`: PASS, 0 reachable vulnerabilities.
+- `wsl.exe sh -lc 'cd /mnt/d/build2026/Goflow && export PATH="$HOME/.cache/codex-go/go/bin:$PATH" && go test -race ./...'`: PASS.
+- GitHub Actions CI run #64 for `6d18ef3`: PASS. Jobs: Frontend build, Backend tests, Build linux-amd64, Build linux-arm64, Build darwin-amd64, Build darwin-arm64, Build windows-amd64.
 
 Security considerations:
 
@@ -318,6 +325,8 @@ Security considerations:
 - Mutation requests require JSON content type, exact allowed Origin, and the appliance token header.
 - Host mismatch returns 404 to reduce DNS-rebinding exposure.
 - Current diagnostics skeleton includes only pack ID/version, workflow ID, and readiness state.
+- Setup config writes use bounded strict JSON bodies and the existing non-secret config validator.
+- Credential slot writes validate credential existence/type and return assigned/type status without credential IDs or decrypted values.
 
 Commit SHA:
 
@@ -325,8 +334,6 @@ Commit SHA:
 
 Remaining work:
 
-- Setup schema/current readiness API.
-- Saving config and credential slot assignments.
 - Credential creation/selection/replacement and allowlisted connection tests.
 - Complete/reopen setup and setup state machine.
 - Server/workflow status, run-now, latest execution, recent executions, and diagnostics redaction tests.
