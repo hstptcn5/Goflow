@@ -357,7 +357,7 @@ func resolveExistingRegularInside(root, slashPath string) (string, error) {
 	if !info.Mode().IsRegular() {
 		return "", fmt.Errorf("path must be a regular file")
 	}
-	return candidate, nil
+	return resolved, nil
 }
 
 func portablePathToOS(slashPath string) (string, error) {

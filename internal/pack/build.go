@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,6 +19,9 @@ import (
 const (
 	MaxPackResourceBytes = 100 << 20
 	MaxPackPayloadBytes  = 512 << 20
+	MaxRuntimeBytes      = 256 << 20
+	MaxPackInfoBytes     = 1 << 20
+	MaxBundleEntries     = 4096
 )
 
 var zipTimestamp = time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -30,6 +34,10 @@ type BuildOptions struct {
 	RuntimePath   string
 	RuntimeGOOS   string
 	RuntimeGOARCH string
+
+	limits                  buildLimits
+	publishOps              publishOps
+	corruptTempBeforeVerify func(string) error
 }
 
 type BuildResult struct {
@@ -59,6 +67,45 @@ type archiveFile struct {
 	sourcePath   string
 	generated    []byte
 	payloadCount bool
+	mode         os.FileMode
+}
+
+type buildLimits struct {
+	MaxResourceBytes int64
+	MaxPayloadBytes  int64
+	MaxRuntimeBytes  int64
+	MaxPackInfoBytes int64
+	MaxEntries       int
+}
+
+func defaultBuildLimits() buildLimits {
+	return buildLimits{
+		MaxResourceBytes: MaxPackResourceBytes,
+		MaxPayloadBytes:  MaxPackPayloadBytes,
+		MaxRuntimeBytes:  MaxRuntimeBytes,
+		MaxPackInfoBytes: MaxPackInfoBytes,
+		MaxEntries:       MaxBundleEntries,
+	}
+}
+
+func (limits buildLimits) withDefaults() buildLimits {
+	defaults := defaultBuildLimits()
+	if limits.MaxResourceBytes == 0 {
+		limits.MaxResourceBytes = defaults.MaxResourceBytes
+	}
+	if limits.MaxPayloadBytes == 0 {
+		limits.MaxPayloadBytes = defaults.MaxPayloadBytes
+	}
+	if limits.MaxRuntimeBytes == 0 {
+		limits.MaxRuntimeBytes = defaults.MaxRuntimeBytes
+	}
+	if limits.MaxPackInfoBytes == 0 {
+		limits.MaxPackInfoBytes = defaults.MaxPackInfoBytes
+	}
+	if limits.MaxEntries == 0 {
+		limits.MaxEntries = defaults.MaxEntries
+	}
+	return limits
 }
 
 func Build(opts BuildOptions) (*BuildResult, error) {
@@ -101,6 +148,10 @@ func Build(opts BuildOptions) (*BuildResult, error) {
 	if !runtimeInfo.Mode().IsRegular() {
 		return nil, fmt.Errorf("runtime: source must be a regular file")
 	}
+	limits := opts.limits.withDefaults()
+	if runtimeInfo.Size() > limits.MaxRuntimeBytes {
+		return nil, fmt.Errorf("runtime: source exceeds %d byte limit", limits.MaxRuntimeBytes)
+	}
 
 	outputDir, err := filepath.Abs(opts.OutputDir)
 	if err != nil {
@@ -121,11 +172,14 @@ func Build(opts BuildOptions) (*BuildResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := validateArchiveFiles(files, opts.Target); err != nil {
+	if err := validateArchiveFiles(files, opts.Target, limits); err != nil {
 		return nil, err
 	}
 	inventory, err := inventoryFiles(files)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateInventorySizes(inventory, limits, "pack/"+loaded.Manifest.EntryWorkflow); err != nil {
 		return nil, err
 	}
 	packInfo := PackInfo{
@@ -142,7 +196,7 @@ func Build(opts BuildOptions) (*BuildResult, error) {
 		return nil, err
 	}
 	packInfoData = append(packInfoData, '\n')
-	files = append(files, archiveFile{archivePath: "PACK_INFO.json", generated: packInfoData})
+	files = append(files, archiveFile{archivePath: "PACK_INFO.json", generated: packInfoData, mode: 0600})
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].archivePath < files[j].archivePath
 	})
@@ -162,20 +216,20 @@ func Build(opts BuildOptions) (*BuildResult, error) {
 	if err := temp.Close(); err != nil {
 		return nil, fmt.Errorf("output: close temporary archive: %w", err)
 	}
-	if opts.Force {
-		if err := os.Rename(tempPath, archivePath); err != nil {
-			if !os.IsExist(err) {
-				return nil, fmt.Errorf("output: replace archive: %w", err)
-			}
-			if err := os.Remove(archivePath); err != nil {
-				return nil, fmt.Errorf("output: remove existing archive after successful build: %w", err)
-			}
-			if err := os.Rename(tempPath, archivePath); err != nil {
-				return nil, fmt.Errorf("output: move archive into place after removing existing archive: %w", err)
-			}
+	if opts.corruptTempBeforeVerify != nil {
+		if err := opts.corruptTempBeforeVerify(tempPath); err != nil {
+			return nil, fmt.Errorf("test hook: corrupt temporary archive: %w", err)
 		}
-	} else if err := os.Rename(tempPath, archivePath); err != nil {
-		return nil, fmt.Errorf("output: move archive into place: %w", err)
+	}
+	if err := VerifyBundleArchive(tempPath, limits); err != nil {
+		return nil, fmt.Errorf("output: verify temporary archive: %w", err)
+	}
+	ops := opts.publishOps
+	if ops == nil {
+		ops = osPublishOps{}
+	}
+	if err := publishArchive(tempPath, archivePath, opts.Force, ops); err != nil {
+		return nil, err
 	}
 	return &BuildResult{ArchivePath: archivePath, ArchiveName: archiveName, Target: opts.Target}, nil
 }
@@ -197,29 +251,37 @@ func runtimeEntry(target string) string {
 
 func buildArchiveFileList(loaded *Pack, runtimePath, runtimeEntry string) ([]archiveFile, error) {
 	files := []archiveFile{
-		{archivePath: runtimeEntry, sourcePath: runtimePath},
-		{archivePath: "pack/pack.json", sourcePath: loaded.ManifestPath, payloadCount: true},
-		{archivePath: "pack/" + loaded.Manifest.EntryWorkflow, sourcePath: loaded.EntryWorkflowPath, payloadCount: true},
-		{archivePath: "README.txt", generated: []byte(readmeText(runtimeEntry))},
+		{archivePath: runtimeEntry, sourcePath: runtimePath, mode: 0755},
+		{archivePath: "pack/pack.json", sourcePath: loaded.ManifestPath, payloadCount: true, mode: 0600},
+		{archivePath: "pack/" + loaded.Manifest.EntryWorkflow, sourcePath: loaded.EntryWorkflowPath, payloadCount: true, mode: 0600},
+		{archivePath: "README.txt", generated: []byte(readmeText(runtimeEntry)), mode: 0600},
 	}
 	for _, logical := range loaded.Manifest.Plugins {
 		sourcePath, err := resolveExistingRegularInside(loaded.Root, logical)
 		if err != nil {
 			return nil, fmt.Errorf("path: plugins entry %q: %w", logical, err)
 		}
-		files = append(files, archiveFile{archivePath: "pack/" + logical, sourcePath: sourcePath, payloadCount: true})
+		files = append(files, archiveFile{archivePath: "pack/" + logical, sourcePath: sourcePath, payloadCount: true, mode: pluginArchiveMode(sourcePath)})
 	}
 	for _, logical := range loaded.Manifest.Assets {
 		sourcePath, err := resolveExistingRegularInside(loaded.Root, logical)
 		if err != nil {
 			return nil, fmt.Errorf("path: assets entry %q: %w", logical, err)
 		}
-		files = append(files, archiveFile{archivePath: "pack/" + logical, sourcePath: sourcePath, payloadCount: true})
+		files = append(files, archiveFile{archivePath: "pack/" + logical, sourcePath: sourcePath, payloadCount: true, mode: 0600})
 	}
 	return files, nil
 }
 
-func validateArchiveFiles(files []archiveFile, target string) error {
+func pluginArchiveMode(path string) os.FileMode {
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm()&0111 == 0 {
+		return 0600
+	}
+	return 0755
+}
+
+func validateArchiveFiles(files []archiveFile, target string, limits buildLimits) error {
 	seen := map[string]string{}
 	totalPayload := int64(0)
 	for _, file := range files {
@@ -246,12 +308,39 @@ func validateArchiveFiles(files []archiveFile, target string) error {
 		}
 		if file.payloadCount {
 			isResource := strings.HasPrefix(file.archivePath, "pack/plugins/") || strings.HasPrefix(file.archivePath, "pack/assets/")
-			if isResource && info.Size() > MaxPackResourceBytes {
-				return fmt.Errorf("%s exceeds %d byte per-file limit", file.archivePath, MaxPackResourceBytes)
+			if isResource && info.Size() > limits.MaxResourceBytes {
+				return fmt.Errorf("%s exceeds %d byte per-file limit", file.archivePath, limits.MaxResourceBytes)
 			}
 			totalPayload += info.Size()
-			if totalPayload > MaxPackPayloadBytes {
-				return fmt.Errorf("pack payload exceeds %d byte total limit", MaxPackPayloadBytes)
+			if totalPayload > limits.MaxPayloadBytes {
+				return fmt.Errorf("pack payload exceeds %d byte total limit", limits.MaxPayloadBytes)
+			}
+		}
+	}
+	return nil
+}
+
+func validateInventorySizes(inventory []PackInfoFile, limits buildLimits, entryWorkflow string) error {
+	totalPayload := int64(0)
+	for _, file := range inventory {
+		switch file.Path {
+		case "pack/pack.json":
+			if file.Size > MaxManifestBytes {
+				return fmt.Errorf("%s exceeds %d byte manifest limit", file.Path, MaxManifestBytes)
+			}
+		case entryWorkflow:
+			if file.Size > MaxWorkflowBytes {
+				return fmt.Errorf("%s exceeds %d byte workflow limit", file.Path, MaxWorkflowBytes)
+			}
+		}
+		isResource := strings.HasPrefix(file.Path, "pack/plugins/") || strings.HasPrefix(file.Path, "pack/assets/")
+		if isResource && file.Size > limits.MaxResourceBytes {
+			return fmt.Errorf("%s exceeds %d byte per-file limit", file.Path, limits.MaxResourceBytes)
+		}
+		if strings.HasPrefix(file.Path, "pack/") {
+			totalPayload += file.Size
+			if totalPayload > limits.MaxPayloadBytes {
+				return fmt.Errorf("pack payload exceeds %d byte total limit", limits.MaxPayloadBytes)
 			}
 		}
 	}
@@ -325,11 +414,7 @@ func writeZip(w io.Writer, files []archiveFile) error {
 			Method:   zip.Deflate,
 			Modified: zipTimestamp,
 		}
-		if file.archivePath == "goflow" || file.archivePath == "goflow.exe" {
-			header.SetMode(0755)
-		} else {
-			header.SetMode(0600)
-		}
+		header.SetMode(sanitizedArchiveMode(file.mode))
 		writer, err := zw.CreateHeader(header)
 		if err != nil {
 			_ = zw.Close()
@@ -351,6 +436,138 @@ func writeZip(w io.Writer, files []archiveFile) error {
 		return fmt.Errorf("zip: close: %w", err)
 	}
 	return nil
+}
+
+func sanitizedArchiveMode(mode os.FileMode) os.FileMode {
+	if mode&0111 != 0 {
+		return 0755
+	}
+	return 0600
+}
+
+func VerifyBundleArchive(path string, limits buildLimits) error {
+	limits = limits.withDefaults()
+	reader, err := zip.OpenReader(path)
+	if err != nil {
+		return fmt.Errorf("open zip: %w", err)
+	}
+	defer reader.Close()
+	if len(reader.File) > limits.MaxEntries {
+		return fmt.Errorf("zip has %d entries, exceeds %d entry limit", len(reader.File), limits.MaxEntries)
+	}
+	seen := map[string]bool{}
+	var packInfoFile *zip.File
+	for _, file := range reader.File {
+		if seen[file.Name] {
+			return fmt.Errorf("duplicate ZIP entry %q", file.Name)
+		}
+		seen[file.Name] = true
+		if file.Name == "PACK_INFO.json" {
+			if packInfoFile != nil {
+				return fmt.Errorf("PACK_INFO.json appears multiple times")
+			}
+			packInfoFile = file
+		}
+	}
+	if packInfoFile == nil {
+		return fmt.Errorf("PACK_INFO.json is missing")
+	}
+	packInfoData, _, err := readZipFileLimited(packInfoFile, limits.MaxPackInfoBytes)
+	if err != nil {
+		return fmt.Errorf("read PACK_INFO.json: %w", err)
+	}
+	var info PackInfo
+	if err := json.Unmarshal(packInfoData, &info); err != nil {
+		return fmt.Errorf("PACK_INFO.json is malformed: %w", err)
+	}
+	inventory := map[string]PackInfoFile{}
+	for _, item := range info.Files {
+		if item.Path == "" {
+			return fmt.Errorf("PACK_INFO inventory contains empty path")
+		}
+		if _, ok := inventory[item.Path]; ok {
+			return fmt.Errorf("PACK_INFO inventory contains duplicate path %q", item.Path)
+		}
+		inventory[item.Path] = item
+	}
+	for _, file := range reader.File {
+		if file.Name == "PACK_INFO.json" {
+			continue
+		}
+		item, ok := inventory[file.Name]
+		if !ok {
+			return fmt.Errorf("ZIP entry %q is not listed in PACK_INFO inventory", file.Name)
+		}
+		actual, err := hashZipFileLimited(file, verifyLimitForPath(file.Name, limits, info.EntryWorkflow))
+		if err != nil {
+			return fmt.Errorf("verify %s: %w", file.Name, err)
+		}
+		if actual.Size != item.Size || actual.SHA256 != item.SHA256 {
+			return fmt.Errorf("ZIP entry %q does not match PACK_INFO inventory", file.Name)
+		}
+	}
+	for path := range inventory {
+		if !seen[path] {
+			return fmt.Errorf("PACK_INFO inventory entry %q is missing from ZIP", path)
+		}
+	}
+	return validateInventorySizes(sliceInventory(inventory), limits, info.EntryWorkflow)
+}
+
+func verifyLimitForPath(path string, limits buildLimits, entryWorkflow string) int64 {
+	switch {
+	case path == "goflow" || path == "goflow.exe":
+		return limits.MaxRuntimeBytes
+	case path == "pack/pack.json":
+		return MaxManifestBytes
+	case path == entryWorkflow:
+		return MaxWorkflowBytes
+	case strings.HasPrefix(path, "pack/plugins/") || strings.HasPrefix(path, "pack/assets/"):
+		return limits.MaxResourceBytes
+	default:
+		return limits.MaxPayloadBytes
+	}
+}
+
+func readZipFileLimited(file *zip.File, limit int64) ([]byte, int64, error) {
+	rc, err := file.Open()
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(io.LimitReader(rc, limit+1))
+	if err != nil {
+		return nil, int64(len(data)), err
+	}
+	if int64(len(data)) > limit {
+		return nil, int64(len(data)), fmt.Errorf("entry exceeds %d byte limit", limit)
+	}
+	return data, int64(len(data)), nil
+}
+
+func hashZipFileLimited(file *zip.File, limit int64) (PackInfoFile, error) {
+	rc, err := file.Open()
+	if err != nil {
+		return PackInfoFile{}, err
+	}
+	defer rc.Close()
+	h := sha256.New()
+	counter := &countingWriter{writer: h}
+	if _, err := io.Copy(counter, io.LimitReader(rc, limit+1)); err != nil {
+		return PackInfoFile{}, err
+	}
+	if counter.n > limit {
+		return PackInfoFile{}, fmt.Errorf("entry exceeds %d byte limit", limit)
+	}
+	return PackInfoFile{Path: file.Name, SHA256: hex.EncodeToString(h.Sum(nil)), Size: counter.n}, nil
+}
+
+func sliceInventory(inventory map[string]PackInfoFile) []PackInfoFile {
+	out := make([]PackInfoFile, 0, len(inventory))
+	for _, item := range inventory {
+		out = append(out, item)
+	}
+	return out
 }
 
 func streamFile(path string, writer io.Writer) (int64, error) {
@@ -401,4 +618,51 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+type publishOps interface {
+	Rename(oldPath, newPath string) error
+	Remove(path string) error
+}
+
+type osPublishOps struct{}
+
+func (osPublishOps) Rename(oldPath, newPath string) error { return os.Rename(oldPath, newPath) }
+func (osPublishOps) Remove(path string) error             { return os.Remove(path) }
+
+func publishArchive(tempPath, finalPath string, force bool, ops publishOps) error {
+	if !force {
+		if err := ops.Rename(tempPath, finalPath); err != nil {
+			return fmt.Errorf("output: move archive into place: %w", err)
+		}
+		return nil
+	}
+	if err := ops.Rename(tempPath, finalPath); err == nil {
+		return nil
+	} else if !replaceNeedsFallback(err) {
+		return fmt.Errorf("output: replace archive: %w", err)
+	}
+	backupPath := finalPath + ".backup-" + filepath.Base(tempPath)
+	if err := ops.Rename(finalPath, backupPath); err != nil {
+		return fmt.Errorf("output: move existing archive to backup %s: %w", backupPath, err)
+	}
+	if err := ops.Rename(tempPath, finalPath); err != nil {
+		restoreErr := ops.Rename(backupPath, finalPath)
+		if restoreErr != nil {
+			return fmt.Errorf("output: publish failed: %v; rollback failed from backup %s: %w", err, backupPath, restoreErr)
+		}
+		return fmt.Errorf("output: publish failed and existing archive was restored: %w", err)
+	}
+	if err := ops.Remove(backupPath); err != nil {
+		return fmt.Errorf("output: remove backup %s after successful publish: %w", backupPath, err)
+	}
+	return nil
+}
+
+func replaceNeedsFallback(err error) bool {
+	lower := strings.ToLower(err.Error())
+	return errors.Is(err, os.ErrExist) ||
+		errors.Is(err, os.ErrPermission) ||
+		strings.Contains(lower, "exist") ||
+		strings.Contains(lower, "access is denied")
 }

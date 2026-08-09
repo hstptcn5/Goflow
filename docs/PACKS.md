@@ -182,11 +182,17 @@ The builder does not copy the whole pack directory. Unlisted files such as `.env
 
 The file inventory is sorted by archive path and includes SHA-256 plus size for all files except `PACK_INFO.json` itself. It includes the runtime and generated `README.txt`. It does not contain absolute local paths, usernames, hostnames, build machine paths, or timestamps.
 
+After writing the temporary ZIP, the builder reopens that ZIP and verifies the bytes actually stored in the archive against `PACK_INFO.json`. It rejects missing inventory entries, extra ZIP entries, duplicate ZIP entry names, malformed or missing `PACK_INFO.json`, and hash or size mismatches before publishing the final artifact.
+
 ### Determinism And Output Safety
 
 Builds use sorted ZIP entries, a fixed ZIP timestamp of `1980-01-01T00:00:00Z`, fixed compression method, and stable JSON formatting. The builder writes a temporary archive in the output directory and renames it to the final archive only after the ZIP is complete.
 
-By default, an existing output archive is not overwritten. With `--force`, the new temporary archive is fully built before replacing the existing archive. On Unix-like systems `rename` can replace atomically. On Windows, replacing an existing file may require removing the old archive after the new temporary archive has been completed, so there can be a small final replacement window.
+By default, an existing output archive is not overwritten. With `--force`, the new temporary archive is fully built and verified before replacing the existing archive. If direct replacement is not supported by the platform, Goflow moves the old archive to a backup name in the same directory, moves the new archive into place, and attempts to restore the backup if the final move fails. The backup is removed only after the final artifact is in place.
+
+### Permission Policy
+
+The runtime ZIP entry is marked executable (`0755`). Listed plugin files preserve executable intent: if the resolved source plugin has an execute bit, the ZIP entry is written with sanitized executable mode (`0755`); otherwise it remains non-executable (`0600`). Manifest, workflow, assets, `README.txt`, and `PACK_INFO.json` are non-executable. Special permission bits such as setuid, setgid, and sticky are not stored. Symlink objects are not stored; allowed internal symlinks are dereferenced into regular file entries under their logical manifest path.
 
 ### Size Limits
 
@@ -196,8 +202,11 @@ Named limits:
 - Entry workflow JSON: 10 MiB.
 - Each listed plugin or asset file: 100 MiB.
 - Total pack payload excluding the runtime: 512 MiB.
+- Runtime executable copied into the bundle: 256 MiB.
+- `PACK_INFO.json` read during verification: 1 MiB.
+- ZIP entries processed during verification: 4096.
 
-The builder checks file sizes with `stat` before writing the ZIP and streams files while hashing and archiving, so it does not allocate memory for entire plugin or asset files.
+The builder checks file sizes with `stat` before writing the ZIP, rechecks inventory sizes after hashing, and verifies actual uncompressed ZIP entry sizes by streaming archive contents with limits. It streams files while hashing and archiving, so it does not allocate memory for entire plugin or asset files.
 
 ## Security Boundary
 
