@@ -299,6 +299,7 @@ Architectural decision:
 - Add setup schema/current readiness, config save, and credential-slot save endpoints using the Checkpoint C setup storage primitives.
 - Return redacted credential readiness without decrypted values or credential IDs.
 - Persist explicit setup complete/reopen state in `pack-setup-state.json`; all requirements must be valid before setup can become `READY`.
+- Add credential create-and-bind plus allowlisted credential test endpoint; `telegram_get_me` uses a non-mutating request and test-only injectable base URL/client.
 
 Files changed:
 
@@ -331,16 +332,19 @@ Security considerations:
 - Setup config writes use bounded strict JSON bodies and the existing non-secret config validator.
 - Credential slot writes validate credential existence/type and return assigned/type status without credential IDs or decrypted values.
 - Setup completion stores only pack ID, schema version, completed flag, and timestamp; it does not store credentials, config values, or decrypted data.
+- Credential creation stores plaintext only through the encrypted credential store and redacts responses.
+- Telegram connection testing calls `getMe`, never `sendMessage`, bounds/redacts failure responses, and never returns decrypted values.
 
 Commit SHA:
 
 - `e229fe5` (`feat: add appliance backend context`).
 - `d573aa0` (`feat: add appliance setup readiness api`).
 - `dde44b7` (`feat: add appliance setup state machine`).
+- Pending credential create/test commit.
 
 Remaining work:
 
-- Credential creation/selection/replacement and allowlisted connection tests.
+- Remaining non-Telegram allowlisted connection-test implementations or explicit skipped status.
 - Full setup state machine recovery behavior.
 - Server/workflow status, run-now, latest execution, recent executions, and diagnostics redaction tests.
 - Oversized-body, rate-limit, bad-host, cross-origin, missing-token, and generic-mode coverage across all appliance mutations.

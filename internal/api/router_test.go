@@ -13,6 +13,7 @@ import (
 
 	"goflow/internal/crypto"
 	"goflow/internal/pack"
+	"goflow/internal/packsetup"
 	"goflow/internal/storage"
 )
 
@@ -196,7 +197,128 @@ func TestApplianceSetupReadinessAndRedaction(t *testing.T) {
 	}
 }
 
+func TestApplianceCreateCredentialStoresEncryptedAndRedactsResponse(t *testing.T) {
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+	credStore := storage.NewCredentialStore(db, crypto.NewCryptoManager("test-master-key"))
+	appliance := &ApplianceContext{
+		Enabled:      true,
+		Origin:       "http://example.com",
+		SessionToken: "test-session-token",
+		PackID:       "example.appliance",
+		PackName:     "Example Appliance",
+		PackVersion:  "0.1.0",
+		WorkflowID:   "wf-1",
+		DataDir:      t.TempDir(),
+		CredentialRequirements: []pack.CredentialRequirement{
+			{Key: "telegram", Label: "Telegram", Type: "TELEGRAM_BOT", Required: true},
+		},
+	}
+	router := NewRouter(nil, nil, credStore, nil, nil, nil, nil, nil, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
+	body := applianceRequest(t, router, http.MethodPost, "/api/appliance/setup/credentials/create", []byte(`{"key":"telegram","name":"Telegram","value":"123:secret-token"}`), map[string]string{
+		"Origin":             "http://example.com",
+		applianceTokenHeader: "test-session-token",
+		"Content-Type":       "application/json",
+	})
+	if strings.Contains(body, "secret-token") {
+		t.Fatalf("create response leaked credential value: %s", body)
+	}
+	credentials, err := credStore.ListAll()
+	if err != nil {
+		t.Fatalf("list credentials: %v", err)
+	}
+	if len(credentials) != 1 || credentials[0].Type != "TELEGRAM_BOT" {
+		t.Fatalf("unexpected credentials: %#v", credentials)
+	}
+	if strings.Contains(body, credentials[0].ID) {
+		t.Fatalf("create response leaked credential id: %s", body)
+	}
+	decrypted, err := credStore.GetDecryptedData(credentials[0].ID)
+	if err != nil {
+		t.Fatalf("decrypt credential: %v", err)
+	}
+	if decrypted != "123:secret-token" {
+		t.Fatalf("unexpected decrypted credential")
+	}
+}
+
+func TestApplianceTelegramConnectionTestUsesGetMeAndRedactsFailure(t *testing.T) {
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+	credStore := storage.NewCredentialStore(db, crypto.NewCryptoManager("test-master-key"))
+	cred, err := credStore.Create("Telegram", "TELEGRAM_BOT", "123:secret-token")
+	if err != nil {
+		t.Fatalf("create credential: %v", err)
+	}
+	var observedPath string
+	telegram := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		observedPath = r.URL.Path
+		if strings.Contains(r.URL.Path, "sendMessage") {
+			t.Fatalf("connection test must not send messages")
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"id":123}}`))
+	}))
+	defer telegram.Close()
+	appliance := &ApplianceContext{
+		Enabled:              true,
+		Origin:               "http://example.com",
+		SessionToken:         "test-session-token",
+		PackID:               "example.appliance",
+		PackName:             "Example Appliance",
+		PackVersion:          "0.1.0",
+		WorkflowID:           "wf-1",
+		DataDir:              t.TempDir(),
+		TelegramAPIBaseURL:   telegram.URL,
+		ConnectionTestClient: telegram.Client(),
+		CredentialRequirements: []pack.CredentialRequirement{
+			{Key: "telegram", Label: "Telegram", Type: "TELEGRAM_BOT", Required: true, TestKind: "telegram_get_me"},
+		},
+	}
+	if _, err := packsetup.SaveCredentialBindings(appliance.DataDir, applianceManifest(appliance), map[string]string{"telegram": cred.ID}, applianceCredentialResolver(credStore)); err != nil {
+		t.Fatalf("save credential binding: %v", err)
+	}
+	router := NewRouter(nil, nil, credStore, nil, nil, nil, nil, nil, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
+	body := applianceRequest(t, router, http.MethodPost, "/api/appliance/setup/credentials/test", []byte(`{"key":"telegram"}`), map[string]string{
+		"Origin":             "http://example.com",
+		applianceTokenHeader: "test-session-token",
+		"Content-Type":       "application/json",
+	})
+	if !strings.Contains(body, `"status":"OK"`) {
+		t.Fatalf("expected OK test response, got %s", body)
+	}
+	if observedPath != "/bot123:secret-token/getMe" {
+		t.Fatalf("expected getMe path, got %q", observedPath)
+	}
+
+	failingTelegram := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"ok":false,"description":"bad bot123:secret-token"}`))
+	}))
+	defer failingTelegram.Close()
+	appliance.TelegramAPIBaseURL = failingTelegram.URL
+	appliance.ConnectionTestClient = failingTelegram.Client()
+	body = applianceRequestStatus(t, router, http.MethodPost, "/api/appliance/setup/credentials/test", []byte(`{"key":"telegram"}`), map[string]string{
+		"Origin":             "http://example.com",
+		applianceTokenHeader: "test-session-token",
+		"Content-Type":       "application/json",
+	}, http.StatusBadGateway)
+	if strings.Contains(body, "secret-token") {
+		t.Fatalf("failure response leaked token: %s", body)
+	}
+}
+
 func applianceRequest(t *testing.T, router http.Handler, method, path string, body []byte, headers map[string]string) string {
+	t.Helper()
+	return applianceRequestStatus(t, router, method, path, body, headers, 0)
+}
+
+func applianceRequestStatus(t *testing.T, router http.Handler, method, path string, body []byte, headers map[string]string, wantStatus int) string {
 	t.Helper()
 	reader := bytes.NewReader(body)
 	req := httptest.NewRequest(method, path, reader)
@@ -206,7 +328,10 @@ func applianceRequest(t *testing.T, router http.Handler, method, path string, bo
 	}
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
-	if rec.Code < 200 || rec.Code >= 300 {
+	if wantStatus != 0 && rec.Code != wantStatus {
+		t.Fatalf("%s %s returned %d, want %d: %s", method, path, rec.Code, wantStatus, rec.Body.String())
+	}
+	if wantStatus == 0 && (rec.Code < 200 || rec.Code >= 300) {
 		t.Fatalf("%s %s returned %d: %s", method, path, rec.Code, rec.Body.String())
 	}
 	return rec.Body.String()

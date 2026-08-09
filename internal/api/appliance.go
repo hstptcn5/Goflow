@@ -8,7 +8,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,6 +37,8 @@ type ApplianceContext struct {
 	ConfigSchema           []pack.ConfigField
 	CredentialRequirements []pack.CredentialRequirement
 	LegacyRequiredCreds    []string
+	TelegramAPIBaseURL     string
+	ConnectionTestClient   *http.Client
 }
 
 func mountApplianceRoutes(r chi.Router, appliance *ApplianceContext, credStore *storage.CredentialStore) {
@@ -51,6 +55,8 @@ func mountApplianceRoutes(r chi.Router, appliance *ApplianceContext, credStore *
 			r.Use(applianceMutationMiddleware(appliance))
 			r.Post("/setup/config", applianceSaveConfigHandler(appliance))
 			r.Post("/setup/credentials", applianceSaveCredentialsHandler(appliance, credStore))
+			r.Post("/setup/credentials/create", applianceCreateCredentialHandler(appliance, credStore))
+			r.Post("/setup/credentials/test", applianceTestCredentialHandler(appliance, credStore))
 			r.Post("/setup/complete", applianceCompleteHandler(appliance, credStore))
 			r.Post("/setup/reopen", applianceReopenHandler(appliance))
 		})
@@ -153,6 +159,92 @@ func applianceSaveCredentialsHandler(appliance *ApplianceContext, credStore *sto
 			return
 		}
 		renderJSON(w, http.StatusOK, map[string]interface{}{"credentials": redactedCredentialSlots(creds.Slots)})
+	}
+}
+
+func applianceCreateCredentialHandler(appliance *ApplianceContext, credStore *storage.CredentialStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if credStore == nil {
+			http.Error(w, "credential store is not available", http.StatusInternalServerError)
+			return
+		}
+		var req struct {
+			Key   string `json:"key"`
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		}
+		if err := decodeApplianceJSON(w, r, &req); err != nil {
+			return
+		}
+		requirement, ok := credentialRequirement(appliance, req.Key)
+		if !ok {
+			http.Error(w, "credential slot is not declared", http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Value) == "" {
+			http.Error(w, "credential name and value are required", http.StatusBadRequest)
+			return
+		}
+		cred, err := credStore.Create(req.Name, requirement.Type, req.Value)
+		if err != nil {
+			http.Error(w, "credential could not be saved", http.StatusInternalServerError)
+			return
+		}
+		creds, err := packsetup.SaveCredentialBindings(appliance.DataDir, applianceManifest(appliance), map[string]string{req.Key: cred.ID}, applianceCredentialResolver(credStore))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		renderJSON(w, http.StatusCreated, map[string]interface{}{"credentials": redactedCredentialSlots(creds.Slots)})
+	}
+}
+
+func applianceTestCredentialHandler(appliance *ApplianceContext, credStore *storage.CredentialStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if credStore == nil {
+			http.Error(w, "credential store is not available", http.StatusInternalServerError)
+			return
+		}
+		var req struct {
+			Key string `json:"key"`
+		}
+		if err := decodeApplianceJSON(w, r, &req); err != nil {
+			return
+		}
+		requirement, ok := credentialRequirement(appliance, req.Key)
+		if !ok {
+			http.Error(w, "credential slot is not declared", http.StatusBadRequest)
+			return
+		}
+		if requirement.TestKind == "" {
+			renderJSON(w, http.StatusOK, map[string]interface{}{"status": "SKIPPED", "reason": "no connection test is declared"})
+			return
+		}
+		loaded, err := packsetup.LoadCredentialBindings(appliance.DataDir, applianceManifest(appliance), applianceCredentialResolver(credStore))
+		if err != nil {
+			http.Error(w, "credential slot is not ready", http.StatusBadRequest)
+			return
+		}
+		slot, ok := loaded.Credentials.Slots[req.Key]
+		if !ok {
+			http.Error(w, "credential slot is not ready", http.StatusBadRequest)
+			return
+		}
+		secret, err := credStore.GetDecryptedData(slot.CredentialID)
+		if err != nil {
+			http.Error(w, "credential value is not available", http.StatusBadRequest)
+			return
+		}
+		switch requirement.TestKind {
+		case "telegram_get_me":
+			if err := applianceTelegramGetMe(r, appliance, secret); err != nil {
+				renderJSON(w, http.StatusBadGateway, map[string]interface{}{"status": "FAILED", "error": err.Error()})
+				return
+			}
+			renderJSON(w, http.StatusOK, map[string]interface{}{"status": "OK"})
+		default:
+			renderJSON(w, http.StatusOK, map[string]interface{}{"status": "SKIPPED", "reason": "connection test is not implemented"})
+		}
 	}
 }
 
@@ -371,4 +463,68 @@ func redactedCredentialSlots(slots map[string]packsetup.CredentialSlot) map[stri
 		}
 	}
 	return result
+}
+
+func credentialRequirement(appliance *ApplianceContext, key string) (pack.CredentialRequirement, bool) {
+	for _, req := range appliance.CredentialRequirements {
+		if req.Key == key {
+			return req, true
+		}
+	}
+	return pack.CredentialRequirement{}, false
+}
+
+func applianceTelegramGetMe(r *http.Request, appliance *ApplianceContext, token string) error {
+	base := strings.TrimRight(appliance.TelegramAPIBaseURL, "/")
+	if base == "" {
+		base = "https://api.telegram.org"
+	}
+	parsed, err := url.Parse(base)
+	if err != nil || !parsed.IsAbs() || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return fmt.Errorf("telegram API base URL is invalid")
+	}
+	testURL := fmt.Sprintf("%s/bot%s/getMe", base, token)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, testURL, nil)
+	if err != nil {
+		return fmt.Errorf("telegram connection test could not be created")
+	}
+	client := appliance.ConnectionTestClient
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram connection test failed: %s", redactConnectionTestText(err.Error()))
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, (64<<10)+1))
+	if err != nil {
+		return fmt.Errorf("telegram connection test response could not be read")
+	}
+	if len(data) > (64 << 10) {
+		return fmt.Errorf("telegram connection test response exceeds limit")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("telegram connection test returned status %d: %s", resp.StatusCode, redactConnectionTestText(string(data)))
+	}
+	var decoded struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil || !decoded.OK {
+		return fmt.Errorf("telegram connection test did not return ok")
+	}
+	return nil
+}
+
+func redactConnectionTestText(text string) string {
+	if len(text) > 4096 {
+		text = text[:4096]
+	}
+	for _, pattern := range []*regexp.Regexp{
+		regexp.MustCompile(`(?i)bot[0-9]+:[A-Za-z0-9_-]+`),
+		regexp.MustCompile(`(?i)(token|authorization|password|secret)["'=:\s]+[^"',}\s]+`),
+	} {
+		text = pattern.ReplaceAllString(text, "[REDACTED]")
+	}
+	return text
 }
