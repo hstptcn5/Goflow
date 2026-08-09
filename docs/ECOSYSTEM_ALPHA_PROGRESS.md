@@ -271,7 +271,7 @@ Commit SHA:
 - `e6f8aae` (`feat: add pack config storage`).
 - `ad46eb3` (`feat: add pack credential slot storage`).
 - `3f4ec23` (`feat: add pack setup binding resolver`).
-- Pending HTTP and Telegram hardening commit.
+- `69243e4` (`fix: harden pack network nodes`).
 
 Remaining work:
 
