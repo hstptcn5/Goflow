@@ -210,13 +210,49 @@ Blockers:
 
 ## Checkpoint C - Safe Runtime Configuration and Parameter Resolution
 
-Status: NOT_STARTED
+Status: IN_PROGRESS
 
-Planned scope:
+Starting commit: `788b5470ae17bd1441c864a87ee2f15630048f92`
 
-- Atomic non-secret config and credential-slot storage in the per-pack data directory.
+Architectural decision:
+
+- Add a dedicated `internal/packsetup` package for runtime setup state instead of expanding `packrun`.
+- Store non-secret config in `pack-config.json` under the per-pack data directory.
+- Include pack ID and config schema version in the stored file.
+- Revalidate known fields against the current manifest before applying them.
+- Retain safe stale fields on disk but keep them out of the applied runtime config map.
+- Reject unsafe stale fields that look like retained secret material.
+
+Files changed:
+
+- `internal/packsetup/config.go`
+- `internal/packsetup/config_test.go`
+- `docs/ECOSYSTEM_ALPHA_PROGRESS.md`
+
+Tests run and result:
+
+- `go test ./internal/packsetup`: PASS.
+- `go test ./...`: PASS.
+- `go vet ./...`: PASS.
+- `go build ./...`: PASS.
+- `govulncheck ./...`: PASS, 0 reachable vulnerabilities.
+
+Security considerations:
+
+- Config storage rejects pack ID mismatches, unsupported schema versions, oversized files, bad URL values, wrong scalar types, missing required values, and unsafe stale fields.
+- Config writes are atomic and use `0600` mode where supported.
+- Credential IDs and binding application are not implemented yet in this checkpoint.
+
+Commit SHA:
+
+- Pending.
+
+Remaining work:
+
 - Safe path-only interpolation for input, node outputs, and pack config.
 - Harden HTTP Request and Telegram nodes for appliance use.
+- Add credential-slot storage and validation.
+- Integrate config storage with packrun/appliance backend in Checkpoint D.
 
 ## Checkpoint D - Appliance Backend and Security Boundary
 
