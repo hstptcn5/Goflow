@@ -10,8 +10,11 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"goflow/internal/crypto"
+	"goflow/internal/engine"
+	"goflow/internal/nodes"
 	"goflow/internal/pack"
 	"goflow/internal/packsetup"
 	"goflow/internal/storage"
@@ -310,6 +313,159 @@ func TestApplianceTelegramConnectionTestUsesGetMeAndRedactsFailure(t *testing.T)
 	}, http.StatusBadGateway)
 	if strings.Contains(body, "secret-token") {
 		t.Fatalf("failure response leaked token: %s", body)
+	}
+}
+
+func TestApplianceWorkflowRunAndExecutionSummariesAreRedacted(t *testing.T) {
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+	wfStore := storage.NewWorkflowStore(db)
+	execStore := storage.NewExecutionStore(db)
+	credStore := storage.NewCredentialStore(db, crypto.NewCryptoManager("test-master-key"))
+	registry := nodes.NewPluginRegistry()
+	if err := registry.Register(applianceTestExecutor{}); err != nil {
+		t.Fatalf("register executor: %v", err)
+	}
+	eventBus := engine.NewEventBus()
+	eng := engine.NewEngine(registry, execStore, credStore, eventBus, wfStore)
+	appliance := &ApplianceContext{
+		Enabled:      true,
+		Origin:       "http://example.com",
+		SessionToken: "test-session-token",
+		PackID:       "example.appliance",
+		PackName:     "Example Appliance",
+		PackVersion:  "0.1.0",
+		WorkflowID:   "wf-run",
+		DataDir:      t.TempDir(),
+	}
+	if _, err := packsetup.SaveState(appliance.DataDir, applianceManifest(appliance), true, time.Now()); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	if err := wfStore.Create(&storage.Workflow{
+		ID:          "wf-run",
+		Name:        "Run Me",
+		IsActive:    true,
+		NodesJSON:   `[{"id":"n1","type":"applianceTestAction","name":"Action","params":{}}]`,
+		EdgesJSON:   `[]`,
+		RiskLevel:   "low",
+		ExposeCLI:   false,
+		ExposeMCP:   false,
+		Description: "Managed workflow",
+	}); err != nil {
+		t.Fatalf("create workflow: %v", err)
+	}
+	router := NewRouter(wfStore, execStore, credStore, nil, nil, registry, eng, eventBus, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
+	runBody := applianceRequestStatus(t, router, http.MethodPost, "/api/appliance/workflow/run", []byte(`{"input":{"api_token":"secret-canary"},"idempotency_key":"secret-idem"}`), map[string]string{
+		"Origin":             "http://example.com",
+		applianceTokenHeader: "test-session-token",
+		"Content-Type":       "application/json; charset=utf-8",
+	}, http.StatusAccepted)
+	if strings.Contains(runBody, "secret-canary") || strings.Contains(runBody, "secret-idem") {
+		t.Fatalf("run response leaked sensitive input: %s", runBody)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		latestBody := applianceRequest(t, router, http.MethodGet, "/api/appliance/executions/latest", nil, nil)
+		if strings.Contains(latestBody, `"status":"SUCCESS"`) {
+			if strings.Contains(latestBody, "secret-canary") || strings.Contains(latestBody, "secret-idem") || strings.Contains(latestBody, "secret-output") || strings.Contains(latestBody, "logs_json") {
+				t.Fatalf("latest execution response leaked sensitive material: %s", latestBody)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("execution did not finish; latest=%s", latestBody)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	recentBody := applianceRequest(t, router, http.MethodGet, "/api/appliance/executions?limit=100", nil, nil)
+	if !strings.Contains(recentBody, `"limit":50`) || strings.Contains(recentBody, "secret-output") || strings.Contains(recentBody, "logs_json") {
+		t.Fatalf("recent executions response was not bounded/redacted: %s", recentBody)
+	}
+	diagnosticsBody := applianceRequest(t, router, http.MethodGet, "/api/appliance/diagnostics", nil, nil)
+	if strings.Contains(diagnosticsBody, "secret-canary") || strings.Contains(diagnosticsBody, "secret-idem") || strings.Contains(diagnosticsBody, "secret-output") || strings.Contains(diagnosticsBody, "goflow.db") {
+		t.Fatalf("diagnostics leaked sensitive material: %s", diagnosticsBody)
+	}
+}
+
+func TestApplianceRunRejectsMissingSetupWithLogicalRequirements(t *testing.T) {
+	appliance := &ApplianceContext{
+		Enabled:      true,
+		Origin:       "http://example.com",
+		SessionToken: "test-session-token",
+		PackID:       "example.appliance",
+		PackName:     "Example Appliance",
+		PackVersion:  "0.1.0",
+		WorkflowID:   "wf-1",
+		DataDir:      t.TempDir(),
+		ConfigSchema: []pack.ConfigField{
+			{Key: "source_url", Label: "Source URL", Type: "url", Required: true},
+		},
+	}
+	router := NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
+	body := applianceRequestStatus(t, router, http.MethodPost, "/api/appliance/workflow/run", []byte(`{"input":{"password":"secret-canary"}}`), map[string]string{
+		"Origin":             "http://example.com",
+		applianceTokenHeader: "test-session-token",
+		"Content-Type":       "application/json",
+	}, http.StatusConflict)
+	if !strings.Contains(body, "config.source_url") || strings.Contains(body, "secret-canary") {
+		t.Fatalf("missing setup response was not logical/redacted: %s", body)
+	}
+}
+
+func TestApplianceCredentialTestRateLimit(t *testing.T) {
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+	credStore := storage.NewCredentialStore(db, crypto.NewCryptoManager("test-master-key"))
+	appliance := &ApplianceContext{
+		Enabled:      true,
+		Origin:       "http://example.com",
+		SessionToken: "test-session-token",
+		PackID:       "example.appliance",
+		PackName:     "Example Appliance",
+		PackVersion:  "0.1.0",
+		WorkflowID:   "wf-1",
+		DataDir:      t.TempDir(),
+		CredentialRequirements: []pack.CredentialRequirement{
+			{Key: "telegram", Label: "Telegram", Type: "TELEGRAM_BOT", Required: true},
+		},
+	}
+	router := NewRouter(nil, nil, credStore, nil, nil, nil, nil, nil, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
+	headers := map[string]string{
+		"Origin":             "http://example.com",
+		applianceTokenHeader: "test-session-token",
+		"Content-Type":       "application/json",
+	}
+	for i := 0; i < 10; i++ {
+		body := applianceRequest(t, router, http.MethodPost, "/api/appliance/setup/credentials/test", []byte(`{"key":"telegram"}`), headers)
+		if !strings.Contains(body, `"status":"SKIPPED"`) {
+			t.Fatalf("expected skipped response, got %s", body)
+		}
+	}
+	applianceRequestStatus(t, router, http.MethodPost, "/api/appliance/setup/credentials/test", []byte(`{"key":"telegram"}`), headers, http.StatusTooManyRequests)
+}
+
+type applianceTestExecutor struct{}
+
+func (applianceTestExecutor) Execute(ctx *nodes.ExecutionContext, node *nodes.Node) (interface{}, error) {
+	return map[string]interface{}{"message": "ok", "token": "secret-output"}, nil
+}
+
+func (applianceTestExecutor) Validate(node *nodes.Node) error {
+	return nil
+}
+
+func (applianceTestExecutor) GetDefinition() nodes.NodeDefinition {
+	return nodes.NodeDefinition{
+		Type:        nodes.NodeType("applianceTestAction"),
+		Name:        "Appliance Test Action",
+		Description: "Test action",
+		Category:    "test",
 	}
 }
 

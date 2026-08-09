@@ -205,6 +205,14 @@ Pack-compatible HTTP Request execution accepts only absolute `http` and `https` 
 
 Telegram execution uses the execution context for cancellation and bounds/redacts API error bodies. When `credential_id` is present, the encrypted credential value resolved by the runtime is preferred and a missing credential is an error; the node does not fall back to a literal `bot_token` in that case. Pack validation already rejects literal `bot_token` values in pack workflows.
 
+### Appliance Runtime API
+
+Pack Run may start Goflow with an explicit in-memory appliance context. In that mode only, `/api/appliance/*` endpoints expose bootstrap, setup, workflow status, run-now, execution summaries, and diagnostics for the single managed workflow. Generic `goflow serve` does not mount these routes.
+
+State-changing appliance endpoints require a loopback Host match, exact Origin match, JSON content type, strict body limits, and the per-process appliance session token from bootstrap. Credential connection tests are explicit POST operations and are rate/concurrency limited.
+
+Runtime and diagnostics responses expose pack identity, logical setup readiness, workflow state, and bounded execution summaries only. They do not expose decrypted credentials, credential IDs, database contents, master keys, full logs, arbitrary files, environment variables, hostnames, usernames, or absolute source/build paths.
+
 ### Pack-Only Workflow Secret Scan
 
 In pack context, workflow parameters known to carry secrets must not contain literal values. For example, a Telegram node may bind or select `credential_id`, but a pack workflow with a non-empty literal `bot_token` is rejected. This restriction applies to packs only and does not silently rewrite generic non-pack workflows.

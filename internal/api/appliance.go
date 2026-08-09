@@ -6,14 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
+	"goflow/internal/application"
+	"goflow/internal/engine"
 	"goflow/internal/pack"
 	"goflow/internal/packsetup"
 	"goflow/internal/storage"
@@ -41,24 +45,37 @@ type ApplianceContext struct {
 	ConnectionTestClient   *http.Client
 }
 
-func mountApplianceRoutes(r chi.Router, appliance *ApplianceContext, credStore *storage.CredentialStore) {
+func mountApplianceRoutes(
+	r chi.Router,
+	appliance *ApplianceContext,
+	wfStore *storage.WorkflowStore,
+	execStore *storage.ExecutionStore,
+	credStore *storage.CredentialStore,
+	triggerService *application.TriggerService,
+) {
 	if appliance == nil || !appliance.Enabled {
 		return
 	}
+	credentialTestLimiter := newFixedWindowRateLimiter(10, time.Minute)
+	credentialTestSlots := make(chan struct{}, 1)
 	r.Route("/api/appliance", func(r chi.Router) {
 		r.Use(applianceHostMiddleware(appliance))
 		r.Get("/bootstrap", applianceBootstrapHandler(appliance))
-		r.Get("/status", applianceStatusHandler(appliance))
+		r.Get("/status", applianceStatusHandler(appliance, wfStore, execStore, credStore))
 		r.Get("/setup", applianceSetupHandler(appliance, credStore))
-		r.Get("/diagnostics", applianceDiagnosticsHandler(appliance))
+		r.Get("/diagnostics", applianceDiagnosticsHandler(appliance, wfStore, execStore, credStore))
+		r.Get("/workflow/status", applianceWorkflowStatusHandler(appliance, wfStore, execStore, credStore))
+		r.Get("/executions/latest", applianceLatestExecutionHandler(appliance, execStore))
+		r.Get("/executions", applianceRecentExecutionsHandler(appliance, execStore))
 		r.Group(func(r chi.Router) {
 			r.Use(applianceMutationMiddleware(appliance))
 			r.Post("/setup/config", applianceSaveConfigHandler(appliance))
 			r.Post("/setup/credentials", applianceSaveCredentialsHandler(appliance, credStore))
 			r.Post("/setup/credentials/create", applianceCreateCredentialHandler(appliance, credStore))
-			r.Post("/setup/credentials/test", applianceTestCredentialHandler(appliance, credStore))
+			r.Post("/setup/credentials/test", applianceTestCredentialHandler(appliance, credStore, credentialTestLimiter, credentialTestSlots))
 			r.Post("/setup/complete", applianceCompleteHandler(appliance, credStore))
 			r.Post("/setup/reopen", applianceReopenHandler(appliance))
+			r.Post("/workflow/run", applianceRunWorkflowHandler(appliance, credStore, triggerService))
 		})
 	})
 }
@@ -72,12 +89,13 @@ func applianceBootstrapHandler(appliance *ApplianceContext) http.HandlerFunc {
 	}
 }
 
-func applianceStatusHandler(appliance *ApplianceContext) http.HandlerFunc {
+func applianceStatusHandler(appliance *ApplianceContext, wfStore *storage.WorkflowStore, execStore *storage.ExecutionStore, credStore *storage.CredentialStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		state, missing, completed := applianceReadiness(appliance, nil)
+		state, missing, completed := applianceRuntimeState(appliance, wfStore, execStore, applianceCredentialResolver(credStore))
 		renderJSON(w, http.StatusOK, map[string]interface{}{
 			"pack":           applianceIdentity(appliance),
 			"workflow_id":    appliance.WorkflowID,
+			"server":         "ok",
 			"state":          state,
 			"missing":        missing,
 			"setup_complete": completed,
@@ -86,14 +104,21 @@ func applianceStatusHandler(appliance *ApplianceContext) http.HandlerFunc {
 	}
 }
 
-func applianceDiagnosticsHandler(appliance *ApplianceContext) http.HandlerFunc {
+func applianceDiagnosticsHandler(appliance *ApplianceContext, wfStore *storage.WorkflowStore, execStore *storage.ExecutionStore, credStore *storage.CredentialStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		state, _, _ := applianceReadiness(appliance, nil)
+		state, missing, completed := applianceRuntimeState(appliance, wfStore, execStore, applianceCredentialResolver(credStore))
+		latest, _ := applianceLatestExecution(execStore, appliance.WorkflowID)
 		renderJSON(w, http.StatusOK, map[string]interface{}{
-			"pack_id":      appliance.PackID,
-			"pack_version": appliance.PackVersion,
-			"workflow_id":  appliance.WorkflowID,
-			"state":        state,
+			"pack":                  applianceIdentity(appliance),
+			"workflow_id":           appliance.WorkflowID,
+			"server":                "ok",
+			"state":                 state,
+			"missing":               missing,
+			"setup_complete":        completed,
+			"latest_execution":      latest,
+			"credential_ids_hidden": true,
+			"secrets_hidden":        true,
+			"generated_at":          time.Now().UTC(),
 		})
 	}
 }
@@ -199,8 +224,19 @@ func applianceCreateCredentialHandler(appliance *ApplianceContext, credStore *st
 	}
 }
 
-func applianceTestCredentialHandler(appliance *ApplianceContext, credStore *storage.CredentialStore) http.HandlerFunc {
+func applianceTestCredentialHandler(appliance *ApplianceContext, credStore *storage.CredentialStore, limiter *fixedWindowRateLimiter, slots chan struct{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !limiter.Allow(rateLimitKey(r, appliance.PackID+":credential-test")) {
+			http.Error(w, "credential test rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		select {
+		case slots <- struct{}{}:
+			defer func() { <-slots }()
+		default:
+			http.Error(w, "credential test already running", http.StatusTooManyRequests)
+			return
+		}
 		if credStore == nil {
 			http.Error(w, "credential store is not available", http.StatusInternalServerError)
 			return
@@ -245,6 +281,106 @@ func applianceTestCredentialHandler(appliance *ApplianceContext, credStore *stor
 		default:
 			renderJSON(w, http.StatusOK, map[string]interface{}{"status": "SKIPPED", "reason": "connection test is not implemented"})
 		}
+	}
+}
+
+func applianceWorkflowStatusHandler(appliance *ApplianceContext, wfStore *storage.WorkflowStore, execStore *storage.ExecutionStore, credStore *storage.CredentialStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		state, missing, completed := applianceRuntimeState(appliance, wfStore, execStore, applianceCredentialResolver(credStore))
+		response := map[string]interface{}{
+			"workflow_id":    appliance.WorkflowID,
+			"server":         "ok",
+			"state":          state,
+			"missing":        missing,
+			"setup_complete": completed,
+			"latest_execution": func() interface{} {
+				latest, _ := applianceLatestExecution(execStore, appliance.WorkflowID)
+				return latest
+			}(),
+		}
+		if wfStore != nil {
+			if wf, err := wfStore.GetByID(appliance.WorkflowID); err == nil {
+				response["workflow"] = map[string]interface{}{
+					"id":        wf.ID,
+					"name":      wf.Name,
+					"is_active": wf.IsActive,
+					"risk":      wf.RiskLevel,
+				}
+			} else {
+				response["state"] = "ERROR"
+				response["error"] = "managed workflow is not available"
+			}
+		}
+		renderJSON(w, http.StatusOK, response)
+	}
+}
+
+func applianceRunWorkflowHandler(appliance *ApplianceContext, credStore *storage.CredentialStore, triggerService *application.TriggerService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Input          interface{} `json:"input"`
+			IdempotencyKey string      `json:"idempotency_key"`
+		}
+		if err := decodeApplianceJSON(w, r, &req); err != nil {
+			return
+		}
+		if triggerService == nil {
+			http.Error(w, "workflow runner is not available", http.StatusServiceUnavailable)
+			return
+		}
+		state, missing, _ := applianceReadiness(appliance, applianceCredentialResolver(credStore))
+		if state != "READY" {
+			renderJSON(w, http.StatusConflict, map[string]interface{}{"error": "setup requirements are missing", "missing": missing, "state": state})
+			return
+		}
+		result, err := triggerService.Trigger(r.Context(), application.TriggerRequest{
+			WorkflowID:     appliance.WorkflowID,
+			Input:          req.Input,
+			Mode:           application.ModeAsync,
+			Source:         application.SourceUI,
+			Principal:      "appliance:" + appliance.PackID,
+			RequestID:      r.Header.Get("X-Request-ID"),
+			IdempotencyKey: req.IdempotencyKey,
+		})
+		if err != nil {
+			writeExecutionError(w, err)
+			return
+		}
+		renderJSON(w, http.StatusAccepted, executionAcceptedResponse(result))
+	}
+}
+
+func applianceLatestExecutionHandler(appliance *ApplianceContext, execStore *storage.ExecutionStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		latest, err := applianceLatestExecution(execStore, appliance.WorkflowID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		renderJSON(w, http.StatusOK, map[string]interface{}{"execution": latest})
+	}
+}
+
+func applianceRecentExecutionsHandler(appliance *ApplianceContext, execStore *storage.ExecutionStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		limit := 10
+		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed <= 0 {
+				http.Error(w, "limit must be a positive integer", http.StatusBadRequest)
+				return
+			}
+			limit = parsed
+		}
+		if limit > 50 {
+			limit = 50
+		}
+		executions, err := applianceRecentExecutions(execStore, appliance.WorkflowID, limit)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		renderJSON(w, http.StatusOK, map[string]interface{}{"executions": executions, "limit": limit})
 	}
 }
 
@@ -310,7 +446,8 @@ func applianceHostMiddleware(appliance *ApplianceContext) func(http.Handler) htt
 func applianceMutationMiddleware(appliance *ApplianceContext) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get("Content-Type") != "application/json" {
+			mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+			if err != nil || mediaType != "application/json" {
 				http.Error(w, "content type must be application/json", http.StatusUnsupportedMediaType)
 				return
 			}
@@ -386,6 +523,32 @@ func applianceReadiness(appliance *ApplianceContext, resolver packsetup.Credenti
 	return "READY", missing, completed
 }
 
+func applianceRuntimeState(appliance *ApplianceContext, wfStore *storage.WorkflowStore, execStore *storage.ExecutionStore, resolver packsetup.CredentialResolver) (string, []string, bool) {
+	state, missing, completed := applianceReadiness(appliance, resolver)
+	if state != "READY" {
+		return state, missing, completed
+	}
+	if wfStore != nil {
+		wf, err := wfStore.GetByID(appliance.WorkflowID)
+		if err != nil || !wf.IsActive {
+			return "ERROR", missing, completed
+		}
+	}
+	executions, err := applianceRecentExecutions(execStore, appliance.WorkflowID, 10)
+	if err != nil {
+		return "DEGRADED", missing, completed
+	}
+	for _, exec := range executions {
+		if strings.EqualFold(exec.Status, "RUNNING") {
+			return "RUNNING", missing, completed
+		}
+		if strings.EqualFold(exec.Status, "FAILED") {
+			return "ERROR", missing, completed
+		}
+	}
+	return "READY", missing, completed
+}
+
 func applianceMissingRequirements(appliance *ApplianceContext, resolver packsetup.CredentialResolver) []string {
 	missing := []string{}
 	manifest := applianceManifest(appliance)
@@ -416,6 +579,56 @@ func applianceMissingRequirements(appliance *ApplianceContext, resolver packsetu
 		}
 	}
 	return missing
+}
+
+type applianceExecutionSummary struct {
+	ID               string      `json:"id"`
+	WorkflowID       string      `json:"workflow_id"`
+	Status           string      `json:"status"`
+	DurationMs       int64       `json:"duration_ms"`
+	StartedAt        time.Time   `json:"started_at"`
+	FinishedAt       *time.Time  `json:"finished_at,omitempty"`
+	TriggerSource    string      `json:"trigger_source,omitempty"`
+	TriggerPrincipal string      `json:"trigger_principal,omitempty"`
+	RequestID        string      `json:"request_id,omitempty"`
+	Input            interface{} `json:"input,omitempty"`
+	ErrorMessage     string      `json:"error_message,omitempty"`
+}
+
+func applianceLatestExecution(execStore *storage.ExecutionStore, workflowID string) (*applianceExecutionSummary, error) {
+	executions, err := applianceRecentExecutions(execStore, workflowID, 1)
+	if err != nil || len(executions) == 0 {
+		return nil, err
+	}
+	return &executions[0], nil
+}
+
+func applianceRecentExecutions(execStore *storage.ExecutionStore, workflowID string, limit int) ([]applianceExecutionSummary, error) {
+	if execStore == nil {
+		return []applianceExecutionSummary{}, nil
+	}
+	list, err := execStore.ListByWorkflow(workflowID, limit)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]applianceExecutionSummary, 0, len(list))
+	for _, exec := range list {
+		dto := executionInspectorDTOFromExecution(exec)
+		result = append(result, applianceExecutionSummary{
+			ID:               dto.ID,
+			WorkflowID:       dto.WorkflowID,
+			Status:           dto.Status,
+			DurationMs:       dto.DurationMs,
+			StartedAt:        dto.StartedAt,
+			FinishedAt:       dto.FinishedAt,
+			TriggerSource:    dto.TriggerSource,
+			TriggerPrincipal: engine.RedactSensitiveString(dto.TriggerPrincipal),
+			RequestID:        engine.RedactSensitiveString(dto.RequestID),
+			Input:            dto.Input,
+			ErrorMessage:     dto.ErrorMessage,
+		})
+	}
+	return result, nil
 }
 
 func applianceCredentialResolver(credStore *storage.CredentialStore) packsetup.CredentialResolver {
