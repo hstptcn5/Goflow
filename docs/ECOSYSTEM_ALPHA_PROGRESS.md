@@ -262,7 +262,7 @@ Commit SHA:
 
 - `e6f8aae` (`feat: add pack config storage`).
 - `ad46eb3` (`feat: add pack credential slot storage`).
-- Pending resolver and binding commit.
+- `3f4ec23` (`feat: add pack setup binding resolver`).
 
 Remaining work:
 
