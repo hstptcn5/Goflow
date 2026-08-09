@@ -199,6 +199,12 @@ Pack runtime parameter resolution uses a small path-only expression language:
 
 The resolver reads only trigger input, prior node outputs, and non-secret pack config. It does not read credentials, environment variables, files, functions, JavaScript, templates with loops, reflection, or commands. A parameter that is exactly one expression preserves the resolved JSON type. Inline string interpolation converts non-string values with deterministic JSON formatting. Missing or unsupported paths fail with bounded errors that name the expression, not the resolved value.
 
+### Runtime Node Network Policy
+
+Pack-compatible HTTP Request execution accepts only absolute `http` and `https` URLs and bounded request bodies, response bodies, and headers. Supported methods are `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, and `HEAD`. Custom headers must be a JSON object of strings. Redirect handling does not automatically carry `Authorization` or `Cookie` headers to a different origin.
+
+Telegram execution uses the execution context for cancellation and bounds/redacts API error bodies. When `credential_id` is present, the encrypted credential value resolved by the runtime is preferred and a missing credential is an error; the node does not fall back to a literal `bot_token` in that case. Pack validation already rejects literal `bot_token` values in pack workflows.
+
 ### Pack-Only Workflow Secret Scan
 
 In pack context, workflow parameters known to carry secrets must not contain literal values. For example, a Telegram node may bind or select `credential_id`, but a pack workflow with a non-empty literal `bot_token` is rejected. This restriction applies to packs only and does not silently rewrite generic non-pack workflows.

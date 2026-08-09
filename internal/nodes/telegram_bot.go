@@ -6,17 +6,23 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
 
+const maxTelegramResponseBytes int64 = 256 << 10
+
 type TelegramBotExecutor struct {
-	client *http.Client
+	client  *http.Client
+	baseURL string
 }
 
 func NewTelegramBotExecutor() *TelegramBotExecutor {
 	return &TelegramBotExecutor{
-		client: &http.Client{Timeout: 15 * time.Second},
+		client:  &http.Client{Timeout: 15 * time.Second},
+		baseURL: "https://api.telegram.org",
 	}
 }
 
@@ -25,19 +31,23 @@ func (e *TelegramBotExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 	chatID, _ := node.Params["chat_id"].(string)
 	message, _ := node.Params["message"].(string)
 
-	// N???u d??ng Credential ID
 	credID, _ := node.Params["credential_id"].(string)
 	if credID != "" {
-		if token, ok := ctx.Credentials[credID]; ok {
-			botToken = token
+		token, ok := ctx.Credentials[credID]
+		if !ok || strings.TrimSpace(token) == "" {
+			return nil, fmt.Errorf("telegram credential is not available")
 		}
+		botToken = token
 	}
 
 	if botToken == "" || chatID == "" {
 		return nil, fmt.Errorf("bot_token and chat_id are required")
 	}
 
-	urlStr := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+	urlStr, err := e.telegramMethodURL(botToken, "sendMessage")
+	if err != nil {
+		return nil, err
+	}
 	payload := map[string]interface{}{
 		"chat_id":    chatID,
 		"text":       message,
@@ -45,18 +55,29 @@ func (e *TelegramBotExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 	}
 
 	payloadBytes, _ := json.Marshal(payload)
-	resp, err := e.client.Post(urlStr, "application/json", bytes.NewBuffer(payloadBytes))
+	req, err := http.NewRequestWithContext(ctx.Context, http.MethodPost, urlStr, bytes.NewBuffer(payloadBytes))
 	if err != nil {
-		return nil, fmt.Errorf("telegram API request failed: %w", err)
+		return nil, fmt.Errorf("telegram API request could not be created")
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := e.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("telegram API request failed: %s", redactTelegramText(err.Error()))
 	}
 	defer resp.Body.Close()
 
-	respBytes, _ := io.ReadAll(resp.Body)
+	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxTelegramResponseBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("telegram API response could not be read")
+	}
+	if int64(len(respBytes)) > maxTelegramResponseBytes {
+		return nil, fmt.Errorf("telegram API response exceeds %d byte limit", maxTelegramResponseBytes)
+	}
 	var result map[string]interface{}
 	json.Unmarshal(respBytes, &result)
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("telegram API error (%d): %s", resp.StatusCode, string(respBytes))
+		return nil, fmt.Errorf("telegram API error (%d): %s", resp.StatusCode, redactTelegramErrorBody(respBytes))
 	}
 
 	return result, nil
@@ -112,4 +133,32 @@ func (e *TelegramBotExecutor) GetDefinition() NodeDefinition {
 			},
 		},
 	}
+}
+
+func (e *TelegramBotExecutor) telegramMethodURL(botToken, method string) (string, error) {
+	base := strings.TrimRight(e.baseURL, "/")
+	parsed, err := url.Parse(base)
+	if err != nil || !parsed.IsAbs() || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", fmt.Errorf("telegram API base URL is invalid")
+	}
+	return fmt.Sprintf("%s/bot%s/%s", base, botToken, method), nil
+}
+
+func redactTelegramErrorBody(body []byte) string {
+	text := string(body)
+	if len(text) > 4096 {
+		text = text[:4096]
+	}
+	return redactTelegramText(text)
+}
+
+func redactTelegramText(text string) string {
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)bot[0-9]+:[A-Za-z0-9_-]+`),
+		regexp.MustCompile(`(?i)(bot_token|token|authorization|password|secret)["'=:\s]+[^"',}\s]+`),
+	}
+	for _, pattern := range patterns {
+		text = pattern.ReplaceAllString(text, "[REDACTED]")
+	}
+	return text
 }

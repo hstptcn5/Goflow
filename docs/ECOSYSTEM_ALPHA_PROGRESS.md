@@ -226,6 +226,7 @@ Architectural decision:
 - Validate credential assignments through an injectable resolver before setup is considered ready.
 - Apply setup bindings to a cloned workflow by copying config values and credential IDs only.
 - Provide a pack-specific path-only resolver for `input.*`, `nodes.*`, and `pack.config.*` expressions.
+- Harden HTTP Request and Telegram network behavior with context-aware requests, bounded bodies, URL/method/header validation, redirect policy, and Telegram redaction.
 
 Files changed:
 
@@ -237,6 +238,10 @@ Files changed:
 - `internal/packsetup/bindings_test.go`
 - `internal/packsetup/resolve.go`
 - `internal/packsetup/resolve_test.go`
+- `internal/nodes/http_request.go`
+- `internal/nodes/http_request_test.go`
+- `internal/nodes/telegram_bot.go`
+- `internal/nodes/telegram_bot_test.go`
 - `docs/PACKS.md`
 - `docs/ECOSYSTEM_ALPHA_PROGRESS.md`
 
@@ -257,16 +262,19 @@ Security considerations:
 - Binding application mutates only a cloned workflow value and writes credential IDs, never decrypted values.
 - The pack resolver has no credential, environment, filesystem, function, JavaScript, loop, reflection, or command access.
 - Missing expression errors name bounded expressions without echoing resolved data values.
+- HTTP Request rejects malformed, relative, or unsupported-scheme URLs; unsupported methods; bad or oversized headers; oversized request bodies; and oversized responses.
+- HTTP Request does not automatically forward `Authorization` or `Cookie` headers across origin-changing redirects.
+- Telegram uses execution context cancellation, bounded/redacted error bodies, injectable base URL for tests, and credential ID precedence over literal token fallback.
 
 Commit SHA:
 
 - `e6f8aae` (`feat: add pack config storage`).
 - `ad46eb3` (`feat: add pack credential slot storage`).
 - `3f4ec23` (`feat: add pack setup binding resolver`).
+- Pending HTTP and Telegram hardening commit.
 
 Remaining work:
 
-- Harden HTTP Request and Telegram nodes for appliance use.
 - Integrate config storage with packrun/appliance backend in Checkpoint D.
 
 ## Checkpoint D - Appliance Backend and Security Boundary
