@@ -7,10 +7,12 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"goflow/config"
 	"goflow/internal/cli"
+	"goflow/internal/packrun"
 	"goflow/internal/serverapp"
 )
 
@@ -30,6 +32,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if len(args) == 1 {
+		if bundleDir, ok := detectExtractedBundle(); ok {
+			if err := packrun.RunExtractedBundle(ctx, bundleDir, packrun.Options{
+				UIFS:   getEmbeddedUI(),
+				Stdout: stdout,
+				Stderr: stderr,
+			}); err != nil {
+				fmt.Fprintf(stderr, "[ERROR] %v\n", err)
+				return 1
+			}
+			return 0
+		}
+	}
+
 	if err := serverapp.Run(ctx, serverapp.Options{
 		Config: config.LoadConfig(),
 		UIFS:   getEmbeddedUI(),
@@ -40,4 +56,22 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	log.Println("[INFO] Goflow stopped successfully.")
 	return 0
+}
+
+func detectExtractedBundle() (string, bool) {
+	exePath, err := os.Executable()
+	if err != nil {
+		return "", false
+	}
+	return detectExtractedBundleDir(filepath.Dir(exePath))
+}
+
+func detectExtractedBundleDir(dir string) (string, bool) {
+	if _, err := os.Stat(filepath.Join(dir, "PACK_INFO.json")); err != nil {
+		return "", false
+	}
+	if _, err := os.Stat(filepath.Join(dir, "pack", "pack.json")); err != nil {
+		return "", false
+	}
+	return dir, true
 }

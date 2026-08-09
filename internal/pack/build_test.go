@@ -425,6 +425,35 @@ func TestBuildDeterministicOutputAndPackInfoHasNoLocalState(t *testing.T) {
 	}
 }
 
+func TestVerifyExtractedBundleDetectsTampering(t *testing.T) {
+	dir := writeBuildPack(t)
+	runtimePath := writeRuntimeFixture(t, "runtime")
+	result := mustBuild(t, dir, runtimePath, t.TempDir())
+	extractDir := t.TempDir()
+	extractZip(t, result.ArchivePath, extractDir)
+	if _, err := VerifyExtractedBundle(extractDir); err != nil {
+		t.Fatalf("VerifyExtractedBundle failed: %v", err)
+	}
+	writeFile(t, filepath.Join(extractDir, "pack", "workflows", "main.json"), validWorkflowJSON()+"\n")
+	if _, err := VerifyExtractedBundle(extractDir); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected tampered workflow error, got %v", err)
+	}
+
+	extractDir = t.TempDir()
+	extractZip(t, result.ArchivePath, extractDir)
+	writeFile(t, filepath.Join(extractDir, runtimeEntry(CurrentPlatform())), "tampered runtime")
+	if _, err := VerifyExtractedBundle(extractDir); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected tampered runtime error, got %v", err)
+	}
+}
+
+func TestVerifyExtractedBundleRequiresPackInfo(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := VerifyExtractedBundle(dir); err == nil || !strings.Contains(err.Error(), "PACK_INFO.json is missing") {
+		t.Fatalf("expected missing PACK_INFO error, got %v", err)
+	}
+}
+
 func TestVerifyBundleArchiveRejectsInvalidFixtures(t *testing.T) {
 	validItem := zipFixtureItem{Name: "goflow.exe", Body: "runtime"}
 	validInfo := PackInfo{
@@ -786,6 +815,36 @@ func writeZipFixture(t *testing.T, items []zipFixtureItem, info *PackInfo, rawIn
 		t.Fatalf("close file: %v", err)
 	}
 	return path
+}
+
+func extractZip(t *testing.T, archivePath, destDir string) {
+	t.Helper()
+	reader, err := zip.OpenReader(archivePath)
+	if err != nil {
+		t.Fatalf("open zip: %v", err)
+	}
+	defer reader.Close()
+	for _, file := range reader.File {
+		if file.FileInfo().IsDir() {
+			continue
+		}
+		path := filepath.Join(destDir, filepath.FromSlash(file.Name))
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatalf("mkdir extract: %v", err)
+		}
+		rc, err := file.Open()
+		if err != nil {
+			t.Fatalf("open zip entry: %v", err)
+		}
+		data, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			t.Fatalf("read zip entry: %v", err)
+		}
+		if err := os.WriteFile(path, data, file.FileInfo().Mode().Perm()); err != nil {
+			t.Fatalf("write extracted file: %v", err)
+		}
+	}
 }
 
 type scriptedPublishOps struct {

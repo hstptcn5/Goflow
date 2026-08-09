@@ -514,6 +514,119 @@ func VerifyBundleArchive(path string, limits buildLimits) error {
 	return validateInventorySizes(sliceInventory(inventory), limits, info.EntryWorkflow)
 }
 
+func VerifyExtractedBundle(root string) (*PackInfo, error) {
+	limits := defaultBuildLimits()
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve bundle directory: %w", err)
+	}
+	rootEval, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve bundle directory symlinks: %w", err)
+	}
+	packInfoPath := filepath.Join(rootEval, "PACK_INFO.json")
+	data, err := os.ReadFile(packInfoPath)
+	if err != nil {
+		return nil, fmt.Errorf("PACK_INFO.json is missing: %w", err)
+	}
+	if int64(len(data)) > limits.MaxPackInfoBytes {
+		return nil, fmt.Errorf("PACK_INFO.json exceeds %d byte limit", limits.MaxPackInfoBytes)
+	}
+	var info PackInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return nil, fmt.Errorf("PACK_INFO.json is malformed: %w", err)
+	}
+	if info.SchemaVersion != SupportedSchema {
+		return nil, fmt.Errorf("PACK_INFO schema_version must be %d", SupportedSchema)
+	}
+	if strings.TrimSpace(info.PackID) == "" || strings.TrimSpace(info.PackVersion) == "" || strings.TrimSpace(info.EntryWorkflow) == "" {
+		return nil, fmt.Errorf("PACK_INFO is missing required pack metadata")
+	}
+	if len(info.Files) > limits.MaxEntries {
+		return nil, fmt.Errorf("PACK_INFO inventory has %d entries, exceeds %d entry limit", len(info.Files), limits.MaxEntries)
+	}
+	seen := map[string]bool{}
+	for _, item := range info.Files {
+		if item.Path == "" {
+			return nil, fmt.Errorf("PACK_INFO inventory contains empty path")
+		}
+		if seen[item.Path] {
+			return nil, fmt.Errorf("PACK_INFO inventory contains duplicate path %q", item.Path)
+		}
+		seen[item.Path] = true
+		if err := validateArchivePath(item.Path, info.Target); err != nil {
+			return nil, fmt.Errorf("PACK_INFO inventory path %q: %w", item.Path, err)
+		}
+		actual, err := hashExtractedFileLimited(rootEval, item.Path, verifyLimitForPath(item.Path, limits, info.EntryWorkflow))
+		if err != nil {
+			return nil, fmt.Errorf("verify %s: %w", item.Path, err)
+		}
+		if actual.Size != item.Size || actual.SHA256 != item.SHA256 {
+			return nil, fmt.Errorf("extracted file %q does not match PACK_INFO inventory", item.Path)
+		}
+	}
+	if !seen[info.RuntimeEntry] {
+		return nil, fmt.Errorf("PACK_INFO inventory is missing runtime entry %q", info.RuntimeEntry)
+	}
+	if !seen["pack/pack.json"] {
+		return nil, fmt.Errorf("PACK_INFO inventory is missing pack/pack.json")
+	}
+	if !seen[info.EntryWorkflow] {
+		return nil, fmt.Errorf("PACK_INFO inventory is missing entry workflow %q", info.EntryWorkflow)
+	}
+	if err := validateInventorySizes(info.Files, limits, info.EntryWorkflow); err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+func hashExtractedFileLimited(root, slashPath string, limit int64) (PackInfoFile, error) {
+	osRelPath, err := portablePathToOS(slashPath)
+	if err != nil {
+		return PackInfoFile{}, err
+	}
+	path := filepath.Join(root, osRelPath)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return PackInfoFile{}, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return PackInfoFile{}, fmt.Errorf("symlinks are not allowed in extracted bundles")
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return PackInfoFile{}, err
+	}
+	if !isWithin(root, resolved) {
+		return PackInfoFile{}, fmt.Errorf("path resolves outside the bundle directory")
+	}
+	if !info.Mode().IsRegular() {
+		return PackInfoFile{}, fmt.Errorf("path must be a regular file")
+	}
+	h := sha256.New()
+	size, err := streamFileLimited(path, h, limit)
+	if err != nil {
+		return PackInfoFile{}, err
+	}
+	return PackInfoFile{Path: slashPath, SHA256: hex.EncodeToString(h.Sum(nil)), Size: size}, nil
+}
+
+func streamFileLimited(path string, writer io.Writer, limit int64) (int64, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+	counter := &countingWriter{writer: writer}
+	if _, err := io.Copy(counter, io.LimitReader(file, limit+1)); err != nil {
+		return counter.n, err
+	}
+	if counter.n > limit {
+		return counter.n, fmt.Errorf("entry exceeds %d byte limit", limit)
+	}
+	return counter.n, nil
+}
+
 func verifyLimitForPath(path string, limits buildLimits, entryWorkflow string) int64 {
 	switch {
 	case path == "goflow" || path == "goflow.exe":
@@ -601,14 +714,30 @@ func readmeText(runtimeEntry string) string {
 	}
 	return fmt.Sprintf(`Goflow Pack portable bundle
 
+Start this pack:
+  %s
+
+CLI equivalent:
+  %s pack run pack
+
+Run without opening a browser:
+  %s pack run pack --no-open
+
 Validate this pack:
   %s pack validate pack
 
-This bundle does not automatically install or run the workflow.
-Import or execution support will be added in a later Goflow Pack phase.
+Pack Run binds only to 127.0.0.1 and prints the local URL.
+Runtime state is stored outside this extracted bundle by default:
+  Windows: %%LOCALAPPDATA%%/Goflow/packs/<pack-id>/
+  macOS: ~/Library/Application Support/Goflow/packs/<pack-id>/
+  Linux: $XDG_DATA_HOME/Goflow/packs/<pack-id>/ or ~/.local/share/Goflow/packs/<pack-id>/
+
+Back up goflow.db together with goflow.master.key from that data directory.
 
 Do not place credentials in pack.json or workflow files.
-`, command)
+Packaged plugin execution is not supported in Pack Run MVP.
+Stop the server with Ctrl+C in the terminal running this executable.
+`, command, command, command, command)
 }
 
 func containsString(values []string, target string) bool {

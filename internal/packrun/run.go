@@ -69,6 +69,14 @@ type Prepared struct {
 	State       State
 }
 
+func RunExtractedBundle(ctx context.Context, bundleDir string, opts Options) error {
+	if _, err := pack.VerifyExtractedBundle(bundleDir); err != nil {
+		return fmt.Errorf("pack run: extracted bundle verification failed: %w", err)
+	}
+	opts.PackDir = filepath.Join(bundleDir, "pack")
+	return Run(ctx, opts)
+}
+
 func Run(ctx context.Context, opts Options) error {
 	if ctx == nil {
 		ctx = context.Background()
