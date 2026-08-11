@@ -77,6 +77,7 @@ Each item includes:
 - `description`: optional bounded text.
 - `type`: one of the supported field types.
 - `required`: boolean.
+- `test_kind`: optional closed-allowlist server-side validation for the current value. `http_json_contract` is supported only for `url` fields bound to an HTTP Request `url` parameter whose node declares `response_contract`.
 - `default`: optional non-secret default with the correct JSON type.
 - `options`: required for `select`, unique bounded scalar values.
 - `min` and `max`: optional integer limits.
@@ -210,6 +211,28 @@ Telegram execution uses the execution context for cancellation and bounds/redact
 Pack Run may start Goflow with an explicit in-memory appliance context. In that mode only, `/api/appliance/*` endpoints expose bootstrap, setup, workflow status, run-now, execution summaries, and diagnostics for the single managed workflow. Generic `goflow serve` does not mount these routes.
 
 State-changing appliance endpoints require a loopback Host match, exact Origin match, JSON content type, strict body limits, and the per-process appliance session token from bootstrap. Credential connection tests are explicit POST operations and are rate/concurrency limited.
+
+Source tests are also explicit, rate-limited, and serialized. `http_json_contract` performs a bounded `GET` with a maximum 10-second timeout, accepts only `http`/`https` and HTTP 2xx, parses JSON, and validates the workflow node's reusable response contract. It never returns the response body or a URL query to the appliance UI. Setup completion repeats required source and credential tests against persisted current values, so a result for an older URL or chat cannot complete setup.
+
+### HTTP JSON Response Contracts
+
+An HTTP Request node may declare an optional generic `response_contract`. When present, runtime execution requires HTTP 2xx, valid JSON, and all declared fields before any downstream node can run. Unknown response fields remain allowed for forward compatibility.
+
+```json
+{
+  "response_contract": {
+    "required": {
+      "report_date": { "type": "string", "non_empty": true },
+      "revenue": { "type": "number" },
+      "order_count": { "type": "integer", "minimum": 0 }
+    }
+  }
+}
+```
+
+Supported rule types are `string`, `number`, `integer`, and `boolean`. `non_empty` applies only to strings; `minimum` applies only to numbers and integers. Pack validation rejects a config source test unless its binding reaches an HTTP `url` with a valid contract. Runtime failures use bounded public categories such as `source_timeout`, `source_unreachable`, `source_http_error`, `source_non_json`, `source_invalid_json`, `source_contract_invalid`, and `source_response_too_large`; response bodies are not included.
+
+For `TELEGRAM_BOT`, `telegram_get_me` verifies both bot identity with `getMe` and the configured bound `chat_id` with `getChat`. It sends no test message. Public failures distinguish `telegram_unauthorized` from `telegram_chat_inaccessible` and never return the token, credential ID, or Telegram response body.
 
 Runtime and diagnostics responses expose pack identity, logical setup readiness, workflow state, and bounded execution summaries only. They do not expose decrypted credentials, credential IDs, database contents, master keys, full logs, arbitrary files, environment variables, hostnames, usernames, or absolute source/build paths.
 
@@ -444,7 +467,7 @@ Runtime setup state is stored outside the source pack and extracted bundle:
 
 Both setup files are written atomically with restricted file permissions where supported. Parent setup directories are created with restricted permissions where supported.
 
-The pack workflow is a managed workflow. Its workflow ID is deterministic from the pack ID, so repeated runs update the same record instead of creating duplicates. A version or workflow-content update preserves the database, credentials, and execution history.
+The pack workflow is a managed workflow. Its workflow ID is deterministic from the pack ID, so repeated runs update the same record instead of creating duplicates. A same-version restart preserves completed setup and the active bound workflow. A pack version change preserves the stable workflow ID, database, credential records, slot assignments, config, and execution history, but fails setup closed to incomplete until current source and destination checks are run again. This conservative migration prevents a behavior-changing pack from inheriting stale acceptance evidence without requiring the user to re-enter the encrypted credential.
 
 `required_credentials` remains metadata only. Pack Run prints credential requirements and opens the credentials page when requirements exist, but it does not embed secrets, create placeholder credentials, or treat matching names as proof that requirements are satisfied.
 

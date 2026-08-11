@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { applianceApi } from '@/services/applianceApi';
 
 const props = defineProps({
@@ -25,10 +25,27 @@ const credentialDrafts = ref({});
 const credentialResults = ref({});
 const runInputText = ref('{}');
 const runError = ref('');
+const sourceResults = ref({});
+let pollTimer = null;
+let pollFailures = 0;
 
 const needsSetup = computed(() => status.value?.state === 'NEEDS_SETUP');
-const canComplete = computed(() => setup.value?.can_complete === true);
 const latestExecution = computed(() => latest.value?.execution || workflowStatus.value?.latest_execution || null);
+const executionRunning = computed(() => String(latestExecution.value?.status || '').toUpperCase() === 'RUNNING' || workflowStatus.value?.state === 'RUNNING');
+const canComplete = computed(() => {
+  if (setup.value?.can_complete !== true || Object.keys(configErrors.value).length > 0) return false;
+  for (const field of setup.value?.config_schema || []) {
+    if (!field.required || !field.test_kind) continue;
+    const result = sourceResults.value[field.key];
+    if (result?.status !== 'Valid' || result.testedValue !== String(configValues.value[field.key] ?? '')) return false;
+  }
+  for (const requirement of setup.value?.credential_requirements || []) {
+    if (!requirement.required || !requirement.test_kind) continue;
+    const result = credentialResults.value[requirement.key];
+    if (result?.status !== 'Valid' || result.testedChat !== String(configValues.value.chat_id ?? '')) return false;
+  }
+  return true;
+});
 
 function fieldId(key) {
   return `pack-config-${key}`;
@@ -44,6 +61,27 @@ function credentialValue(key) {
 
 function updateCredentialDraft(key, patch) {
   credentialDrafts.value[key] = { ...(credentialDrafts.value[key] || {}), ...patch };
+  credentialResults.value[key] = { status: 'Not tested', message: '' };
+}
+
+function updateConfigValue(key, value) {
+  if (String(configValues.value[key] ?? '') === String(value ?? '')) return;
+  configValues.value[key] = value;
+  const field = (setup.value?.config_schema || []).find((candidate) => candidate.key === key);
+  if (field?.test_kind) sourceResults.value[key] = { status: 'Not tested', message: '' };
+  if (key === 'chat_id') {
+    for (const requirement of setup.value?.credential_requirements || []) {
+      if (requirement.test_kind) credentialResults.value[requirement.key] = { status: 'Not tested', message: '' };
+    }
+  }
+}
+
+function sourceResult(key) {
+  return sourceResults.value[key] || { status: 'Not tested', message: '' };
+}
+
+function credentialResult(key) {
+  return credentialResults.value[key] || { status: 'Not tested', message: '' };
 }
 
 function fieldError(field) {
@@ -105,14 +143,50 @@ async function refresh() {
   }
 }
 
+async function refreshRuntime() {
+  const [statusData, workflowData, latestData, recentData] = await Promise.all([
+    applianceApi.getStatus(),
+    applianceApi.getWorkflowStatus(),
+    applianceApi.getLatestExecution(),
+    applianceApi.getRecentExecutions(10),
+  ]);
+  status.value = statusData;
+  workflowStatus.value = workflowData;
+  latest.value = latestData;
+  recent.value = recentData.executions || [];
+}
+
 async function load() {
   loading.value = true;
   try {
     await refresh();
+    if (executionRunning.value) startPolling();
   } catch (err) {
     error.value = err.message || 'Appliance status could not be loaded';
   } finally {
     loading.value = false;
+  }
+}
+
+async function testSource(field) {
+  const testedValue = String(configValues.value[field.key] ?? '');
+  sourceResults.value[field.key] = { status: 'Testing', message: 'Checking the JSON endpoint', testedValue };
+  error.value = '';
+  try {
+    await applianceApi.saveConfig(token, configValues.value);
+    const result = await applianceApi.testSource(token, field.key);
+    if (String(configValues.value[field.key] ?? '') !== testedValue) return;
+    setup.value = await applianceApi.getSetup();
+    if (String(configValues.value[field.key] ?? '') !== testedValue) return;
+    const date = result.summary?.report_date ? `Report ${result.summary.report_date}; ` : '';
+    sourceResults.value[field.key] = {
+      status: 'Valid',
+      message: `${date}${result.summary?.valid_fields || 0} required fields valid`,
+      testedValue,
+    };
+  } catch (err) {
+    if (String(configValues.value[field.key] ?? '') !== testedValue) return;
+    sourceResults.value[field.key] = { status: 'Invalid', message: err.message || 'Source test failed', category: err.category, testedValue };
   }
 }
 
@@ -135,13 +209,14 @@ async function createCredential(req) {
   saving.value = true;
   error.value = '';
   try {
+    await applianceApi.saveConfig(token, configValues.value);
     await applianceApi.createCredential(token, {
       key: req.key,
       name: credentialName(req.key) || req.label || req.key,
       value: credentialValue(req.key),
     });
     updateCredentialDraft(req.key, { value: '' });
-    credentialResults.value[req.key] = 'Credential saved';
+    credentialResults.value[req.key] = { status: 'Not tested', message: 'Credential saved; test the bot and chat.' };
     await refresh();
   } catch (err) {
     error.value = err.message || 'Credential could not be saved';
@@ -153,18 +228,23 @@ async function createCredential(req) {
 async function testCredential(req) {
   testingKey.value = req.key;
   error.value = '';
+  const testedChat = String(configValues.value.chat_id ?? '');
+  credentialResults.value[req.key] = { status: 'Testing', message: 'Checking bot token and chat access', testedChat };
   try {
+    await applianceApi.saveConfig(token, configValues.value);
     const result = await applianceApi.testCredential(token, req.key);
-    credentialResults.value[req.key] = result.reason ? `${result.status}: ${result.reason}` : result.status;
+    if (String(configValues.value.chat_id ?? '') !== testedChat) return;
+    credentialResults.value[req.key] = { status: 'Valid', message: result.message || 'Bot token and chat are valid.', testedChat };
   } catch (err) {
-    credentialResults.value[req.key] = 'FAILED';
-    error.value = err.message || 'Connection test failed';
+    if (String(configValues.value.chat_id ?? '') !== testedChat) return;
+    credentialResults.value[req.key] = { status: 'Invalid', message: err.message || 'Telegram destination test failed', category: err.category, testedChat };
   } finally {
     testingKey.value = '';
   }
 }
 
 async function completeSetup() {
+  if (!canComplete.value) return;
   saving.value = true;
   error.value = '';
   try {
@@ -185,6 +265,8 @@ async function reopenSetup() {
     await applianceApi.reopenSetup(token);
     notice.value = 'Setup reopened';
     await refresh();
+    sourceResults.value = {};
+    credentialResults.value = {};
   } catch (err) {
     error.value = err.message || 'Setup could not be reopened';
   } finally {
@@ -193,6 +275,7 @@ async function reopenSetup() {
 }
 
 async function runNow() {
+  if (running.value || executionRunning.value) return;
   runError.value = '';
   running.value = true;
   let input = {};
@@ -207,12 +290,50 @@ async function runNow() {
     await applianceApi.runNow(token, input);
     runInputText.value = '{}';
     notice.value = 'Workflow run started';
-    await refresh();
+    await refreshRuntime();
+    startPolling();
   } catch (err) {
-    runError.value = err.message || 'Workflow could not be started';
+    if (err.category === 'already_running') {
+      notice.value = 'A workflow run is already in progress';
+      await refreshRuntime().catch(() => {});
+      startPolling();
+    } else {
+      runError.value = err.message || 'Workflow could not be started';
+    }
   } finally {
     running.value = false;
   }
+}
+
+function stopPolling() {
+  if (pollTimer) clearTimeout(pollTimer);
+  pollTimer = null;
+  pollFailures = 0;
+}
+
+function schedulePoll(delay) {
+  if (pollTimer) return;
+  pollTimer = setTimeout(async () => {
+    pollTimer = null;
+    try {
+      await refreshRuntime();
+      pollFailures = 0;
+      if (executionRunning.value) schedulePoll(1500);
+      else running.value = false;
+    } catch {
+      pollFailures += 1;
+      if (pollFailures <= 4) {
+        schedulePoll(Math.min(1500 * (2 ** pollFailures), 6000));
+      } else {
+        error.value = 'Live status is temporarily unavailable. Use Diagnostics refresh before reporting the issue.';
+        running.value = false;
+      }
+    }
+  }, delay);
+}
+
+function startPolling() {
+  schedulePoll(0);
 }
 
 async function loadDiagnostics() {
@@ -241,6 +362,7 @@ function downloadDiagnostics() {
 }
 
 onMounted(load);
+onBeforeUnmount(stopPolling);
 </script>
 
 <template>
@@ -283,18 +405,28 @@ onMounted(load);
               <input
                 v-if="field.type !== 'boolean'"
                 :id="fieldId(field.key)"
-                v-model="configValues[field.key]"
+                :value="configValues[field.key]"
                 class="form-input"
                 :type="field.type === 'password' ? 'password' : 'text'"
                 :aria-invalid="Boolean(configErrors[field.key])"
                 :aria-describedby="configErrors[field.key] ? `${fieldId(field.key)}-error` : undefined"
+                @input="updateConfigValue(field.key, $event.target.value)"
               />
               <label v-else class="toggle-row">
-                <input v-model="configValues[field.key]" type="checkbox" />
+                <input :checked="Boolean(configValues[field.key])" type="checkbox" @change="updateConfigValue(field.key, $event.target.checked)" />
                 <span>{{ field.description || field.label || field.key }}</span>
               </label>
               <p v-if="field.description && field.type !== 'boolean'" class="field-help">{{ field.description }}</p>
               <p v-if="configErrors[field.key]" :id="`${fieldId(field.key)}-error`" class="field-error">{{ configErrors[field.key] }}</p>
+              <div v-if="field.test_kind" class="test-row">
+                <button class="btn btn-secondary" type="button" :disabled="saving || sourceResult(field.key).status === 'Testing' || Boolean(configErrors[field.key])" @click="testSource(field)">
+                  {{ sourceResult(field.key).status === 'Testing' ? 'Testing source...' : 'Test source' }}
+                </button>
+                <span class="test-state" :data-state="sourceResult(field.key).status.toLowerCase().replace(' ', '-')" aria-live="polite">
+                  <strong>{{ sourceResult(field.key).status }}</strong>
+                  <span v-if="sourceResult(field.key).message">{{ sourceResult(field.key).message }}</span>
+                </span>
+              </div>
             </div>
             <button class="btn btn-secondary" type="submit" :disabled="saving || Object.keys(configErrors).length > 0">
               Save configuration
@@ -332,14 +464,17 @@ onMounted(load);
                   />
                 </label>
                 <div class="toolbar-actions">
-                  <button class="btn btn-secondary" type="button" :disabled="saving || !credentialValue(req.key)" @click="createCredential(req)">
+                  <button class="btn btn-secondary" type="button" :disabled="saving || !credentialValue(req.key) || Object.keys(configErrors).length > 0" @click="createCredential(req)">
                     {{ req.assigned ? 'Replace' : 'Create' }}
                   </button>
-                  <button v-if="req.test_kind" class="btn btn-secondary" type="button" :disabled="testingKey === req.key || !req.assigned" @click="testCredential(req)">
-                    Test
+                  <button v-if="req.test_kind" class="btn btn-secondary" type="button" :disabled="testingKey === req.key || !req.assigned || Object.keys(configErrors).length > 0" @click="testCredential(req)">
+                    {{ testingKey === req.key ? 'Testing Telegram...' : 'Test Telegram' }}
                   </button>
                 </div>
-                <p v-if="credentialResults[req.key]" class="field-help" aria-live="polite">{{ credentialResults[req.key] }}</p>
+                <div v-if="req.test_kind" class="test-state" :data-state="credentialResult(req.key).status.toLowerCase().replace(' ', '-')" aria-live="polite">
+                  <strong>{{ credentialResult(req.key).status }}</strong>
+                  <span v-if="credentialResult(req.key).message">{{ credentialResult(req.key).message }}</span>
+                </div>
               </div>
             </article>
           </section>
@@ -349,6 +484,7 @@ onMounted(load);
               Complete setup
             </button>
             <span v-if="setup?.missing?.length" class="field-help">{{ setup.missing.join(', ') }}</span>
+            <span v-else-if="!canComplete" class="field-help">Test the current source and Telegram destination before completing setup.</span>
           </div>
         </section>
 
@@ -380,8 +516,8 @@ onMounted(load);
             <label for="run-input">Run input</label>
             <textarea id="run-input" v-model="runInputText" class="form-textarea" spellcheck="false"></textarea>
             <p v-if="runError" class="field-error">{{ runError }}</p>
-            <button class="btn btn-primary" type="submit" :disabled="running || (workflowStatus?.state || status?.state) === 'NEEDS_SETUP'">
-              Run now
+            <button class="btn btn-primary" type="submit" :disabled="running || executionRunning || (workflowStatus?.state || status?.state) === 'NEEDS_SETUP'">
+              {{ running || executionRunning ? 'Running...' : 'Run now' }}
             </button>
           </form>
 
@@ -392,6 +528,7 @@ onMounted(load);
               <div><span>Duration</span><strong>{{ formatDuration(latestExecution.duration_ms) }}</strong></div>
               <div><span>Started</span><strong>{{ formatDate(latestExecution.started_at) }}</strong></div>
               <div v-if="latestExecution.error_message"><span>Error</span><strong>{{ latestExecution.error_message }}</strong></div>
+              <div v-if="latestExecution.error_category"><span>Category</span><strong>{{ latestExecution.error_category }}</strong></div>
             </div>
             <p v-else class="muted-copy">No executions yet.</p>
           </section>

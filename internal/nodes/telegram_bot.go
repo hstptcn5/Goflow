@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"goflow/internal/apperror"
 )
 
 const maxTelegramResponseBytes int64 = 256 << 10
@@ -72,7 +74,7 @@ func (e *TelegramBotExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := e.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("telegram API request failed: %s", redactTelegramText(err.Error()))
+		return nil, apperror.New("telegram_unreachable", "Goflow could not connect to Telegram.")
 	}
 	defer resp.Body.Close()
 
@@ -87,7 +89,10 @@ func (e *TelegramBotExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 	json.Unmarshal(respBytes, &result)
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("telegram API error (%d): %s", resp.StatusCode, redactTelegramErrorBody(respBytes))
+		if resp.StatusCode == http.StatusUnauthorized {
+			return nil, apperror.New("telegram_unauthorized", "Telegram rejected the bot token. Reconfigure and test the token again.")
+		}
+		return nil, apperror.New("telegram_chat_inaccessible", "Telegram could not deliver to this chat. Send /start to the bot and verify the chat ID.")
 	}
 
 	return result, nil

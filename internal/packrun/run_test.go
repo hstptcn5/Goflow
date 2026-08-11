@@ -122,12 +122,36 @@ func TestPrepareReconstructsCompletedSetupAcrossRestartsAndPackUpgrade(t *testin
 		t.Fatalf("pack upgrade changed stable workflow ID")
 	}
 	upgradedWorkflow := loadManagedWorkflow(t, dataDir, first.WorkflowID)
-	if !upgradedWorkflow.IsActive {
-		t.Fatalf("valid completed setup was not active after pack upgrade")
+	if upgradedWorkflow.IsActive {
+		t.Fatalf("behavior-changing pack upgrade must require setup revalidation")
 	}
-	assertManagedBindings(t, upgradedWorkflow, "https://source.example.test/daily.json", credentialID, "v2")
+	assertManagedBindings(t, upgradedWorkflow, "https://default.example.test/daily.json", "", "v2")
 	assertWorkflowCount(t, dataDir, 1, first.WorkflowID, "Setup Pack")
 	assertCredentialCount(t, dataDir, 1)
+	state, err := packsetup.LoadState(dataDir, upgraded.Manifest)
+	if err != nil || state.Completed {
+		t.Fatalf("upgrade did not fail setup closed: state=%#v err=%v", state, err)
+	}
+	upgradeDB, err := storage.NewDB(filepath.Join(dataDir, "goflow.db"))
+	if err != nil {
+		t.Fatalf("open upgraded data: %v", err)
+	}
+	defer upgradeDB.Close()
+	loadedCredentials, err := packsetup.LoadCredentialBindings(dataDir, upgraded.Manifest, packRunCredentialResolver(storage.NewCredentialStore(upgradeDB, nil)))
+	if err != nil || loadedCredentials.Credentials.Slots["telegram"].CredentialID != credentialID {
+		t.Fatalf("upgrade did not preserve the assigned credential: credentials=%#v err=%v", loadedCredentials, err)
+	}
+	if _, err := packsetup.SaveState(dataDir, upgraded.Manifest, true, time.Now()); err != nil {
+		t.Fatalf("save revalidated upgraded setup: %v", err)
+	}
+	if _, err := prepare(context.Background(), upgraded, dataDir); err != nil {
+		t.Fatalf("prepare revalidated upgrade: %v", err)
+	}
+	revalidated := loadManagedWorkflow(t, dataDir, first.WorkflowID)
+	if !revalidated.IsActive {
+		t.Fatalf("revalidated upgraded workflow was not active")
+	}
+	assertManagedBindings(t, revalidated, "https://source.example.test/daily.json", credentialID, "v2")
 }
 
 func TestPrepareInvalidPersistedSetupFailsClosed(t *testing.T) {

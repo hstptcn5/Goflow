@@ -563,6 +563,36 @@ func TestLoadRejectsInvalidConfigFieldTypesAndDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadConfigSourceTestRequiresCompatibleURLAndContract(t *testing.T) {
+	t.Run("test kind is closed and type compatible", func(t *testing.T) {
+		dir := writeValidPack(t, func(m *Manifest) {
+			m.ConfigSchema = []ConfigField{{Key: "source", Label: "Source", Type: "string", TestKind: "http_json_contract", DisplayOnly: true}}
+		})
+		assertLoadError(t, dir, "compatible only with url")
+	})
+
+	t.Run("bound HTTP source requires contract", func(t *testing.T) {
+		dir := writeValidPack(t, func(m *Manifest) {
+			m.ConfigSchema = []ConfigField{{Key: "source_url", Label: "Source URL", Type: "url", Required: true, TestKind: "http_json_contract"}}
+			m.Bindings = []Binding{{Source: "config.source_url", Target: BindingTarget{NodeID: "fetch", Param: "url"}}}
+		})
+		writeFile(t, filepath.Join(dir, DefaultWorkflowPath), setupWorkflowJSON())
+		assertLoadError(t, dir, "response_contract")
+	})
+
+	t.Run("valid reusable contract", func(t *testing.T) {
+		dir := writeValidPack(t, func(m *Manifest) {
+			m.ConfigSchema = []ConfigField{{Key: "source_url", Label: "Source URL", Type: "url", Required: true, TestKind: "http_json_contract"}}
+			m.Bindings = []Binding{{Source: "config.source_url", Target: BindingTarget{NodeID: "fetch", Param: "url"}}}
+		})
+		workflow := strings.Replace(setupWorkflowJSON(), `"headers":"{}"`, `"headers":"{}","response_contract":{"required":{"value":{"type":"number"}}}`, 1)
+		writeFile(t, filepath.Join(dir, DefaultWorkflowPath), workflow)
+		if _, err := Load(dir); err != nil {
+			t.Fatalf("expected valid source test contract, got %v", err)
+		}
+	})
+}
+
 func TestLoadRejectsInvalidCredentialRequirement(t *testing.T) {
 	tests := []struct {
 		name string

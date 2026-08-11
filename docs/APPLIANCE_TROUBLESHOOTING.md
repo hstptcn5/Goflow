@@ -21,13 +21,25 @@ The appliance reports logical missing requirements, not submitted values. Common
 - Assigned credential was deleted or has the wrong type.
 - Setup was reopened after completion.
 
-Use the setup screen to re-save config and credentials. Do not edit setup JSON by hand unless you are intentionally recovering test data.
+Use the setup screen to re-save config and credentials, then rerun the required source and Telegram tests. A pack version upgrade can intentionally require one revalidation while preserving the encrypted credential. Do not edit setup JSON by hand unless you are intentionally recovering test data.
 
 ## Connection Tests
 
-Connection tests are closed by credential type and test kind. `TELEGRAM_BOT` supports `telegram_get_me`; unsupported combinations are rejected during pack validation. Empty `test_kind` is allowed and appears as skipped in offline pack tests.
+Connection tests are closed by field/credential type and test kind. URL fields may use `http_json_contract`. `TELEGRAM_BOT` supports `telegram_get_me`, which checks both `getMe` and the configured chat with `getChat`; unsupported combinations are rejected during pack validation. Empty `test_kind` is allowed and appears as skipped in offline pack tests.
 
-Credential test requests are rate-limited and serialized to avoid repeated secret use.
+Source and credential test requests are rate-limited and serialized to avoid repeated network or secret use.
+
+Common categories:
+
+- `source_invalid_url`: enter an absolute `http` or `https` JSON endpoint.
+- `source_timeout` or `source_unreachable`: confirm the endpoint is online and reachable from this Windows computer.
+- `source_http_error`: fix authentication or the upstream service; Goflow requires HTTP 2xx.
+- `source_non_json` or `source_invalid_json`: use the API endpoint, not an HTML website, and fix malformed JSON.
+- `source_contract_invalid`: add the required DailyOps fields with the documented types.
+- `telegram_unauthorized`: replace the bot token from BotFather.
+- `telegram_chat_inaccessible`: send `/start`, add the bot to the destination, and verify the chat ID.
+- `already_running`: wait for the current execution; Goflow rejected the duplicate request.
+- `internal_error`: refresh once, then collect redacted diagnostics if it repeats.
 
 ## Diagnostics
 

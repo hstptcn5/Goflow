@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"goflow/internal/jsoncontract"
 	"goflow/internal/nodes"
 	"goflow/internal/workflow"
 )
@@ -62,6 +63,7 @@ type ConfigField struct {
 	Description string        `json:"description,omitempty"`
 	Type        string        `json:"type"`
 	Required    bool          `json:"required"`
+	TestKind    string        `json:"test_kind,omitempty"`
 	Default     interface{}   `json:"default,omitempty"`
 	Options     []interface{} `json:"options,omitempty"`
 	Min         *int          `json:"min,omitempty"`
@@ -332,6 +334,7 @@ func validateSetupMetadata(manifest Manifest, nodesJSON string) error {
 		return fmt.Errorf("manifest: bindings: %w", err)
 	}
 	boundSources := map[string]bool{}
+	testableSources := map[string]bool{}
 	bindingKeys := map[string]bool{}
 	targetKeys := map[string]bool{}
 	for i, binding := range manifest.Bindings {
@@ -370,10 +373,22 @@ func validateSetupMetadata(manifest Manifest, nodesJSON string) error {
 		}
 		targetKeys[targetKey] = true
 		boundSources[binding.Source] = true
+		if sourceKind == "config" && configKeys[sourceKey].TestKind == "http_json_contract" {
+			targetNode := nodeIndex[binding.Target.NodeID]
+			if targetNode.Type == nodes.TypeHTTPRequest && binding.Target.Param == "url" {
+				if _, err := jsoncontract.Parse(targetNode.Params["response_contract"]); err != nil {
+					return fmt.Errorf("manifest: bindings[%d] source test requires a valid HTTP response_contract: %w", i, err)
+				}
+				testableSources[binding.Source] = true
+			}
+		}
 	}
 	for _, field := range configKeys {
 		if field.Required && !field.DisplayOnly && !boundSources["config."+field.Key] {
 			return fmt.Errorf("manifest: config_schema key %q is required but has no binding or display_only marker", field.Key)
+		}
+		if field.TestKind != "" && !testableSources["config."+field.Key] {
+			return fmt.Errorf("manifest: config_schema key %q declares %q but is not bound to an HTTP url with response_contract", field.Key, field.TestKind)
 		}
 	}
 	for _, req := range credentialKeys {
@@ -408,6 +423,14 @@ func validateConfigField(index int, field ConfigField) error {
 	case "string", "url", "integer", "boolean", "select":
 	default:
 		return fmt.Errorf("%s.type must be one of string, url, integer, boolean, or select", prefix)
+	}
+	if field.TestKind != "" {
+		if field.TestKind != "http_json_contract" {
+			return fmt.Errorf("%s.test_kind must be allowlisted", prefix)
+		}
+		if field.Type != "url" {
+			return fmt.Errorf("%s.test_kind %q is compatible only with url fields", prefix, field.TestKind)
+		}
 	}
 	if field.Type != "select" && len(field.Options) > 0 {
 		return fmt.Errorf("%s.options is allowed only for select fields", prefix)

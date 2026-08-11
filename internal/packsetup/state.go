@@ -18,6 +18,7 @@ const (
 
 type StateFile struct {
 	PackID             string `json:"pack_id"`
+	PackVersion        string `json:"pack_version"`
 	StateSchemaVersion int    `json:"state_schema_version"`
 	Completed          bool   `json:"completed"`
 	UpdatedAt          string `json:"updated_at"`
@@ -38,6 +39,9 @@ func LoadState(dataDir string, manifest pack.Manifest) (*StateFile, error) {
 	if state.StateSchemaVersion != StateSchemaVersion {
 		return nil, fmt.Errorf("pack setup: unsupported state_schema_version %d", state.StateSchemaVersion)
 	}
+	if state.Completed && state.PackVersion != manifest.Version {
+		return nil, fmt.Errorf("pack setup: completed state requires revalidation for pack version %q", manifest.Version)
+	}
 	return &state, nil
 }
 
@@ -50,6 +54,7 @@ func SaveState(dataDir string, manifest pack.Manifest, completed bool, now time.
 	}
 	state := StateFile{
 		PackID:             manifest.ID,
+		PackVersion:        manifest.Version,
 		StateSchemaVersion: StateSchemaVersion,
 		Completed:          completed,
 		UpdatedAt:          now.UTC().Format(time.RFC3339),

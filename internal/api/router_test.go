@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -37,10 +39,10 @@ func TestRouterAllowsConfiguredMCPOriginInGlobalCORS(t *testing.T) {
 }
 
 func TestApplianceTelegramConnectionTestDefaultsToProductionBaseURL(t *testing.T) {
-	var observedURL string
+	var observedURLs []string
 	client := &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			observedURL = req.URL.String()
+			observedURLs = append(observedURLs, req.URL.String())
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     make(http.Header),
@@ -50,11 +52,15 @@ func TestApplianceTelegramConnectionTestDefaultsToProductionBaseURL(t *testing.T
 	}
 	appliance := &ApplianceContext{ConnectionTestClient: client}
 
-	if err := applianceTelegramGetMe(httptest.NewRequest(http.MethodPost, "/test", nil), appliance, "123:secret-token"); err != nil {
-		t.Fatalf("telegram getMe failed: %v", err)
+	if err := applianceTelegramDestinationCheck(httptest.NewRequest(http.MethodPost, "/test", nil).Context(), appliance, "123:secret-token", "@dailyops"); err != nil {
+		t.Fatalf("telegram destination check failed: %v", err)
 	}
-	if observedURL != "https://api.telegram.org/bot123:secret-token/getMe" {
-		t.Fatalf("expected production Telegram URL, got %q", observedURL)
+	want := []string{
+		"https://api.telegram.org/bot123:secret-token/getMe",
+		"https://api.telegram.org/bot123:secret-token/getChat?chat_id=%40dailyops",
+	}
+	if !reflect.DeepEqual(observedURLs, want) {
+		t.Fatalf("expected production Telegram URLs %q, got %q", want, observedURLs)
 	}
 }
 
@@ -517,15 +523,32 @@ func TestApplianceCreateCredentialStoresEncryptedAndRedactsResponse(t *testing.T
 	if len(credentials) != 1 || credentials[0].Type != "TELEGRAM_BOT" {
 		t.Fatalf("unexpected credentials: %#v", credentials)
 	}
+	credentialID := credentials[0].ID
 	if strings.Contains(body, credentials[0].ID) {
 		t.Fatalf("create response leaked credential id: %s", body)
 	}
-	decrypted, err := credStore.GetDecryptedData(credentials[0].ID)
+	decrypted, err := credStore.GetDecryptedData(credentialID)
 	if err != nil {
 		t.Fatalf("decrypt credential: %v", err)
 	}
 	if decrypted != "123:secret-token" {
 		t.Fatalf("unexpected decrypted credential")
+	}
+	replaceBody := applianceRequestStatus(t, router, http.MethodPost, "/api/appliance/setup/credentials/create", []byte(`{"key":"telegram","name":"Telegram replacement","value":"456:replacement-secret"}`), map[string]string{
+		"Origin":             "http://example.com",
+		applianceTokenHeader: "test-session-token",
+		"Content-Type":       "application/json",
+	}, http.StatusOK)
+	if strings.Contains(replaceBody, "replacement-secret") {
+		t.Fatalf("replace response leaked credential value: %s", replaceBody)
+	}
+	credentials, err = credStore.ListAll()
+	if err != nil || len(credentials) != 1 || credentials[0].ID != credentialID {
+		t.Fatalf("replace duplicated or changed credential identity: credentials=%#v err=%v", credentials, err)
+	}
+	decrypted, err = credStore.GetDecryptedData(credentialID)
+	if err != nil || decrypted != "456:replacement-secret" {
+		t.Fatalf("replace did not update encrypted value in place")
 	}
 }
 
@@ -540,9 +563,9 @@ func TestApplianceTelegramConnectionTestUsesGetMeAndRedactsFailure(t *testing.T)
 	if err != nil {
 		t.Fatalf("create credential: %v", err)
 	}
-	var observedPath string
+	var observedPaths []string
 	telegram := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		observedPath = r.URL.Path
+		observedPaths = append(observedPaths, r.URL.Path)
 		if strings.Contains(r.URL.Path, "sendMessage") {
 			t.Fatalf("connection test must not send messages")
 		}
@@ -560,9 +583,19 @@ func TestApplianceTelegramConnectionTestUsesGetMeAndRedactsFailure(t *testing.T)
 		DataDir:              t.TempDir(),
 		TelegramAPIBaseURL:   telegram.URL,
 		ConnectionTestClient: telegram.Client(),
+		ConfigSchema: []pack.ConfigField{
+			{Key: "chat_id", Label: "Chat", Type: "string", Required: true},
+		},
 		CredentialRequirements: []pack.CredentialRequirement{
 			{Key: "telegram", Label: "Telegram", Type: "TELEGRAM_BOT", Required: true, TestKind: "telegram_get_me"},
 		},
+		Bindings: []pack.Binding{
+			{Source: "config.chat_id", Target: pack.BindingTarget{NodeID: "send", Param: "chat_id"}},
+			{Source: "credential.telegram", Target: pack.BindingTarget{NodeID: "send", Param: "credential_id"}},
+		},
+	}
+	if _, err := packsetup.SaveConfig(appliance.DataDir, applianceManifest(appliance), map[string]interface{}{"chat_id": "@dailyops"}); err != nil {
+		t.Fatalf("save config: %v", err)
 	}
 	if _, err := packsetup.SaveCredentialBindings(appliance.DataDir, applianceManifest(appliance), map[string]string{"telegram": cred.ID}, applianceCredentialResolver(credStore)); err != nil {
 		t.Fatalf("save credential binding: %v", err)
@@ -573,11 +606,11 @@ func TestApplianceTelegramConnectionTestUsesGetMeAndRedactsFailure(t *testing.T)
 		applianceTokenHeader: "test-session-token",
 		"Content-Type":       "application/json",
 	})
-	if !strings.Contains(body, `"status":"OK"`) {
+	if !strings.Contains(body, `"status":"VALID"`) {
 		t.Fatalf("expected OK test response, got %s", body)
 	}
-	if observedPath != "/bot123:secret-token/getMe" {
-		t.Fatalf("expected getMe path, got %q", observedPath)
+	if !reflect.DeepEqual(observedPaths, []string{"/bot123:secret-token/getMe", "/bot123:secret-token/getChat"}) {
+		t.Fatalf("expected getMe and getChat paths, got %q", observedPaths)
 	}
 
 	failingTelegram := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -731,6 +764,193 @@ func TestApplianceCredentialTestRateLimit(t *testing.T) {
 	applianceRequestStatus(t, router, http.MethodPost, "/api/appliance/setup/credentials/test", []byte(`{"key":"telegram"}`), headers, http.StatusTooManyRequests)
 }
 
+func TestApplianceSourceAndCredentialTestsRejectConcurrentWork(t *testing.T) {
+	appliance := &ApplianceContext{PackID: "example.concurrent", Origin: "http://example.com"}
+	tests := []struct {
+		name    string
+		handler http.Handler
+	}{
+		{
+			name: "source",
+			handler: applianceTestSourceHandler(appliance, nil, newFixedWindowRateLimiter(10, time.Minute), func() chan struct{} {
+				slots := make(chan struct{}, 1)
+				slots <- struct{}{}
+				return slots
+			}()),
+		},
+		{
+			name: "credential",
+			handler: applianceTestCredentialHandler(appliance, nil, newFixedWindowRateLimiter(10, time.Minute), func() chan struct{} {
+				slots := make(chan struct{}, 1)
+				slots <- struct{}{}
+				return slots
+			}()),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/test", bytes.NewBufferString(`{}`))
+			rec := httptest.NewRecorder()
+			tt.handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusTooManyRequests {
+				t.Fatalf("expected concurrent test rejection, got %d: %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestApplianceSourceAndTelegramValidationRecheckCurrentConfig(t *testing.T) {
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+	wfStore := storage.NewWorkflowStore(db)
+	credStore := storage.NewCredentialStore(db, crypto.NewCryptoManager("test-master-key"))
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/valid":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"report_date":"2026-08-09","timezone":"Asia/Bangkok","revenue":48250.75,"order_count":314,"cancelled_refunded_count":7,"low_stock_summary":"3 SKUs below threshold","comparison_summary":"Revenue up 12.4% vs prior day"}`))
+		case "/html":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(`<html>secret dashboard</html>`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer source.Close()
+	telegram := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/getMe") {
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":1}}`))
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/getChat") && r.URL.Query().Get("chat_id") == "@accessible" {
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":2}}`))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"ok":false,"description":"chat not found token-secret"}`))
+	}))
+	defer telegram.Close()
+
+	appliance := validationTestAppliance(t, wfStore, source.Client(), telegram.URL)
+	credential, err := credStore.Create("Telegram", "TELEGRAM_BOT", "123:token-secret")
+	if err != nil {
+		t.Fatalf("create credential: %v", err)
+	}
+	if _, err := packsetup.SaveCredentialBindings(appliance.DataDir, applianceManifest(appliance), map[string]string{"telegram": credential.ID}, applianceCredentialResolver(credStore)); err != nil {
+		t.Fatalf("save credential binding: %v", err)
+	}
+	router := NewRouter(wfStore, nil, credStore, nil, nil, nil, nil, nil, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
+
+	saveValidationConfig(t, router, source.URL+"/valid", "@accessible")
+	sourceBody := applianceRequest(t, router, http.MethodPost, "/api/appliance/setup/source/test", []byte(`{"key":"source_url"}`), applianceMutationHeaders())
+	if !strings.Contains(sourceBody, `"status":"VALID"`) || !strings.Contains(sourceBody, `"valid_fields":7`) || strings.Contains(sourceBody, "secret") {
+		t.Fatalf("unexpected source validation response: %s", sourceBody)
+	}
+	telegramBody := applianceRequest(t, router, http.MethodPost, "/api/appliance/setup/credentials/test", []byte(`{"key":"telegram"}`), applianceMutationHeaders())
+	if !strings.Contains(telegramBody, `"status":"VALID"`) || strings.Contains(telegramBody, "token-secret") {
+		t.Fatalf("unexpected Telegram validation response: %s", telegramBody)
+	}
+
+	saveValidationConfig(t, router, source.URL+"/html?access_token=query-secret", "@accessible")
+	failed := applianceRequestStatus(t, router, http.MethodPost, "/api/appliance/setup/complete", []byte(`{}`), applianceMutationHeaders(), http.StatusBadRequest)
+	if !strings.Contains(failed, `"category":"source_non_json"`) || strings.Contains(failed, "query-secret") || strings.Contains(failed, "secret dashboard") {
+		t.Fatalf("changed source was not safely revalidated: %s", failed)
+	}
+	if state, err := packsetup.LoadState(appliance.DataDir, applianceManifest(appliance)); err == nil && state.Completed {
+		t.Fatalf("failed source revalidation completed setup")
+	}
+
+	saveValidationConfig(t, router, source.URL+"/valid", "@inaccessible")
+	failed = applianceRequestStatus(t, router, http.MethodPost, "/api/appliance/setup/complete", []byte(`{}`), applianceMutationHeaders(), http.StatusBadRequest)
+	if !strings.Contains(failed, `"category":"telegram_chat_inaccessible"`) || strings.Contains(failed, "token-secret") {
+		t.Fatalf("changed chat was not safely revalidated: %s", failed)
+	}
+
+	saveValidationConfig(t, router, source.URL+"/valid", "@accessible")
+	complete := applianceRequest(t, router, http.MethodPost, "/api/appliance/setup/complete", []byte(`{}`), applianceMutationHeaders())
+	if !strings.Contains(complete, `"state":"READY"`) {
+		t.Fatalf("valid current setup did not complete: %s", complete)
+	}
+}
+
+func TestApplianceConcurrentRunsCreateOneExecutionAndLaterRunSucceeds(t *testing.T) {
+	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+	wfStore := storage.NewWorkflowStore(db)
+	execStore := storage.NewExecutionStore(db)
+	credStore := storage.NewCredentialStore(db, crypto.NewCryptoManager("test-master-key"))
+	release := make(chan struct{})
+	executor := &blockingApplianceExecutor{started: make(chan struct{}), release: release}
+	registry := nodes.NewPluginRegistry()
+	if err := registry.Register(executor); err != nil {
+		t.Fatalf("register executor: %v", err)
+	}
+	wf := &storage.Workflow{
+		ID:                "wf-single-run",
+		Name:              "Single Run",
+		IsActive:          true,
+		NodesJSON:         `[{"id":"block","type":"blockingApplianceAction","params":{}}]`,
+		EdgesJSON:         `[]`,
+		InputSchemaJSON:   `{}`,
+		OutputSchemaJSON:  `{}`,
+		RiskLevel:         "low",
+		MaxConcurrentRuns: 1,
+		ConcurrencyPolicy: "reject",
+	}
+	if err := wfStore.Create(wf); err != nil {
+		t.Fatalf("create workflow: %v", err)
+	}
+	appliance := &ApplianceContext{Enabled: true, Origin: "http://example.com", SessionToken: "test-session-token", PackID: "example.single", PackName: "Single", PackVersion: "0.1.0", WorkflowID: wf.ID, DataDir: t.TempDir()}
+	if _, err := packsetup.SaveState(appliance.DataDir, applianceManifest(appliance), true, time.Now()); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	eventBus := engine.NewEventBus()
+	eng := engine.NewEngine(registry, execStore, credStore, eventBus, wfStore)
+	router := NewRouter(wfStore, execStore, credStore, nil, nil, registry, eng, eventBus, nil, "", 60, "http://127.0.0.1:8080", nil, 2, 30, appliance)
+
+	start := make(chan struct{})
+	statuses := make(chan int, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			<-start
+			req := httptest.NewRequest(http.MethodPost, "/api/appliance/workflow/run", bytes.NewBufferString(`{"input":{}}`))
+			for key, value := range applianceMutationHeaders() {
+				req.Header.Set(key, value)
+			}
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			statuses <- rec.Code
+		}()
+	}
+	close(start)
+	first, second := <-statuses, <-statuses
+	if !((first == http.StatusAccepted && second == http.StatusConflict) || (second == http.StatusAccepted && first == http.StatusConflict)) {
+		t.Fatalf("expected one accepted and one already_running conflict, got %d and %d", first, second)
+	}
+	list, err := execStore.ListByWorkflow(wf.ID, 10)
+	if err != nil || len(list) != 1 || list[0].Status != "RUNNING" {
+		t.Fatalf("concurrent requests created unexpected executions: list=%+v err=%v", list, err)
+	}
+	close(release)
+	waitForExecutionStatus(t, execStore, list[0].ID, "SUCCESS")
+	applianceRequestStatus(t, router, http.MethodPost, "/api/appliance/workflow/run", []byte(`{"input":{}}`), applianceMutationHeaders(), http.StatusAccepted)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		list, _ = execStore.ListByWorkflow(wf.ID, 10)
+		if len(list) == 2 && list[0].Status == "SUCCESS" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("subsequent terminal run did not succeed: %+v", list)
+}
+
 func TestApplianceStatusDetectsDeletedCredentialAfterCompletion(t *testing.T) {
 	db, err := storage.NewDB(filepath.Join(t.TempDir(), "goflow.db"))
 	if err != nil {
@@ -875,6 +1095,87 @@ func (applianceTestExecutor) GetDefinition() nodes.NodeDefinition {
 		Description: "Test action",
 		Category:    "test",
 	}
+}
+
+type blockingApplianceExecutor struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (e *blockingApplianceExecutor) Execute(ctx *nodes.ExecutionContext, node *nodes.Node) (interface{}, error) {
+	e.once.Do(func() { close(e.started) })
+	select {
+	case <-e.release:
+		return map[string]interface{}{"ok": true}, nil
+	case <-ctx.Context.Done():
+		return nil, ctx.Context.Err()
+	}
+}
+
+func (*blockingApplianceExecutor) Validate(node *nodes.Node) error { return nil }
+
+func (*blockingApplianceExecutor) GetDefinition() nodes.NodeDefinition {
+	return nodes.NodeDefinition{Type: nodes.NodeType("blockingApplianceAction"), Name: "Blocking appliance action", Description: "Test action", Category: "test"}
+}
+
+func validationTestAppliance(t *testing.T, wfStore *storage.WorkflowStore, client *http.Client, telegramBaseURL string) *ApplianceContext {
+	t.Helper()
+	contract := `{"required":{"report_date":{"type":"string","non_empty":true},"timezone":{"type":"string","non_empty":true},"revenue":{"type":"number"},"order_count":{"type":"integer","minimum":0},"cancelled_refunded_count":{"type":"integer","minimum":0},"low_stock_summary":{"type":"string"},"comparison_summary":{"type":"string"}}}`
+	nodesJSON := `[
+		{"id":"fetch","type":"httpRequest","params":{"method":"GET","url":"https://example.test/dailyops.json","headers":"{}","response_contract":` + contract + `}},
+		{"id":"send","type":"telegramBot","params":{"credential_id":"","chat_id":"@default","message":"report"}}
+	]`
+	if err := wfStore.Create(&storage.Workflow{ID: "wf-validation", Name: "Validation", IsActive: false, NodesJSON: nodesJSON, EdgesJSON: `[]`, MaxConcurrentRuns: 1, ConcurrencyPolicy: "reject"}); err != nil {
+		t.Fatalf("create workflow: %v", err)
+	}
+	return &ApplianceContext{
+		Enabled:              true,
+		Origin:               "http://example.com",
+		SessionToken:         "test-session-token",
+		PackID:               "example.validation",
+		PackName:             "Validation",
+		PackVersion:          "0.2.0",
+		WorkflowID:           "wf-validation",
+		DataDir:              t.TempDir(),
+		TelegramAPIBaseURL:   telegramBaseURL,
+		ConnectionTestClient: client,
+		ConfigSchema: []pack.ConfigField{
+			{Key: "source_url", Label: "Source URL", Type: "url", Required: true, TestKind: "http_json_contract"},
+			{Key: "chat_id", Label: "Chat ID", Type: "string", Required: true},
+		},
+		CredentialRequirements: []pack.CredentialRequirement{
+			{Key: "telegram", Label: "Telegram", Type: "TELEGRAM_BOT", Required: true, TestKind: "telegram_get_me"},
+		},
+		Bindings: []pack.Binding{
+			{Source: "config.source_url", Target: pack.BindingTarget{NodeID: "fetch", Param: "url"}},
+			{Source: "config.chat_id", Target: pack.BindingTarget{NodeID: "send", Param: "chat_id"}},
+			{Source: "credential.telegram", Target: pack.BindingTarget{NodeID: "send", Param: "credential_id"}},
+		},
+	}
+}
+
+func saveValidationConfig(t *testing.T, router http.Handler, sourceURL, chatID string) {
+	t.Helper()
+	payload, err := json.Marshal(map[string]interface{}{"values": map[string]interface{}{"source_url": sourceURL, "chat_id": chatID}})
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	applianceRequest(t, router, http.MethodPost, "/api/appliance/setup/config", payload, applianceMutationHeaders())
+}
+
+func waitForExecutionStatus(t *testing.T, store *storage.ExecutionStore, id, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		execution, err := store.GetByID(id)
+		if err == nil && execution.Status == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	execution, _ := store.GetByID(id)
+	t.Fatalf("execution %s did not reach %s: %+v", id, want, execution)
 }
 
 func testBindingAppliance(t *testing.T, wfStore *storage.WorkflowStore, workflowID string) (*ApplianceContext, http.Handler) {

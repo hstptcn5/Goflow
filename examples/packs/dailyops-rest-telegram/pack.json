@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "official.dailyops-rest-telegram",
   "name": "DailyOps REST to Telegram",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Experimental example pack that reads a normalized daily operations JSON endpoint and sends one Telegram report.",
   "entry_workflow": "workflows/main.json",
   "required_credentials": [],
@@ -20,6 +20,7 @@
       "description": "Absolute HTTP(S) endpoint returning the normalized DailyOps JSON contract.",
       "type": "url",
       "required": true,
+      "test_kind": "http_json_contract",
       "default": "https://example.test/dailyops.json"
     },
     {
@@ -31,25 +32,6 @@
       "default": "@dailyops_demo",
       "min_length": 1,
       "max_length": 120
-    },
-    {
-      "key": "report_title",
-      "label": "Report title",
-      "description": "Title shown in the appliance setup screen.",
-      "type": "string",
-      "required": false,
-      "default": "DailyOps Daily Report",
-      "max_length": 120
-    },
-    {
-      "key": "low_stock_threshold",
-      "label": "Low-stock threshold",
-      "description": "Optional planning threshold for future vendor adapters.",
-      "type": "integer",
-      "required": false,
-      "default": 5,
-      "min": 0,
-      "max": 100000
     }
   ],
   "credential_requirements": [

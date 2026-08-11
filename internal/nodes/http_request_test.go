@@ -95,7 +95,7 @@ func TestHTTPRequestDoesNotForwardAuthAcrossOriginRedirect(t *testing.T) {
 		t.Fatalf("authorization header was forwarded across origin")
 	}
 	output := result.(map[string]interface{})
-	if output["status_code"] != http.StatusFound {
-		t.Fatalf("expected redirect response to be returned, got %#v", output)
+	if output["status_code"] != http.StatusOK {
+		t.Fatalf("expected sanitized redirect to complete, got %#v", output)
 	}
 }

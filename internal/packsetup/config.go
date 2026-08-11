@@ -258,6 +258,8 @@ func safeStaleValue(value interface{}) bool {
 	switch typed := value.(type) {
 	case nil, bool, float64, string:
 		return !looksSecretLike(typed)
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, json.Number:
+		return true
 	case []interface{}:
 		for _, item := range typed {
 			if !safeStaleValue(item) {

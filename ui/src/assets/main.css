@@ -698,6 +698,37 @@ summary:focus-visible {
   line-height: 1.4;
 }
 
+.test-row,
+.test-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.test-row {
+  flex-wrap: wrap;
+}
+
+.test-state {
+  min-height: 32px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.test-state strong::before {
+  content: "Status: ";
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.test-state[data-state="valid"] strong {
+  color: var(--color-success);
+}
+
+.test-state[data-state="invalid"] strong {
+  color: var(--color-danger);
+}
+
 .toggle-row {
   display: flex;
   align-items: center;

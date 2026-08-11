@@ -2,6 +2,8 @@
   "name": "DailyOps REST to Telegram",
   "description": "Fetch a normalized DailyOps JSON payload, build a concise report, and send it once through Telegram.",
   "is_active": false,
+  "max_concurrent_runs": 1,
+  "concurrency_policy": "reject",
   "nodes": [
     {
       "id": "fetch_sales",
@@ -10,7 +12,18 @@
       "params": {
         "method": "GET",
         "url": "https://example.test/dailyops.json",
-        "headers": "{}"
+        "headers": "{}",
+        "response_contract": {
+          "required": {
+            "report_date": { "type": "string", "non_empty": true },
+            "timezone": { "type": "string", "non_empty": true },
+            "revenue": { "type": "number" },
+            "order_count": { "type": "integer", "minimum": 0 },
+            "cancelled_refunded_count": { "type": "integer", "minimum": 0 },
+            "low_stock_summary": { "type": "string" },
+            "comparison_summary": { "type": "string" }
+          }
+        }
       }
     },
     {

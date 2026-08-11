@@ -9,9 +9,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -60,6 +58,8 @@ func mountApplianceRoutes(
 	}
 	credentialTestLimiter := newFixedWindowRateLimiter(10, time.Minute)
 	credentialTestSlots := make(chan struct{}, 1)
+	sourceTestLimiter := newFixedWindowRateLimiter(10, time.Minute)
+	sourceTestSlots := make(chan struct{}, 1)
 	r.Route("/api/appliance", func(r chi.Router) {
 		r.Use(applianceHostMiddleware(appliance))
 		r.Get("/bootstrap", applianceBootstrapHandler(appliance))
@@ -72,6 +72,7 @@ func mountApplianceRoutes(
 		r.Group(func(r chi.Router) {
 			r.Use(applianceMutationMiddleware(appliance))
 			r.Post("/setup/config", applianceSaveConfigHandler(appliance))
+			r.Post("/setup/source/test", applianceTestSourceHandler(appliance, wfStore, sourceTestLimiter, sourceTestSlots))
 			r.Post("/setup/credentials", applianceSaveCredentialsHandler(appliance, credStore))
 			r.Post("/setup/credentials/create", applianceCreateCredentialHandler(appliance, credStore))
 			r.Post("/setup/credentials/test", applianceTestCredentialHandler(appliance, credStore, credentialTestLimiter, credentialTestSlots))
@@ -212,17 +213,32 @@ func applianceCreateCredentialHandler(appliance *ApplianceContext, credStore *st
 			http.Error(w, "credential name and value are required", http.StatusBadRequest)
 			return
 		}
-		cred, err := credStore.Create(req.Name, requirement.Type, req.Value)
-		if err != nil {
-			http.Error(w, "credential could not be saved", http.StatusInternalServerError)
-			return
+		status := http.StatusCreated
+		credentialID := ""
+		if loaded, err := packsetup.LoadCredentialBindings(appliance.DataDir, applianceManifest(appliance), applianceCredentialResolver(credStore)); err == nil {
+			if slot, assigned := loaded.Credentials.Slots[req.Key]; assigned {
+				if err := credStore.UpdateData(slot.CredentialID, req.Value); err != nil {
+					http.Error(w, "credential could not be saved", http.StatusInternalServerError)
+					return
+				}
+				credentialID = slot.CredentialID
+				status = http.StatusOK
+			}
 		}
-		creds, err := packsetup.SaveCredentialBindings(appliance.DataDir, applianceManifest(appliance), map[string]string{req.Key: cred.ID}, applianceCredentialResolver(credStore))
+		if credentialID == "" {
+			cred, err := credStore.Create(req.Name, requirement.Type, req.Value)
+			if err != nil {
+				http.Error(w, "credential could not be saved", http.StatusInternalServerError)
+				return
+			}
+			credentialID = cred.ID
+		}
+		creds, err := packsetup.SaveCredentialBindings(appliance.DataDir, applianceManifest(appliance), map[string]string{req.Key: credentialID}, applianceCredentialResolver(credStore))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		renderJSON(w, http.StatusCreated, map[string]interface{}{"credentials": redactedCredentialSlots(creds.Slots)})
+		renderJSON(w, status, map[string]interface{}{"credentials": redactedCredentialSlots(creds.Slots)})
 	}
 }
 
@@ -237,10 +253,6 @@ func applianceTestCredentialHandler(appliance *ApplianceContext, credStore *stor
 			defer func() { <-slots }()
 		default:
 			http.Error(w, "credential test already running", http.StatusTooManyRequests)
-			return
-		}
-		if credStore == nil {
-			http.Error(w, "credential store is not available", http.StatusInternalServerError)
 			return
 		}
 		var req struct {
@@ -258,31 +270,15 @@ func applianceTestCredentialHandler(appliance *ApplianceContext, credStore *stor
 			renderJSON(w, http.StatusOK, map[string]interface{}{"status": "SKIPPED", "reason": "no connection test is declared"})
 			return
 		}
-		loaded, err := packsetup.LoadCredentialBindings(appliance.DataDir, applianceManifest(appliance), applianceCredentialResolver(credStore))
-		if err != nil {
-			http.Error(w, "credential slot is not ready", http.StatusBadRequest)
+		if err := applianceValidateCredentialDestination(r.Context(), appliance, credStore, req.Key); err != nil {
+			writeApplianceValidationError(w, http.StatusBadGateway, err)
 			return
 		}
-		slot, ok := loaded.Credentials.Slots[req.Key]
-		if !ok {
-			http.Error(w, "credential slot is not ready", http.StatusBadRequest)
-			return
-		}
-		secret, err := credStore.GetDecryptedData(slot.CredentialID)
-		if err != nil {
-			http.Error(w, "credential value is not available", http.StatusBadRequest)
-			return
-		}
-		switch requirement.TestKind {
-		case "telegram_get_me":
-			if err := applianceTelegramGetMe(r, appliance, secret); err != nil {
-				renderJSON(w, http.StatusBadGateway, map[string]interface{}{"status": "FAILED", "error": err.Error()})
-				return
-			}
-			renderJSON(w, http.StatusOK, map[string]interface{}{"status": "OK"})
-		default:
-			renderJSON(w, http.StatusOK, map[string]interface{}{"status": "SKIPPED", "reason": "connection test is not implemented"})
-		}
+		renderJSON(w, http.StatusOK, applianceValidationResult{
+			Status:  "VALID",
+			Message: "Bot token is valid and the configured chat is accessible.",
+			Summary: map[string]interface{}{"bot": "valid", "chat": "accessible"},
+		})
 	}
 }
 
@@ -345,6 +341,13 @@ func applianceRunWorkflowHandler(appliance *ApplianceContext, credStore *storage
 			IdempotencyKey: req.IdempotencyKey,
 		})
 		if err != nil {
+			if errors.Is(err, engine.ErrConcurrencyLimit) || errors.Is(err, engine.ErrWorkflowConcurrencyLimit) {
+				renderJSON(w, http.StatusConflict, map[string]interface{}{
+					"category": "already_running",
+					"error":    "This workflow is already running. The dashboard will keep tracking the active execution.",
+				})
+				return
+			}
 			writeExecutionError(w, err)
 			return
 		}
@@ -395,6 +398,10 @@ func applianceCompleteHandler(appliance *ApplianceContext, wfStore *storage.Work
 		missing := applianceMissingRequirements(appliance, applianceCredentialResolver(credStore))
 		if len(missing) > 0 {
 			renderJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "setup requirements are missing", "missing": missing})
+			return
+		}
+		if err := applianceValidateCompletion(r.Context(), appliance, wfStore, credStore); err != nil {
+			writeApplianceValidationError(w, http.StatusBadRequest, err)
 			return
 		}
 		prepared, err := appliancePrepareCompletion(appliance, wfStore, credStore)
@@ -711,6 +718,7 @@ type applianceExecutionSummary struct {
 	RequestID        string      `json:"request_id,omitempty"`
 	Input            interface{} `json:"input,omitempty"`
 	ErrorMessage     string      `json:"error_message,omitempty"`
+	ErrorCategory    string      `json:"error_category,omitempty"`
 }
 
 func applianceLatestExecution(execStore *storage.ExecutionStore, workflowID string) (*applianceExecutionSummary, error) {
@@ -732,6 +740,7 @@ func applianceRecentExecutions(execStore *storage.ExecutionStore, workflowID str
 	result := make([]applianceExecutionSummary, 0, len(list))
 	for _, exec := range list {
 		dto := executionInspectorDTOFromExecution(exec)
+		errorCategory, errorMessage := appliancePublicExecutionError(dto.Status, dto.ErrorMessage)
 		result = append(result, applianceExecutionSummary{
 			ID:               dto.ID,
 			WorkflowID:       dto.WorkflowID,
@@ -743,7 +752,8 @@ func applianceRecentExecutions(execStore *storage.ExecutionStore, workflowID str
 			TriggerPrincipal: engine.RedactSensitiveString(dto.TriggerPrincipal),
 			RequestID:        engine.RedactSensitiveString(dto.RequestID),
 			Input:            dto.Input,
-			ErrorMessage:     dto.ErrorMessage,
+			ErrorMessage:     errorMessage,
+			ErrorCategory:    errorCategory,
 		})
 	}
 	return result, nil
@@ -803,59 +813,4 @@ func credentialRequirement(appliance *ApplianceContext, key string) (pack.Creden
 		}
 	}
 	return pack.CredentialRequirement{}, false
-}
-
-func applianceTelegramGetMe(r *http.Request, appliance *ApplianceContext, token string) error {
-	base := strings.TrimRight(appliance.TelegramAPIBaseURL, "/")
-	if base == "" {
-		base = "https://api.telegram.org"
-	}
-	parsed, err := url.Parse(base)
-	if err != nil || !parsed.IsAbs() || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return fmt.Errorf("telegram API base URL is invalid")
-	}
-	testURL := fmt.Sprintf("%s/bot%s/getMe", base, token)
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, testURL, nil)
-	if err != nil {
-		return fmt.Errorf("telegram connection test could not be created")
-	}
-	client := appliance.ConnectionTestClient
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("telegram connection test failed: %s", redactConnectionTestText(err.Error()))
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, (64<<10)+1))
-	if err != nil {
-		return fmt.Errorf("telegram connection test response could not be read")
-	}
-	if len(data) > (64 << 10) {
-		return fmt.Errorf("telegram connection test response exceeds limit")
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("telegram connection test returned status %d: %s", resp.StatusCode, redactConnectionTestText(string(data)))
-	}
-	var decoded struct {
-		OK bool `json:"ok"`
-	}
-	if err := json.Unmarshal(data, &decoded); err != nil || !decoded.OK {
-		return fmt.Errorf("telegram connection test did not return ok")
-	}
-	return nil
-}
-
-func redactConnectionTestText(text string) string {
-	if len(text) > 4096 {
-		text = text[:4096]
-	}
-	for _, pattern := range []*regexp.Regexp{
-		regexp.MustCompile(`(?i)bot[0-9]+:[A-Za-z0-9_-]+`),
-		regexp.MustCompile(`(?i)(token|authorization|password|secret)["'=:\s]+[^"',}\s]+`),
-	} {
-		text = pattern.ReplaceAllString(text, "[REDACTED]")
-	}
-	return text
 }
