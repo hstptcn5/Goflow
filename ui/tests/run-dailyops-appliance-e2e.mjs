@@ -50,10 +50,12 @@ try {
   assertTelegramCalls(telegramServer, { getMe: 1, sendMessage: 1 });
 
   harness = await startHarness();
-  exitCode = await runPlaywright('persist', harness.baseURL);
-  if (exitCode !== 0) throw new Error('DailyOps persistence Playwright phase failed');
   assertSourceCalls(sourceServer, { count: 1, method: 'GET', path: '/dailyops.json' });
   assertTelegramCalls(telegramServer, { getMe: 1, sendMessage: 1 });
+  exitCode = await runPlaywright('persist', harness.baseURL);
+  if (exitCode !== 0) throw new Error('DailyOps persistence Playwright phase failed');
+  assertSourceCalls(sourceServer, { count: 2, method: 'GET', path: '/dailyops.json' });
+  assertTelegramCalls(telegramServer, { getMe: 1, sendMessage: 2 });
 
   await scanForForbiddenRuntimeData();
   ensureLogsDoNotExposeSecret();
@@ -262,7 +264,7 @@ function assertSourceCalls(serverState, expected) {
   if (state.count !== expected.count) {
     throw new Error(`Source mock call count mismatch: count=${state.count}, methods=${state.methods.join(',')}, paths=${state.paths.join(',')}`);
   }
-  if (state.methods[0] !== expected.method || state.paths[0] !== expected.path) {
+  if (state.methods.some((method) => method !== expected.method) || state.paths.some((path) => path !== expected.path)) {
     throw new Error(`Source mock request mismatch: methods=${state.methods.join(',')}, paths=${state.paths.join(',')}`);
   }
 }

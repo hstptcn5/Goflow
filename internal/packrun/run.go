@@ -27,6 +27,7 @@ import (
 	"goflow/internal/api"
 	"goflow/internal/nodes"
 	"goflow/internal/pack"
+	"goflow/internal/packsetup"
 	"goflow/internal/serverapp"
 	"goflow/internal/storage"
 	"goflow/internal/workflow"
@@ -222,24 +223,28 @@ func prepare(ctx context.Context, loaded *pack.Pack, dataDir string) (*Prepared,
 	if err := workflow.ValidateDefinition(workflowDef); err != nil {
 		return nil, fmt.Errorf("pack run: validate workflow: %w", err)
 	}
+	workflowDef.ID = workflowID
+	workflowDef.Description = managedDescription(loaded.Manifest.Description, workflowDef.Description)
+	credentialStore := storage.NewCredentialStore(db, nil)
+	desired, _, setupErr := packsetup.ReconstructManagedWorkflow(workflowDef, loaded.Manifest, dataDir, packRunCredentialResolver(credentialStore))
 	managed := &storage.Workflow{
-		ID:                workflowID,
-		Name:              workflowDef.Name,
-		Description:       managedDescription(loaded.Manifest.Description, workflowDef.Description),
-		IsActive:          workflowDef.IsActive,
-		NodesJSON:         workflowDef.NodesJSON,
-		EdgesJSON:         workflowDef.EdgesJSON,
-		Slug:              workflowDef.Slug,
-		InputSchemaJSON:   workflowDef.InputSchemaJSON,
-		OutputSchemaJSON:  workflowDef.OutputSchemaJSON,
-		ExposeCLI:         workflowDef.ExposeCLI,
-		ExposeMCP:         workflowDef.ExposeMCP,
-		MCPToolName:       workflowDef.MCPToolName,
-		MCPDescription:    workflowDef.MCPDescription,
-		RiskLevel:         workflowDef.RiskLevel,
-		RequiresApproval:  workflowDef.RequiresApproval,
-		MaxConcurrentRuns: workflowDef.MaxConcurrentRuns,
-		ConcurrencyPolicy: workflowDef.ConcurrencyPolicy,
+		ID:                desired.ID,
+		Name:              desired.Name,
+		Description:       desired.Description,
+		IsActive:          desired.IsActive,
+		NodesJSON:         desired.NodesJSON,
+		EdgesJSON:         desired.EdgesJSON,
+		Slug:              desired.Slug,
+		InputSchemaJSON:   desired.InputSchemaJSON,
+		OutputSchemaJSON:  desired.OutputSchemaJSON,
+		ExposeCLI:         desired.ExposeCLI,
+		ExposeMCP:         desired.ExposeMCP,
+		MCPToolName:       desired.MCPToolName,
+		MCPDescription:    desired.MCPDescription,
+		RiskLevel:         desired.RiskLevel,
+		RequiresApproval:  desired.RequiresApproval,
+		MaxConcurrentRuns: desired.MaxConcurrentRuns,
+		ConcurrencyPolicy: desired.ConcurrencyPolicy,
 	}
 	if existing, err := wfStore.GetByID(workflowID); err == nil {
 		managed.CreatedAt = existing.CreatedAt
@@ -254,6 +259,11 @@ func prepare(ctx context.Context, loaded *pack.Pack, dataDir string) (*Prepared,
 		}
 	} else {
 		return nil, fmt.Errorf("pack run: read managed workflow: %w", err)
+	}
+	if setupErr != nil {
+		if _, err := packsetup.SaveState(dataDir, loaded.Manifest, false, time.Now()); err != nil {
+			return nil, fmt.Errorf("pack run: fail closed after invalid persisted setup: %w", err)
+		}
 	}
 	state := State{
 		PackID:              loaded.Manifest.ID,
@@ -274,6 +284,16 @@ func prepare(ctx context.Context, loaded *pack.Pack, dataDir string) (*Prepared,
 		WorkflowURL: workflowTargetPath(loaded),
 		State:       state,
 	}, nil
+}
+
+func packRunCredentialResolver(store *storage.CredentialStore) packsetup.CredentialResolver {
+	return packsetup.CredentialLookupFunc(func(id string) (packsetup.CredentialIdentity, error) {
+		credential, err := store.GetByID(id)
+		if err != nil {
+			return packsetup.CredentialIdentity{}, errors.New("credential not found")
+		}
+		return packsetup.CredentialIdentity{ID: credential.ID, Type: credential.Type}, nil
+	})
 }
 
 func StableWorkflowID(packID string) string {

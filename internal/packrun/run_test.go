@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,7 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"goflow/internal/crypto"
 	"goflow/internal/pack"
+	"goflow/internal/packsetup"
 	"goflow/internal/storage"
 )
 
@@ -47,6 +50,150 @@ func TestPrepareIdempotentlyUpsertsManagedWorkflow(t *testing.T) {
 		t.Fatalf("upgrade changed workflow ID: %s -> %s", first.WorkflowID, third.WorkflowID)
 	}
 	assertWorkflowCount(t, dataDir, 1, first.WorkflowID, "Hello Pack Updated")
+}
+
+func TestPrepareReconstructsCompletedSetupAcrossRestartsAndPackUpgrade(t *testing.T) {
+	packDir := t.TempDir()
+	writeSetupRunPackFiles(t, packDir, "0.1.0", "v1")
+	loaded := loadPack(t, packDir)
+	dataDir := t.TempDir()
+
+	first, err := prepare(context.Background(), loaded, dataDir)
+	if err != nil {
+		t.Fatalf("first prepare: %v", err)
+	}
+	firstWorkflow := loadManagedWorkflow(t, dataDir, first.WorkflowID)
+	if firstWorkflow.IsActive {
+		t.Fatalf("first-run workflow must be inactive even when the pack definition is active")
+	}
+	assertManagedBindings(t, firstWorkflow, "https://default.example.test/daily.json", "", "v1")
+
+	credentialID := saveCompletedRunSetup(t, loaded, first)
+	if _, err := packsetup.SaveState(dataDir, loaded.Manifest, false, time.Now()); err != nil {
+		t.Fatalf("save incomplete setup state: %v", err)
+	}
+	if _, err := prepare(context.Background(), loaded, dataDir); err != nil {
+		t.Fatalf("prepare incomplete setup: %v", err)
+	}
+	if workflow := loadManagedWorkflow(t, dataDir, first.WorkflowID); workflow.IsActive {
+		t.Fatalf("incomplete setup became active")
+	}
+
+	completedAt := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
+	if _, err := packsetup.SaveState(dataDir, loaded.Manifest, true, completedAt); err != nil {
+		t.Fatalf("save completed setup state: %v", err)
+	}
+	restarted, err := prepare(context.Background(), loaded, dataDir)
+	if err != nil {
+		t.Fatalf("prepare completed restart: %v", err)
+	}
+	if restarted.WorkflowID != first.WorkflowID {
+		t.Fatalf("workflow ID changed after completed restart: %s -> %s", first.WorkflowID, restarted.WorkflowID)
+	}
+	bound := loadManagedWorkflow(t, dataDir, restarted.WorkflowID)
+	if !bound.IsActive {
+		t.Fatalf("completed restart did not restore active workflow")
+	}
+	assertManagedBindings(t, bound, "https://source.example.test/daily.json", credentialID, "v1")
+
+	for restart := 0; restart < 3; restart++ {
+		prepared, err := prepare(context.Background(), loaded, dataDir)
+		if err != nil {
+			t.Fatalf("idempotent restart %d: %v", restart, err)
+		}
+		if prepared.WorkflowID != first.WorkflowID {
+			t.Fatalf("restart %d changed workflow ID", restart)
+		}
+		assertWorkflowCount(t, dataDir, 1, first.WorkflowID, "Setup Pack")
+		assertCredentialCount(t, dataDir, 1)
+		state, err := packsetup.LoadState(dataDir, loaded.Manifest)
+		if err != nil || !state.Completed || state.UpdatedAt != completedAt.Format(time.RFC3339) {
+			t.Fatalf("restart %d changed setup state: state=%#v err=%v", restart, state, err)
+		}
+	}
+
+	writeSetupRunPackFiles(t, packDir, "0.2.0", "v2")
+	upgraded := loadPack(t, packDir)
+	upgradePrepared, err := prepare(context.Background(), upgraded, dataDir)
+	if err != nil {
+		t.Fatalf("prepare pack upgrade: %v", err)
+	}
+	if upgradePrepared.WorkflowID != first.WorkflowID {
+		t.Fatalf("pack upgrade changed stable workflow ID")
+	}
+	upgradedWorkflow := loadManagedWorkflow(t, dataDir, first.WorkflowID)
+	if !upgradedWorkflow.IsActive {
+		t.Fatalf("valid completed setup was not active after pack upgrade")
+	}
+	assertManagedBindings(t, upgradedWorkflow, "https://source.example.test/daily.json", credentialID, "v2")
+	assertWorkflowCount(t, dataDir, 1, first.WorkflowID, "Setup Pack")
+	assertCredentialCount(t, dataDir, 1)
+}
+
+func TestPrepareInvalidPersistedSetupFailsClosed(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		breakSetup func(t *testing.T, prepared *Prepared, credentialID string)
+	}{
+		{
+			name: "missing config",
+			breakSetup: func(t *testing.T, prepared *Prepared, _ string) {
+				t.Helper()
+				if err := os.Remove(filepath.Join(prepared.DataDir, packsetup.ConfigFileName)); err != nil {
+					t.Fatalf("remove config: %v", err)
+				}
+			},
+		},
+		{
+			name: "deleted credential",
+			breakSetup: func(t *testing.T, prepared *Prepared, credentialID string) {
+				t.Helper()
+				db, err := storage.NewDB(prepared.DBPath)
+				if err != nil {
+					t.Fatalf("open db: %v", err)
+				}
+				defer db.Close()
+				if err := storage.NewCredentialStore(db, nil).Delete(credentialID); err != nil {
+					t.Fatalf("delete credential: %v", err)
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			packDir := t.TempDir()
+			writeSetupRunPackFiles(t, packDir, "0.1.0", "v1")
+			loaded := loadPack(t, packDir)
+			dataDir := t.TempDir()
+			first, err := prepare(context.Background(), loaded, dataDir)
+			if err != nil {
+				t.Fatalf("first prepare: %v", err)
+			}
+			credentialID := saveCompletedRunSetup(t, loaded, first)
+			if _, err := packsetup.SaveState(dataDir, loaded.Manifest, true, time.Now()); err != nil {
+				t.Fatalf("save state: %v", err)
+			}
+			if _, err := prepare(context.Background(), loaded, dataDir); err != nil {
+				t.Fatalf("activate completed setup: %v", err)
+			}
+			if !loadManagedWorkflow(t, dataDir, first.WorkflowID).IsActive {
+				t.Fatalf("precondition: workflow was not active")
+			}
+
+			test.breakSetup(t, first, credentialID)
+			if _, err := prepare(context.Background(), loaded, dataDir); err != nil {
+				t.Fatalf("fail-closed prepare: %v", err)
+			}
+			workflow := loadManagedWorkflow(t, dataDir, first.WorkflowID)
+			if workflow.IsActive {
+				t.Fatalf("invalid persisted setup left workflow active")
+			}
+			assertManagedBindings(t, workflow, "https://default.example.test/daily.json", "", "v1")
+			state, err := packsetup.LoadState(dataDir, loaded.Manifest)
+			if err != nil || state.Completed {
+				t.Fatalf("invalid setup was not downgraded: state=%#v err=%v", state, err)
+			}
+		})
+	}
 }
 
 func TestRunRejectsPackagedPluginsInMVP(t *testing.T) {
@@ -428,6 +575,158 @@ func writeRunPackFiles(t *testing.T, dir, id, version, name string, active bool,
 		"edges": []interface{}{},
 	}
 	writeJSON(t, filepath.Join(dir, "workflows", "main.json"), workflowDef)
+}
+
+func writeSetupRunPackFiles(t *testing.T, dir, version, marker string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, "workflows"), 0700); err != nil {
+		t.Fatalf("mkdir workflows: %v", err)
+	}
+	manifest := map[string]interface{}{
+		"schema_version":       1,
+		"id":                   "example.setup-run",
+		"name":                 "Setup Pack",
+		"version":              version,
+		"entry_workflow":       "workflows/main.json",
+		"required_credentials": []string{},
+		"supported_platforms":  []string{pack.CurrentPlatform()},
+		"config_schema": []map[string]interface{}{
+			{
+				"key":      "source_url",
+				"label":    "Source URL",
+				"type":     "url",
+				"required": true,
+				"default":  "https://default.example.test/daily.json",
+			},
+		},
+		"credential_requirements": []map[string]interface{}{
+			{
+				"key":       "telegram",
+				"label":     "Telegram bot",
+				"type":      "TELEGRAM_BOT",
+				"required":  true,
+				"test_kind": "telegram_get_me",
+			},
+		},
+		"bindings": []map[string]interface{}{
+			{
+				"source": "config.source_url",
+				"target": map[string]interface{}{"node_id": "fetch", "param": "url"},
+			},
+			{
+				"source": "credential.telegram",
+				"target": map[string]interface{}{"node_id": "send", "param": "credential_id"},
+			},
+		},
+	}
+	writeJSON(t, filepath.Join(dir, "pack.json"), manifest)
+	workflowDef := map[string]interface{}{
+		"name":        "Setup Pack",
+		"description": "managed setup test workflow",
+		"is_active":   true,
+		"nodes": []map[string]interface{}{
+			{
+				"id":   "fetch",
+				"type": "httpRequest",
+				"params": map[string]interface{}{
+					"method":  "GET",
+					"url":     "https://default.example.test/daily.json",
+					"headers": fmt.Sprintf(`{"X-Definition":%q}`, marker),
+				},
+			},
+			{
+				"id":   "send",
+				"type": "telegramBot",
+				"params": map[string]interface{}{
+					"credential_id": "",
+					"chat_id":       "@setup_test",
+					"message":       "setup test",
+				},
+			},
+		},
+		"edges": []interface{}{},
+	}
+	writeJSON(t, filepath.Join(dir, "workflows", "main.json"), workflowDef)
+}
+
+func saveCompletedRunSetup(t *testing.T, loaded *pack.Pack, prepared *Prepared) string {
+	t.Helper()
+	if _, err := packsetup.SaveConfig(prepared.DataDir, loaded.Manifest, map[string]interface{}{
+		"source_url": "https://source.example.test/daily.json",
+	}); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	db, err := storage.NewDB(prepared.DBPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	store := storage.NewCredentialStore(db, crypto.NewCryptoManager(prepared.MasterKey))
+	credential, err := store.Create("Setup Telegram", "TELEGRAM_BOT", `{"token":"test-only-value"}`)
+	if err != nil {
+		t.Fatalf("create credential: %v", err)
+	}
+	if _, err := packsetup.SaveCredentialBindings(prepared.DataDir, loaded.Manifest, map[string]string{
+		"telegram": credential.ID,
+	}, packRunCredentialResolver(store)); err != nil {
+		t.Fatalf("save credential bindings: %v", err)
+	}
+	return credential.ID
+}
+
+func loadManagedWorkflow(t *testing.T, dataDir, workflowID string) *storage.Workflow {
+	t.Helper()
+	db, err := storage.NewDB(filepath.Join(dataDir, "goflow.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	workflow, err := storage.NewWorkflowStore(db).GetByID(workflowID)
+	if err != nil {
+		t.Fatalf("load managed workflow: %v", err)
+	}
+	return workflow
+}
+
+func assertManagedBindings(t *testing.T, workflow *storage.Workflow, wantURL, wantCredentialID, wantMarker string) {
+	t.Helper()
+	var nodeList []struct {
+		ID     string                 `json:"id"`
+		Params map[string]interface{} `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(workflow.NodesJSON), &nodeList); err != nil {
+		t.Fatalf("decode workflow nodes: %v", err)
+	}
+	paramsByID := make(map[string]map[string]interface{}, len(nodeList))
+	for _, node := range nodeList {
+		paramsByID[node.ID] = node.Params
+	}
+	if got := paramsByID["fetch"]["url"]; got != wantURL {
+		t.Fatalf("source URL got %v want %q", got, wantURL)
+	}
+	if got := paramsByID["send"]["credential_id"]; got != wantCredentialID {
+		t.Fatalf("credential binding got %v want %q", got, wantCredentialID)
+	}
+	wantHeaders := fmt.Sprintf(`{"X-Definition":%q}`, wantMarker)
+	if got := paramsByID["fetch"]["headers"]; got != wantHeaders {
+		t.Fatalf("latest definition marker got %v want %q", got, wantHeaders)
+	}
+}
+
+func assertCredentialCount(t *testing.T, dataDir string, want int) {
+	t.Helper()
+	db, err := storage.NewDB(filepath.Join(dataDir, "goflow.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	credentials, err := storage.NewCredentialStore(db, nil).ListAll()
+	if err != nil {
+		t.Fatalf("list credentials: %v", err)
+	}
+	if len(credentials) != want {
+		t.Fatalf("credential count got %d want %d", len(credentials), want)
+	}
 }
 
 func writeJSON(t *testing.T, path string, value interface{}) {
