@@ -46,16 +46,16 @@ try {
   if (exitCode !== 0) throw new Error('DailyOps setup Playwright phase failed');
   await killTree(harness.child);
 
-  assertSourceCalls(sourceServer, { count: 1, method: 'GET', path: '/dailyops.json' });
-  assertTelegramCalls(telegramServer, { getMe: 1, sendMessage: 1 });
+  assertSourceCalls(sourceServer, { count: 5, dailyops: 3, html: 1, missing: 1 });
+  assertTelegramCalls(telegramServer, { getMe: 4, getChat: 3, sendMessage: 1 });
 
   harness = await startHarness();
-  assertSourceCalls(sourceServer, { count: 1, method: 'GET', path: '/dailyops.json' });
-  assertTelegramCalls(telegramServer, { getMe: 1, sendMessage: 1 });
+  assertSourceCalls(sourceServer, { count: 5, dailyops: 3, html: 1, missing: 1 });
+  assertTelegramCalls(telegramServer, { getMe: 4, getChat: 3, sendMessage: 1 });
   exitCode = await runPlaywright('persist', harness.baseURL);
   if (exitCode !== 0) throw new Error('DailyOps persistence Playwright phase failed');
-  assertSourceCalls(sourceServer, { count: 2, method: 'GET', path: '/dailyops.json' });
-  assertTelegramCalls(telegramServer, { getMe: 1, sendMessage: 2 });
+  assertSourceCalls(sourceServer, { count: 6, dailyops: 4, html: 1, missing: 1 });
+  assertTelegramCalls(telegramServer, { getMe: 4, getChat: 3, sendMessage: 2 });
 
   await scanForForbiddenRuntimeData();
   ensureLogsDoNotExposeSecret();
@@ -77,42 +77,66 @@ async function startSourceServer() {
     state.count += 1;
     state.methods.push(req.method);
     state.paths.push(req.url);
-    if (req.method !== 'GET' || req.url !== '/dailyops.json') {
+    const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;
+    if (req.method !== 'GET' || !['/dailyops.json', '/html', '/missing'].includes(pathname)) {
       state.unexpected.push({ method: req.method, path: req.url || '' });
       res.writeHead(404);
       res.end('not found');
       return;
     }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      report_date: '2026-08-09',
-      timezone: 'Asia/Bangkok',
-      revenue: 48250.75,
-      order_count: 314,
-      cancelled_refunded_count: 7,
-      low_stock_summary: '3 SKUs below threshold',
-      comparison_summary: 'Revenue up 12.4% vs prior day',
-    }));
+    if (pathname === '/html') {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<html><body>private dashboard</body></html>');
+      return;
+    }
+    if (pathname === '/missing') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ report_date: '2026-08-09', timezone: 'Asia/Bangkok' }));
+      return;
+    }
+    setTimeout(() => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        report_date: '2026-08-09',
+        timezone: 'Asia/Bangkok',
+        revenue: 48250.75,
+        order_count: 314,
+        cancelled_refunded_count: 7,
+        low_stock_summary: '3 SKUs below threshold',
+        comparison_summary: 'Revenue up 12.4% vs prior day',
+      }));
+    }, 250);
   });
   const listened = await listen(server);
   return { ...listened, state };
 }
 
 async function startTelegramServer() {
-  const state = { getMe: 0, sendMessage: 0, unexpected: [] };
+  const state = { getMe: 0, getChat: 0, sendMessage: 0, unexpected: [] };
   const server = createHTTPServer(async (req, res) => {
     const expectedPrefix = `/bot${tokenPrefix}:${tokenSecret}/`;
-    if (!req.url?.startsWith(expectedPrefix)) {
-      state.unexpected.push({ method: req.method, path: redactTokenPath(req.url || '') });
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: false, description: 'unexpected test request' }));
-      return;
-    }
-    const method = req.url.slice(expectedPrefix.length);
+    const requestURL = new URL(req.url || '/', 'http://127.0.0.1');
+    const method = req.url?.startsWith(expectedPrefix) ? requestURL.pathname.slice(expectedPrefix.length) : requestURL.pathname.split('/').pop();
     if (req.method === 'GET' && method === 'getMe') {
       state.getMe += 1;
+      if (!req.url?.startsWith(expectedPrefix)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, description: 'invalid token' }));
+        return;
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, result: { id: 42, is_bot: true, username: 'dailyops_e2e_bot' } }));
+      return;
+    }
+    if (req.method === 'GET' && method === 'getChat' && req.url?.startsWith(expectedPrefix)) {
+      state.getChat += 1;
+      if (requestURL.searchParams.get('chat_id') !== chatID) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, description: 'chat not found' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, result: { id: chatID, type: 'channel' } }));
       return;
     }
     if (req.method === 'POST' && method === 'sendMessage') {
@@ -251,8 +275,8 @@ function assertTelegramCalls(serverState, expected) {
   if (serverState.state.unexpected.length) {
     throw new Error(`Unexpected Telegram mock calls: ${JSON.stringify(serverState.state.unexpected)}`);
   }
-  if (serverState.state.getMe !== expected.getMe || serverState.state.sendMessage !== expected.sendMessage) {
-    throw new Error(`Telegram mock call counts mismatch: getMe=${serverState.state.getMe}, sendMessage=${serverState.state.sendMessage}`);
+  if (serverState.state.getMe !== expected.getMe || serverState.state.getChat !== expected.getChat || serverState.state.sendMessage !== expected.sendMessage) {
+    throw new Error(`Telegram mock call counts mismatch: getMe=${serverState.state.getMe}, getChat=${serverState.state.getChat}, sendMessage=${serverState.state.sendMessage}`);
   }
 }
 
@@ -264,8 +288,14 @@ function assertSourceCalls(serverState, expected) {
   if (state.count !== expected.count) {
     throw new Error(`Source mock call count mismatch: count=${state.count}, methods=${state.methods.join(',')}, paths=${state.paths.join(',')}`);
   }
-  if (state.methods.some((method) => method !== expected.method) || state.paths.some((path) => path !== expected.path)) {
-    throw new Error(`Source mock request mismatch: methods=${state.methods.join(',')}, paths=${state.paths.join(',')}`);
+  if (state.methods.some((method) => method !== 'GET')) throw new Error(`Source mock request method mismatch: ${state.methods.join(',')}`);
+  const counts = state.paths.reduce((result, rawPath) => {
+    const pathname = new URL(rawPath, 'http://127.0.0.1').pathname;
+    result[pathname] = (result[pathname] || 0) + 1;
+    return result;
+  }, {});
+  if (counts['/dailyops.json'] !== expected.dailyops || counts['/html'] !== expected.html || counts['/missing'] !== expected.missing) {
+    throw new Error(`Source mock path counts mismatch: ${JSON.stringify(counts)}`);
   }
 }
 
@@ -365,10 +395,6 @@ function ensureLogsDoNotExposeSecret() {
   if (capturedLogs.join('').includes(tokenSecret)) {
     throw new Error('Harness logs exposed the fake Telegram token');
   }
-}
-
-function redactTokenPath(path) {
-  return path.replace(new RegExp(`/bot${tokenPrefix}:[^/]+/`, 'g'), `/bot${tokenPrefix}:[REDACTED]/`);
 }
 
 function readBody(req) {

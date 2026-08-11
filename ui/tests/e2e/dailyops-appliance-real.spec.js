@@ -30,7 +30,6 @@ async function waitForNewSuccess(page, previousExecutions) {
     const executions = await executionSnapshot(page);
     const succeeded = executions.find((execution) => !previousIDs.has(execution.id) && execution.status === 'SUCCESS');
     if (succeeded) {
-      await page.reload();
       await expect(page.getByRole('heading', { name: 'Managed workflow' })).toBeVisible();
       await expect(page.getByLabel('Latest execution').getByText('SUCCESS')).toBeVisible();
       return succeeded;
@@ -50,21 +49,57 @@ test('DailyOps appliance completes real setup and execution with mocked Telegram
 
   await page.getByLabel('Source URL').fill(sourceURL);
   await page.getByLabel('Telegram chat ID').fill(chatID);
-  await page.getByRole('button', { name: 'Save configuration' }).click();
-  await expect(page.getByText('Configuration saved')).toBeVisible();
+
+  await page.getByLabel('Source URL').fill(sourceURL.replace('/dailyops.json', '/html'));
+  await page.getByRole('button', { name: 'Test source' }).click();
+  await expect(page.getByText('The source returned a web page instead of JSON.')).toBeVisible();
+  await expect(page.getByText('Invalid', { exact: true })).toBeVisible();
+
+  await page.getByLabel('Source URL').fill(sourceURL.replace('/dailyops.json', '/missing'));
+  await page.getByRole('button', { name: 'Test source' }).click();
+  await expect(page.getByText('The source JSON does not match the required DailyOps fields and types.')).toBeVisible();
+
+  await page.getByLabel('Source URL').fill(sourceURL);
+  await page.getByRole('button', { name: 'Test source' }).click();
+  await expect(page.getByText('7 required fields valid')).toBeVisible();
+  await expect(page.getByText('Valid', { exact: true }).first()).toBeVisible();
+
+  await page.getByLabel('Telegram chat ID').fill('@inaccessible_dailyops_e2e');
+  await page.locator('input[type="password"]').fill(`000000:invalid-${tokenParts[1]}`);
+  await page.getByRole('button', { name: 'Create' }).click();
+  await page.getByRole('button', { name: 'Test Telegram' }).click();
+  await expect(page.getByText('Invalid bot token. Check the token from BotFather and try again.')).toBeVisible();
+  await expectNoSecret(page);
 
   await page.locator('input[type="password"]').fill(fakeToken());
-  await page.getByRole('button', { name: 'Create' }).click();
+  await page.getByRole('button', { name: 'Replace' }).click();
   await expect(page.getByText('Credential saved')).toBeVisible();
   await expectNoSecret(page);
 
-  await page.getByRole('button', { name: 'Test' }).click();
-  await expect(page.getByText('OK', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Test Telegram' }).click();
+  await expect(page.getByText('Bot cannot access this chat. Send /start to the bot, add it to the destination, and check the chat ID.')).toBeVisible();
+
+  await page.getByLabel('Telegram chat ID').fill(chatID);
+  await page.getByRole('button', { name: 'Test Telegram' }).click();
+  await expect(page.getByText('Bot token is valid and the configured chat is accessible.')).toBeVisible();
   await page.getByRole('button', { name: 'Complete setup' }).click();
 
   await expect(page.getByRole('heading', { name: 'Managed workflow' })).toBeVisible();
   const previousExecutions = await executionSnapshot(page);
-  await page.getByRole('button', { name: 'Run now' }).click();
+  const bootstrapResponse = await page.request.get('/api/appliance/bootstrap');
+  const bootstrap = await bootstrapResponse.json();
+  const duplicate = page.request.post('/api/appliance/workflow/run', {
+    headers: {
+      Origin: new URL(page.url()).origin,
+      'Content-Type': 'application/json',
+      'X-Goflow-Appliance-Token': bootstrap.token,
+    },
+    data: { input: {} },
+  });
+  await Promise.all([page.getByRole('button', { name: 'Run now' }).click(), duplicate]);
+  const duplicateResponse = await duplicate;
+  expect([202, 409]).toContain(duplicateResponse.status());
+  await expect(page.getByRole('button', { name: 'Running...' })).toBeDisabled();
   await waitForNewSuccess(page, previousExecutions);
   await expect(page.getByLabel('Recent executions').getByText('SUCCESS').first()).toBeVisible();
   await page.getByRole('button', { name: 'Refresh' }).click();

@@ -17,7 +17,11 @@ Do not include credentials, tokens, customer data, private source URLs, database
 - Steps that were confusing or required help:
 - SmartScreen or security-policy outcome:
 - Credential connection test outcome:
+- Source test outcome and whether the JSON API endpoint distinction was clear:
+- Telegram bot and chat test outcome, including whether `/start` was needed:
 - Workflow outcome and expected Telegram result:
+- Running status updated without manually reloading: Yes / No
+- Repeated Run click produced only one report: Yes / No / Not tested
 - Errors observed, with secrets and local paths removed:
 
 ## Persistence

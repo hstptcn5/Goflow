@@ -26,12 +26,16 @@ Stop if the hashes differ. Do not run the executable from an artifact that faile
 
 ## First-Run Setup
 
-1. Enter the absolute HTTP or HTTPS URL for the normalized DailyOps sample endpoint.
-2. Enter the Telegram destination chat ID.
-3. Create a Telegram bot credential in the appliance UI. Do not send the token through chat, email, screenshots, issues, or diagnostics.
-4. Run the credential connection test.
-5. Complete setup, then run the managed workflow once with non-production sample data.
-6. Confirm the latest execution and Telegram message before using the workflow again.
+1. Enter the absolute HTTP or HTTPS URL for the normalized DailyOps JSON API endpoint. A website homepage, dashboard, or sign-in page is not a source endpoint.
+2. Select **Test source** and require `Valid`. The safe summary shows the report date when it has the expected date shape and the number of validated fields; it never displays the full source payload.
+3. Enter the Telegram destination chat ID. Send `/start` to the bot first for a direct chat, or add the bot to the target group/channel.
+4. Create a Telegram bot credential in the appliance UI. Do not send the token through chat, email, screenshots, issues, or diagnostics.
+5. Select **Test Telegram** and require `Valid`. This checks the bot token and chat access without sending a message.
+6. Complete setup, then run the managed workflow once with non-production sample data.
+7. Keep the page open while `Running...` is displayed. Status and recent executions update automatically.
+8. Confirm `SUCCESS` and exactly one Telegram message before using the workflow again.
+
+Changing the source URL or chat ID returns the related test to `Not tested`. Setup completion repeats both checks against the saved current values. A second Run request while DailyOps is active reports `already_running`; wait for the current execution to finish rather than clicking again.
 
 The pilot does not require a real store or production credential. A dedicated non-production Telegram bot and sanitized source data are preferred.
 
@@ -71,6 +75,7 @@ Report pilot feedback with [Windows Pilot Feedback Template](WINDOWS_PILOT_FEEDB
 - The alpha is unsigned, so SmartScreen or organizational policy may block it.
 - There is no installer, auto-update, release channel, or automatic uninstall.
 - The appliance supports the DailyOps normalized HTTP(S)-to-Telegram example only.
+- Pack `0.2.0` removes the unused Report title and Low-stock threshold setup fields. Upgrading preserves the encrypted Telegram credential but requires one setup revalidation before Run is enabled again.
 - No store software or vendor integration is claimed compatible unless it has been tested separately.
 - The service listens only on the local machine; remote hosting and multi-user operation are outside this pilot.
 - Pilot feedback is not evidence of production readiness, customer validation, or willingness to pay.

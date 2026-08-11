@@ -15,7 +15,7 @@ $BundleFileName = 'Goflow-DailyOps-Windows-amd64.zip'
 $MarkerFileName = 'UNSIGNED-PILOT-ALPHA.txt'
 $ChecksumFileName = 'SHA256SUMS.txt'
 $PackID = 'official.dailyops-rest-telegram'
-$PackVersion = '0.1.0'
+$PackVersion = '0.2.0'
 
 function Invoke-Checked {
     param(
