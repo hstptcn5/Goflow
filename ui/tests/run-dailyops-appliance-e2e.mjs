@@ -12,6 +12,7 @@ const dataDir = join(tempDir, 'data');
 const artifactDir = join(tempDir, 'artifacts');
 const packDir = join(root, 'examples', 'packs', 'dailyops-rest-telegram');
 const uiDir = join(uiRoot, 'dist');
+const configuredHarnessBinary = process.env.GOFLOW_DAILYOPS_HARNESS_BINARY;
 const playwrightBin = process.platform === 'win32'
   ? join(uiRoot, 'node_modules', '.bin', 'playwright.cmd')
   : join(uiRoot, 'node_modules', '.bin', 'playwright');
@@ -49,10 +50,12 @@ try {
   assertTelegramCalls(telegramServer, { getMe: 1, sendMessage: 1 });
 
   harness = await startHarness();
-  exitCode = await runPlaywright('persist', harness.baseURL);
-  if (exitCode !== 0) throw new Error('DailyOps persistence Playwright phase failed');
   assertSourceCalls(sourceServer, { count: 1, method: 'GET', path: '/dailyops.json' });
   assertTelegramCalls(telegramServer, { getMe: 1, sendMessage: 1 });
+  exitCode = await runPlaywright('persist', harness.baseURL);
+  if (exitCode !== 0) throw new Error('DailyOps persistence Playwright phase failed');
+  assertSourceCalls(sourceServer, { count: 2, method: 'GET', path: '/dailyops.json' });
+  assertTelegramCalls(telegramServer, { getMe: 1, sendMessage: 2 });
 
   await scanForForbiddenRuntimeData();
   ensureLogsDoNotExposeSecret();
@@ -148,15 +151,16 @@ function listen(server) {
 }
 
 async function startHarness() {
-  const child = spawn('go', [
-    'run',
-    './internal/testharness/dailyopsappliance',
+  const harnessArgs = [
     '--pack-dir', packDir,
     '--data-dir', dataDir,
     '--ui-dir', uiDir,
     '--telegram-base-url', telegramBaseURL,
     '--port', '0',
-  ], {
+  ];
+  const child = spawn(configuredHarnessBinary || 'go', configuredHarnessBinary
+    ? harnessArgs
+    : ['run', './internal/testharness/dailyopsappliance', ...harnessArgs], {
     cwd: root,
     env: {
       ...process.env,
@@ -260,7 +264,7 @@ function assertSourceCalls(serverState, expected) {
   if (state.count !== expected.count) {
     throw new Error(`Source mock call count mismatch: count=${state.count}, methods=${state.methods.join(',')}, paths=${state.paths.join(',')}`);
   }
-  if (state.methods[0] !== expected.method || state.paths[0] !== expected.path) {
+  if (state.methods.some((method) => method !== expected.method) || state.paths.some((path) => path !== expected.path)) {
     throw new Error(`Source mock request mismatch: methods=${state.methods.join(',')}, paths=${state.paths.join(',')}`);
   }
 }

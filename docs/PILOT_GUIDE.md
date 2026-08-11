@@ -2,6 +2,8 @@
 
 This guide is for a small alpha pilot. It does not claim that interviews, customers, revenue, vendor access, or market validation already occurred.
 
+For the portable DailyOps Windows appliance, use the [Windows Pilot Guide](WINDOWS_PILOT_GUIDE.md) and [Windows Pilot Feedback Template](WINDOWS_PILOT_FEEDBACK_TEMPLATE.md).
+
 ## Recruitment Checklist
 
 - Recruit exactly three users who currently prepare recurring operational or sales reports.

@@ -436,49 +436,39 @@ func appliancePrepareCompletion(appliance *ApplianceContext, wfStore *storage.Wo
 		return nil, err
 	}
 	updated := *wf
-	updated.IsActive = true
 	manifest := prepared.manifest
-	if len(manifest.Bindings) > 0 {
-		cfg, err := packsetup.LoadConfig(appliance.DataDir, manifest)
-		if err != nil {
-			return nil, err
-		}
-		credentialSlots := map[string]packsetup.CredentialSlot{}
-		if len(manifest.CredentialRequirements) > 0 {
-			creds, err := packsetup.LoadCredentialBindings(appliance.DataDir, manifest, applianceCredentialResolver(credStore))
-			if err != nil {
-				return nil, err
-			}
-			credentialSlots = creds.Credentials.Slots
-		}
-		bound, err := packsetup.ApplyBindings(client.Workflow{
-			ID:                updated.ID,
-			Name:              updated.Name,
-			Description:       updated.Description,
-			IsActive:          updated.IsActive,
-			NodesJSON:         updated.NodesJSON,
-			EdgesJSON:         updated.EdgesJSON,
-			Slug:              updated.Slug,
-			InputSchemaJSON:   updated.InputSchemaJSON,
-			OutputSchemaJSON:  updated.OutputSchemaJSON,
-			ExposeCLI:         updated.ExposeCLI,
-			ExposeMCP:         updated.ExposeMCP,
-			MCPToolName:       updated.MCPToolName,
-			MCPDescription:    updated.MCPDescription,
-			RiskLevel:         updated.RiskLevel,
-			RequiresApproval:  updated.RequiresApproval,
-			MaxConcurrentRuns: updated.MaxConcurrentRuns,
-			ConcurrencyPolicy: updated.ConcurrencyPolicy,
-		}, manifest, cfg.Config.Values, credentialSlots)
-		if err != nil {
-			return nil, err
-		}
-		updated.NodesJSON = bound.NodesJSON
-		updated.EdgesJSON = bound.EdgesJSON
+	bound, err := packsetup.PrepareBoundWorkflow(workflowClientValue(&updated), manifest, appliance.DataDir, applianceCredentialResolver(credStore))
+	if err != nil {
+		return nil, err
 	}
+	updated.IsActive = bound.IsActive
+	updated.NodesJSON = bound.NodesJSON
+	updated.EdgesJSON = bound.EdgesJSON
 	prepared.original = wf
 	prepared.updated = &updated
 	return prepared, nil
+}
+
+func workflowClientValue(workflow *storage.Workflow) client.Workflow {
+	return client.Workflow{
+		ID:                workflow.ID,
+		Name:              workflow.Name,
+		Description:       workflow.Description,
+		IsActive:          workflow.IsActive,
+		NodesJSON:         workflow.NodesJSON,
+		EdgesJSON:         workflow.EdgesJSON,
+		Slug:              workflow.Slug,
+		InputSchemaJSON:   workflow.InputSchemaJSON,
+		OutputSchemaJSON:  workflow.OutputSchemaJSON,
+		ExposeCLI:         workflow.ExposeCLI,
+		ExposeMCP:         workflow.ExposeMCP,
+		MCPToolName:       workflow.MCPToolName,
+		MCPDescription:    workflow.MCPDescription,
+		RiskLevel:         workflow.RiskLevel,
+		RequiresApproval:  workflow.RequiresApproval,
+		MaxConcurrentRuns: workflow.MaxConcurrentRuns,
+		ConcurrencyPolicy: workflow.ConcurrencyPolicy,
+	}
 }
 
 func applianceDefaultCompletionStore(appliance *ApplianceContext, wfStore *storage.WorkflowStore) applianceCompletionStore {
@@ -685,7 +675,7 @@ func applianceMissingRequirements(appliance *ApplianceContext, resolver packsetu
 		}
 	}
 	if len(manifest.CredentialRequirements) > 0 {
-		if _, err := packsetup.LoadCredentialBindings(appliance.DataDir, manifest, resolver); err != nil {
+		if loaded, err := packsetup.LoadCredentialBindings(appliance.DataDir, manifest, resolver); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				for _, req := range manifest.CredentialRequirements {
 					if req.Required {
@@ -694,6 +684,15 @@ func applianceMissingRequirements(appliance *ApplianceContext, resolver packsetu
 				}
 			} else {
 				missing = append(missing, "credential")
+			}
+		} else {
+			for _, req := range manifest.CredentialRequirements {
+				if !req.Required {
+					continue
+				}
+				if _, ok := loaded.Credentials.Slots[req.Key]; !ok {
+					missing = append(missing, "credential."+req.Key)
+				}
 			}
 		}
 	}
