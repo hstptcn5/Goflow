@@ -100,7 +100,11 @@ test('DailyOps appliance completes real setup and execution with mocked Telegram
   const duplicateResponse = await duplicate;
   expect([202, 409]).toContain(duplicateResponse.status());
   await expect(page.getByRole('button', { name: 'Running...' })).toBeDisabled();
-  await waitForNewSuccess(page, previousExecutions);
+  const succeeded = await waitForNewSuccess(page, previousExecutions);
+  const previousIDs = new Set(previousExecutions.map((execution) => execution.id));
+  const newExecutions = (await executionSnapshot(page)).filter((execution) => !previousIDs.has(execution.id));
+  expect(newExecutions).toHaveLength(1);
+  expect(newExecutions[0].id).toBe(succeeded.id);
   await expect(page.getByLabel('Recent executions').getByText('SUCCESS').first()).toBeVisible();
   await page.getByRole('button', { name: 'Refresh' }).click();
   await expect(page.getByText('"secrets_hidden": true')).toBeVisible();
