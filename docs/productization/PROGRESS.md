@@ -117,10 +117,16 @@ Verification in progress:
 
 - Scoped storage/scheduler/application/API/serverapp/Pack Run tests: PASS.
 - `go test -count=1 ./...`: PASS.
+- `go vet ./...`: PASS.
+- `go build ./...`: PASS.
 - Local race test remains unavailable on this host; GitHub Actions race is the
-  required gate.
+  required gate. Explicit attempts failed because CGO is disabled by default and
+  no `gcc` C compiler is installed when CGO is enabled.
 
-Checkpoint commit and final CI: pending.
+Checkpoint implementation commit:
+`cf056d6` (`feat(scheduler): add deterministic appliance backend`).
+
+Final CI: pending pushed tracker head.
 
 ## Remaining Checkpoints
 
