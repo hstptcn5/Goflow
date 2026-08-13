@@ -33,6 +33,7 @@ mkdirSync(dataDir, { recursive: true });
 mkdirSync(artifactDir, { recursive: true });
 mkdirSync(join(root, '.gocache'), { recursive: true });
 
+const harnessBinary = configuredHarnessBinary || await buildHarness();
 const sourceServer = await startSourceServer();
 const telegramServer = await startTelegramServer();
 const sourceURL = `${sourceServer.url}/dailyops.json`;
@@ -199,9 +200,7 @@ async function startHarness() {
     '--telegram-base-url', telegramBaseURL,
     '--port', '0',
   ];
-  const child = spawn(configuredHarnessBinary || 'go', configuredHarnessBinary
-    ? harnessArgs
-    : ['run', './internal/testharness/dailyopsappliance', ...harnessArgs], {
+  const child = spawn(harnessBinary, harnessArgs, {
     cwd: root,
     env: {
       ...process.env,
@@ -215,6 +214,12 @@ async function startHarness() {
   const { baseURL, controlURL } = await harnessURLsPromise;
   await waitForAppliance(child, baseURL);
   return { child, baseURL, controlURL };
+}
+
+async function buildHarness() {
+  const binary = join(tempDir, process.platform === 'win32' ? 'dailyops-appliance-harness.exe' : 'dailyops-appliance-harness');
+  await runCommand('go', ['build', '-trimpath', '-o', binary, './internal/testharness/dailyopsappliance'], root);
+  return binary;
 }
 
 function waitForHarnessURLs(child) {
