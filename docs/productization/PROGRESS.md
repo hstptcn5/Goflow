@@ -429,7 +429,7 @@ Implementation and verification:
 
 ## Phase 4: Adapter Architecture And Commercial Discovery
 
-Status: Checkpoints I-J implemented; final CI pending
+Status: COMPLETE
 
 Branch: `feature/goflow-productization-adapters`
 
@@ -439,7 +439,7 @@ Stack base: exact Phase 3 closure head
 
 ### Checkpoint I: Adapter Architecture
 
-Status: IMPLEMENTED_CI_PENDING
+Status: COMPLETE
 
 - ADR-008 selects a reviewed declarative GET-only normalized HTTP source node,
   not arbitrary Pack/native execution.
@@ -464,6 +464,10 @@ Status: IMPLEMENTED_CI_PENDING
   PASS (`c5db4db2ac4b8700646475608aaba7099ed678318ae393fa4cb35decec4f4f70`).
 - Local race execution is unavailable because this Windows environment has
   `CGO_ENABLED=0`; the required race result remains delegated to GitHub Actions.
+- Implementation head `700b13fb72de85c09501c652d69e59670aeefdf5`
+  passed GitHub Actions run `31733134162`: backend formatting/test/race/vet/
+  vulnerability, frontend, Pack contracts, Playwright and DailyOps E2E, five
+  target builds, and native Windows DailyOps pilot artifact all succeeded.
 
 ### Checkpoint J: Vendor Selection Dossier
 
@@ -494,7 +498,7 @@ Status: COMPLETE; `VENDOR_DECISION_REQUIRED`
 | F: Windows experience and offline update | DONE |
 | G: Pack author compatibility toolkit | DONE |
 | H: Authenticity/signing foundation | DONE |
-| I: Adapter architecture | IMPLEMENTED_CI_PENDING |
+| I: Adapter architecture | DONE |
 | J: Vendor selection dossier | DONE_DECISION_REQUIRED |
 | K: DailyOps Beta journey | NOT_STARTED |
 | L: Final acceptance suite | NOT_STARTED |
