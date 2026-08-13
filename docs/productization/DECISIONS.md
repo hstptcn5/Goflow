@@ -271,11 +271,12 @@ only its normalized data output. Destination behavior remains a separate node.
 
 Declarative parameters are strict: absolute HTTP(S) URL, auth mode and optional
 credential ID, pagination mode, cursor/query/response field names, finite page
-and item limits, and a response contract for single-object mode. Cursor mode
-requires `{items: [...], next_cursor: string|null}` semantics and emits a
-bounded `{items, page_count}` object. GET makes retry idempotent; redirects never
-forward authorization cross-origin. `429 Retry-After` is accepted only as a
-small bounded delta through an injectable waiter for deterministic tests.
+and item limits, and a response contract. Single-object and cursor item outputs
+contain only declared fields. Cursor mode requires
+`{items: [...], next_cursor: string|null}` semantics and emits a bounded
+`{items, page_count}` object. GET makes retry idempotent; redirects never forward
+authorization cross-origin. `429 Retry-After` is accepted only as a small
+bounded delta through an injectable waiter for deterministic tests.
 
 The node returns no token, authorization header, source URL, raw response body,
 or vendor-specific payload outside the declared normalized result. Errors map

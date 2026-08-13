@@ -429,7 +429,7 @@ Implementation and verification:
 
 ## Phase 4: Adapter Architecture And Commercial Discovery
 
-Status: Checkpoint I in progress
+Status: Checkpoint I implementation complete; CI pending
 
 Branch: `feature/goflow-productization-adapters`
 
@@ -439,7 +439,7 @@ Stack base: exact Phase 3 closure head
 
 ### Checkpoint I: Adapter Architecture
 
-Status: IN_PROGRESS
+Status: IMPLEMENTED_CI_PENDING
 
 - ADR-008 selects a reviewed declarative GET-only normalized HTTP source node,
   not arbitrary Pack/native execution.
@@ -447,6 +447,23 @@ Status: IN_PROGRESS
   error mapping, secrets, compatibility, and offline contract tests are defined
   before runtime mutation.
 - Future process adapters remain design-only pending a separate security review.
+- Built-in `normalizedHttpSource` now provides absolute HTTP(S), vault-backed
+  bearer/API-key auth, cross-origin credential stripping, bounded cursor
+  pagination, deterministic bounded 429 retry, closed public errors, and
+  contract-projected output. Packs with an explicit capability list must declare
+  `goflow.adapter.normalized-http.v1`; legacy omission remains compatible.
+- Reusable loopback tests cover single-object and cursor normalization,
+  undeclared-field removal, exact cursors, page/item/response/cursor bounds,
+  rate limits, invalid JSON/contracts, HTTP errors, cancellation, redirects,
+  credential leakage, and Pack compatibility. A real engine test proves source
+  contract failure leaves the downstream destination call count at zero.
+- Local backend test/vet/build and `govulncheck`: PASS; 0 reachable
+  vulnerabilities. Frontend audit: 0 vulnerabilities; 60 unit tests and build:
+  PASS. Scoped appliance Playwright, two-phase DailyOps E2E, and runner smoke:
+  PASS. DailyOps validate/offline test and deterministic ZIP/extracted verify:
+  PASS (`c5db4db2ac4b8700646475608aaba7099ed678318ae393fa4cb35decec4f4f70`).
+- Local race execution is unavailable because this Windows environment has
+  `CGO_ENABLED=0`; the required race result remains delegated to GitHub Actions.
 
 ## Remaining Checkpoints
 
@@ -459,7 +476,7 @@ Status: IN_PROGRESS
 | F: Windows experience and offline update | DONE |
 | G: Pack author compatibility toolkit | DONE |
 | H: Authenticity/signing foundation | DONE |
-| I: Adapter architecture | IN_PROGRESS |
+| I: Adapter architecture | IMPLEMENTED_CI_PENDING |
 | J: Vendor selection dossier | NOT_STARTED |
 | K: DailyOps Beta journey | NOT_STARTED |
 | L: Final acceptance suite | NOT_STARTED |

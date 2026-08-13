@@ -43,6 +43,7 @@ const (
 	CapabilityConnectionV1    = "goflow.setup.connection-tests.v1"
 	CapabilityDailyScheduleV1 = "goflow.schedule.daily.v1"
 	CapabilityHostMigrationV1 = "goflow.migration.host-managed.v1"
+	CapabilityHTTPAdapterV1   = "goflow.adapter.normalized-http.v1"
 )
 
 type Manifest struct {
@@ -403,6 +404,17 @@ func validateSetupMetadata(manifest Manifest, nodesJSON string) error {
 	nodeIndex, err := workflowNodeIndex(nodesJSON)
 	if err != nil {
 		return fmt.Errorf("manifest: bindings: %w", err)
+	}
+	if manifest.RequiredCapabilities != nil {
+		declared := make(map[string]bool, len(manifest.RequiredCapabilities))
+		for _, capability := range manifest.RequiredCapabilities {
+			declared[capability] = true
+		}
+		for _, node := range nodeIndex {
+			if node.Type == nodes.TypeNormalizedHTTPSource && !declared[CapabilityHTTPAdapterV1] {
+				return fmt.Errorf("manifest: required_capabilities must include %q when normalizedHttpSource is used", CapabilityHTTPAdapterV1)
+			}
+		}
 	}
 	boundSources := map[string]bool{}
 	testableSources := map[string]bool{}
@@ -864,6 +876,7 @@ var supportedCapabilities = map[string]struct{}{
 	CapabilityConnectionV1:    {},
 	CapabilityDailyScheduleV1: {},
 	CapabilityHostMigrationV1: {},
+	CapabilityHTTPAdapterV1:   {},
 }
 
 var supportedPlatforms = map[string]struct{}{

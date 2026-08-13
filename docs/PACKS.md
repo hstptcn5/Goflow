@@ -71,9 +71,13 @@ The current capability allowlist is closed:
 - `goflow.setup.connection-tests.v1`
 - `goflow.schedule.daily.v1`
 - `goflow.migration.host-managed.v1`
+- `goflow.adapter.normalized-http.v1`
 
 New Packs should declare every capability they use. A non-nil declaration that
 uses bindings or connection tests must include the corresponding capability.
+Using `normalizedHttpSource` also requires
+`goflow.adapter.normalized-http.v1`; its bounded request and output contract is
+documented in [ADAPTERS.md](ADAPTERS.md).
 Legacy v1 Packs that omit the field remain valid. Supported targets are the
 explicit Windows, Linux, and macOS AMD64/ARM64 targets built by Goflow; unknown
 or duplicate target declarations fail validation. Runtime version ranges are

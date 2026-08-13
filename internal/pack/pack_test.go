@@ -114,7 +114,7 @@ func TestLoadValidatesRuntimeCompatibilityDeclarations(t *testing.T) {
 	}{
 		{name: "legacy omission", edit: func(m *Manifest) { m.RequiredCapabilities = nil }},
 		{name: "known capabilities", edit: func(m *Manifest) {
-			m.RequiredCapabilities = []string{CapabilityPackV1, CapabilityDailyScheduleV1, CapabilityHostMigrationV1}
+			m.RequiredCapabilities = []string{CapabilityPackV1, CapabilityDailyScheduleV1, CapabilityHostMigrationV1, CapabilityHTTPAdapterV1}
 		}},
 		{name: "unknown capability", edit: func(m *Manifest) { m.RequiredCapabilities = []string{"goflow.future.magic.v1"} }, want: "required_capabilities[0]"},
 		{name: "duplicate capability", edit: func(m *Manifest) { m.RequiredCapabilities = []string{CapabilityPackV1, CapabilityPackV1} }, want: "duplicates"},
@@ -148,6 +148,45 @@ func TestLoadRequiresDeclaredCapabilitiesForNewSetupContracts(t *testing.T) {
 		m.ConfigSchema = []ConfigField{{Key: "endpoint", Label: "Endpoint", Type: "url", TestKind: "http_json_contract"}}
 	})
 	assertLoadError(t, dir, CapabilityConnectionV1)
+}
+
+func TestLoadRequiresDeclaredCapabilityForNormalizedHTTPSource(t *testing.T) {
+	workflowJSON := `{
+		"name":"Normalized source",
+		"nodes":[{"id":"source","type":"normalizedHttpSource","params":{
+			"url":"https://example.test/data","auth_mode":"none","pagination":"cursor",
+			"cursor_query_param":"cursor","items_field":"items","next_cursor_field":"next_cursor",
+			"max_pages":2,"max_items":10,
+			"response_contract":{"required":{"id":{"type":"integer"}}}
+		}}],
+		"edges":[]
+	}`
+
+	t.Run("declared", func(t *testing.T) {
+		dir := writeValidPack(t, func(m *Manifest) {
+			m.RequiredCapabilities = []string{CapabilityPackV1, CapabilityHTTPAdapterV1}
+		})
+		writeFile(t, filepath.Join(dir, DefaultWorkflowPath), workflowJSON)
+		if _, err := Load(dir); err != nil {
+			t.Fatalf("Load failed: %v", err)
+		}
+	})
+
+	t.Run("missing from explicit declaration", func(t *testing.T) {
+		dir := writeValidPack(t, func(m *Manifest) {
+			m.RequiredCapabilities = []string{CapabilityPackV1}
+		})
+		writeFile(t, filepath.Join(dir, DefaultWorkflowPath), workflowJSON)
+		assertLoadError(t, dir, CapabilityHTTPAdapterV1)
+	})
+
+	t.Run("legacy omission", func(t *testing.T) {
+		dir := writeValidPack(t)
+		writeFile(t, filepath.Join(dir, DefaultWorkflowPath), workflowJSON)
+		if _, err := Load(dir); err != nil {
+			t.Fatalf("legacy Load failed: %v", err)
+		}
+	})
 }
 
 func TestLoadRejectsPackManagedScheduleAndMigrationHooks(t *testing.T) {

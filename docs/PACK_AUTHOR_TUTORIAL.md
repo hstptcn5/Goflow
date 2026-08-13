@@ -144,7 +144,9 @@ URL defaults must be absolute `http` or `https` URLs. Credential `test_kind` val
 Declare compatibility with the optional closed `required_capabilities` list:
 `goflow.pack.v1`, `goflow.setup.bindings.v1`,
 `goflow.setup.connection-tests.v1`, `goflow.schedule.daily.v1`, and
-`goflow.migration.host-managed.v1`. Unknown capabilities fail clearly. Legacy
+`goflow.migration.host-managed.v1`. Packs using the reviewed normalized HTTP
+source must also declare `goflow.adapter.normalized-http.v1`; see
+[ADAPTERS.md](ADAPTERS.md). Unknown capabilities fail clearly. Legacy
 Pack Format v1 manifests may omit the list. Raw appliance cron and Pack-provided
 migration code remain unsupported.
 
