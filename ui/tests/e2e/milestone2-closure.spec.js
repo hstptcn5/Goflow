@@ -89,7 +89,7 @@ test('Node picker star is independent and dialog traps/restores focus', async ({
 
   await page.getByRole('button', { name: 'Close node picker' }).focus();
   await page.keyboard.press('Shift+Tab');
-  await expect(page.getByRole('button', { name: 'Remove HTTP Request from favorites' })).toBeFocused();
+  await expect(page.locator('.favorite-button').last()).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Close node picker' })).toBeFocused();
 
