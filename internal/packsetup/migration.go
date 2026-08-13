@@ -278,14 +278,14 @@ func normalizeMigratedConfig(manifest pack.Manifest, values map[string]interface
 			result[key] = value
 			continue
 		}
-		normalized, err := validateValue(field, value)
+		normalized, err := pack.ValidateConfigValue(field, value)
 		if err == nil {
 			result[key] = normalized
 		}
 	}
 	for _, field := range manifest.ConfigSchema {
 		if _, exists := result[field.Key]; !exists && field.Default != nil {
-			normalized, err := validateValue(field, field.Default)
+			normalized, err := pack.ValidateConfigValue(field, field.Default)
 			if err != nil {
 				return nil, err
 			}

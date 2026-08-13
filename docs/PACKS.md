@@ -51,10 +51,43 @@ Known fields:
 | `config_schema` | No | Optional setup metadata for non-secret pack configuration. |
 | `credential_requirements` | No | Optional structured credential slots without values. |
 | `bindings` | No | Optional declarative mappings from setup values to existing workflow node parameters. |
+| `required_capabilities` | No | Closed list of runtime behaviors required by the Pack. Omission preserves legacy Pack Format v1 compatibility. Unknown, duplicate, malformed, or unavailable capabilities fail closed. |
+| `offline_test_fixture` | No | Portable path to bounded strict JSON used only by `pack test`. The file is excluded from runtime bundles. |
 
 Unknown fields are accepted for forward compatibility, but known fields are validated strictly. Manifest fields that look like secret-bearing fields, such as `secrets`, `password`, `token`, or `api_key`, are rejected when they contain values.
 
+`schedule`, `schedules`, `migration`, and `migrations` are reserved and rejected
+with explicit errors. Appliance schedules and setup migrations are host-managed;
+a Pack cannot supply cron, commands, scripts, or migration code.
+
 Required fields must be present in `pack.json`; zero values caused by missing fields are not accepted. `required_credentials` and `supported_platforms` must be arrays and cannot be `null`.
+
+### Runtime compatibility
+
+The current capability allowlist is closed:
+
+- `goflow.pack.v1`
+- `goflow.setup.bindings.v1`
+- `goflow.setup.connection-tests.v1`
+- `goflow.schedule.daily.v1`
+- `goflow.migration.host-managed.v1`
+
+New Packs should declare every capability they use. A non-nil declaration that
+uses bindings or connection tests must include the corresponding capability.
+Legacy v1 Packs that omit the field remain valid. Supported targets are the
+explicit Windows, Linux, and macOS AMD64/ARM64 targets built by Goflow; unknown
+or duplicate target declarations fail validation. Runtime version ranges are
+not inferred because capabilities are the compatibility boundary.
+
+### Offline author fixture
+
+The optional fixture has `schema_version: 1` and a `config` object. It must be a
+bounded regular file contained by the Pack root. Unknown fields/keys, symlinks,
+path escapes, future schemas, secret-like values, and config values that violate
+`config_schema` fail closed. `pack test` overlays it on deterministic non-secret
+defaults and still uses only fake logical credential IDs. It never performs
+connection tests or network access. The builder strips the fixture reference
+from the runtime manifest and does not ship the fixture.
 
 ## Optional Setup Metadata
 
@@ -419,7 +452,7 @@ goflow pack build <directory> --output <output-directory>
 goflow pack verify <bundle.zip|extracted-directory> --output table
 ```
 
-`pack init` creates a deterministic safe scaffold and refuses non-empty target directories unless `--force` is supplied. `pack inspect` reports pack identity, target support, setup counts, controlled file counts, plugin/asset counts, and integrity status without printing workflow parameter values. `pack test` is offline: it validates setup metadata, applies synthetic non-secret config and fake credential IDs in temporary state, prepares the managed workflow idempotently, and reports connection tests as skipped when they require an external service. `pack verify` reuses bundle verification and does not run or import the pack.
+`pack init` creates a deterministic safe scaffold with `tests/offline.json` and refuses non-empty target directories unless `--force` is supplied. `pack inspect` reports pack identity, target/capability support, setup counts, controlled file counts, plugin/asset counts, fixture presence, and integrity status without printing workflow or fixture values. `pack test` is offline: it validates setup metadata, applies fixture or synthetic non-secret config and fake credential IDs in temporary state, prepares the managed workflow idempotently, and reports external connection tests as skipped. `pack verify` reuses bundle verification and does not run or import the pack.
 
 See [PACK_AUTHOR_TUTORIAL.md](PACK_AUTHOR_TUTORIAL.md) for a PowerShell and POSIX walkthrough.
 

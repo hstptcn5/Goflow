@@ -383,7 +383,7 @@ func (r Runner) packInspect(args []string) int {
 		return ExitInvalidInput
 	}
 	return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {
-		fmt.Fprintf(r.Stdout, "Pack: %s\nVersion: %s\nKind: %s\nIntegrity: %s\nTarget: %s\nEntry workflow: %s\nConfig fields: %d\nCredential requirements: %d\nBindings: %d\nPlugins: %d\nAssets: %d\n", result.ID, result.Version, result.Kind, result.Integrity, result.Target, result.EntryWorkflow, result.ConfigFields, result.CredentialRequirements, result.Bindings, result.Plugins, result.Assets)
+		fmt.Fprintf(r.Stdout, "Pack: %s\nVersion: %s\nKind: %s\nIntegrity: %s\nTarget: %s\nEntry workflow: %s\nConfig fields: %d\nCredential requirements: %d\nBindings: %d\nPlugins: %d\nAssets: %d\nRequired capabilities: %s\nOffline fixture: %t\n", result.ID, result.Version, result.Kind, result.Integrity, result.Target, result.EntryWorkflow, result.ConfigFields, result.CredentialRequirements, result.Bindings, result.Plugins, result.Assets, strings.Join(result.RequiredCapabilities, ","), result.OfflineTestFixture)
 	})
 }
 
@@ -409,7 +409,7 @@ func (r Runner) packTest(args []string) int {
 		return ExitInvalidInput
 	}
 	return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {
-		fmt.Fprintf(r.Stdout, "Pack test: %s\nID: %s\nValidation: %s\nSetup: %s\nManaged workflow: %s\nConnection tests: %s\n", result.Status, result.ID, result.Validation, result.Setup, result.ManagedWorkflow, result.ConnectionTests)
+		fmt.Fprintf(r.Stdout, "Pack test: %s\nID: %s\nValidation: %s\nFixture: %s\nSetup: %s\nManaged workflow: %s\nConnection tests: %s\n", result.Status, result.ID, result.Validation, result.Fixture, result.Setup, result.ManagedWorkflow, result.ConnectionTests)
 	})
 }
 
@@ -501,18 +501,20 @@ func (r Runner) packRun(args []string) int {
 }
 
 type packInspectResult struct {
-	Kind                   string `json:"kind"`
-	ID                     string `json:"id"`
-	Name                   string `json:"name"`
-	Version                string `json:"version"`
-	Target                 string `json:"target,omitempty"`
-	EntryWorkflow          string `json:"entry_workflow"`
-	Integrity              string `json:"integrity"`
-	ConfigFields           int    `json:"config_fields"`
-	CredentialRequirements int    `json:"credential_requirements"`
-	Bindings               int    `json:"bindings"`
-	Plugins                int    `json:"plugins"`
-	Assets                 int    `json:"assets"`
+	Kind                   string   `json:"kind"`
+	ID                     string   `json:"id"`
+	Name                   string   `json:"name"`
+	Version                string   `json:"version"`
+	Target                 string   `json:"target,omitempty"`
+	EntryWorkflow          string   `json:"entry_workflow"`
+	Integrity              string   `json:"integrity"`
+	ConfigFields           int      `json:"config_fields"`
+	CredentialRequirements int      `json:"credential_requirements"`
+	Bindings               int      `json:"bindings"`
+	Plugins                int      `json:"plugins"`
+	Assets                 int      `json:"assets"`
+	RequiredCapabilities   []string `json:"required_capabilities,omitempty"`
+	OfflineTestFixture     bool     `json:"offline_test_fixture"`
 }
 
 type packTestResult struct {
@@ -521,6 +523,7 @@ type packTestResult struct {
 	Validation      string   `json:"validation,omitempty"`
 	Setup           string   `json:"setup,omitempty"`
 	ManagedWorkflow string   `json:"managed_workflow,omitempty"`
+	Fixture         string   `json:"fixture,omitempty"`
 	ConnectionTests string   `json:"connection_tests,omitempty"`
 	Skipped         []string `json:"skipped,omitempty"`
 	Error           string   `json:"error,omitempty"`
@@ -585,15 +588,20 @@ func scaffoldPack(dir, id, name, target string, force bool) error {
 	if err := os.MkdirAll(filepath.Join(temp, "workflows"), 0700); err != nil {
 		return err
 	}
+	if err := os.MkdirAll(filepath.Join(temp, "tests"), 0700); err != nil {
+		return err
+	}
 	manifest := pack.Manifest{
-		SchemaVersion:       pack.SupportedSchema,
-		ID:                  id,
-		Name:                name,
-		Version:             "0.1.0",
-		Description:         "A portable Goflow pack.",
-		EntryWorkflow:       pack.DefaultWorkflowPath,
-		RequiredCredentials: []string{},
-		SupportedPlatforms:  []string{target},
+		SchemaVersion:        pack.SupportedSchema,
+		ID:                   id,
+		Name:                 name,
+		Version:              "0.1.0",
+		Description:          "A portable Goflow pack.",
+		EntryWorkflow:        pack.DefaultWorkflowPath,
+		RequiredCredentials:  []string{},
+		SupportedPlatforms:   []string{target},
+		RequiredCapabilities: []string{pack.CapabilityPackV1},
+		OfflineTestFixture:   "tests/offline.json",
 	}
 	workflowData := map[string]interface{}{
 		"name":        name,
@@ -610,7 +618,11 @@ func scaffoldPack(dir, id, name, target string, force bool) error {
 	if err := writeJSONFile(filepath.Join(temp, pack.DefaultWorkflowPath), workflowData); err != nil {
 		return err
 	}
-	readme := fmt.Sprintf("# %s\n\nPack ID: `%s`\n\nThis scaffold contains no credentials or secret example values.\n", name, id)
+	fixture := pack.OfflineTestFixture{SchemaVersion: pack.OfflineFixtureSchemaVersion, Config: map[string]interface{}{}}
+	if err := writeJSONFile(filepath.Join(temp, "tests", "offline.json"), fixture); err != nil {
+		return err
+	}
+	readme := fmt.Sprintf("# %s\n\nPack ID: `%s`\n\nThis scaffold contains no credentials or secret example values.\n\nAuthor flow:\n\n```text\ngoflow pack validate .\ngoflow pack test .\ngoflow pack build . --output ./dist\n```\n", name, id)
 	if err := os.WriteFile(filepath.Join(temp, "README.md"), []byte(readme), 0600); err != nil {
 		return fmt.Errorf("write README.md: %w", err)
 	}
@@ -638,14 +650,14 @@ func inspectPackReference(ref string) (packInspectResult, error) {
 		if err := pack.VerifyBundleArchiveFile(ref); err != nil {
 			integrity = "invalid: " + err.Error()
 		}
-		return packInspectResult{Kind: "bundle_zip", ID: info.PackID, Version: info.PackVersion, Target: info.Target, EntryWorkflow: info.EntryWorkflow, Integrity: integrity}, nil
+		return packInspectResult{Kind: "bundle_zip", ID: info.PackID, Version: info.PackVersion, Target: info.Target, EntryWorkflow: info.EntryWorkflow, Integrity: integrity, RequiredCapabilities: append([]string(nil), info.RequiredCapabilities...)}, nil
 	}
 	if _, err := os.Stat(filepath.Join(ref, "PACK_INFO.json")); err == nil {
 		info, err := pack.VerifyExtractedBundle(ref)
 		if err != nil {
 			return packInspectResult{}, err
 		}
-		return packInspectResult{Kind: "extracted_bundle", ID: info.PackID, Version: info.PackVersion, Target: info.Target, EntryWorkflow: info.EntryWorkflow, Integrity: "valid"}, nil
+		return packInspectResult{Kind: "extracted_bundle", ID: info.PackID, Version: info.PackVersion, Target: info.Target, EntryWorkflow: info.EntryWorkflow, Integrity: "valid", RequiredCapabilities: append([]string(nil), info.RequiredCapabilities...)}, nil
 	}
 	loaded, err := pack.Load(ref)
 	if err != nil {
@@ -665,6 +677,8 @@ func inspectPackReference(ref string) (packInspectResult, error) {
 		Bindings:               len(m.Bindings),
 		Plugins:                len(m.Plugins),
 		Assets:                 len(m.Assets),
+		RequiredCapabilities:   append([]string(nil), m.RequiredCapabilities...),
+		OfflineTestFixture:     m.OfflineTestFixture != "",
 	}, nil
 }
 
@@ -699,6 +713,18 @@ func testPackOffline(dir string) (packTestResult, error) {
 	}
 	defer func() { _ = os.RemoveAll(dataDir) }()
 	configValues := syntheticConfigValues(loaded.Manifest.ConfigSchema)
+	fixture, err := pack.LoadOfflineTestFixture(loaded)
+	if err != nil {
+		return result, err
+	}
+	if fixture != nil {
+		for key, value := range fixture.Config {
+			configValues[key] = value
+		}
+		result.Fixture = "PASS"
+	} else {
+		result.Fixture = "SYNTHETIC"
+	}
 	if _, err := packsetup.SaveConfig(dataDir, loaded.Manifest, configValues); err != nil {
 		return result, err
 	}

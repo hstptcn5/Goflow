@@ -13,6 +13,14 @@
     "darwin-amd64",
     "darwin-arm64"
   ],
+  "required_capabilities": [
+    "goflow.pack.v1",
+    "goflow.setup.bindings.v1",
+    "goflow.setup.connection-tests.v1",
+    "goflow.schedule.daily.v1",
+    "goflow.migration.host-managed.v1"
+  ],
+  "offline_test_fixture": "tests/offline.json",
   "config_schema": [
     {
       "key": "source_url",

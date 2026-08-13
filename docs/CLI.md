@@ -93,7 +93,7 @@ goflow pack test <pack-directory> [--output table|json]
 goflow pack verify <bundle.zip-or-extracted-directory> [--output table|json]
 ```
 
-`pack init` creates a minimal deterministic pack scaffold and refuses non-empty directories unless `--force` is supplied. `pack inspect` reports manifest, setup, platform, file, and integrity metadata without printing workflow parameter values. `pack test` is offline: it validates setup metadata, applies synthetic non-secret config plus fake credential IDs in temporary state, prepares the managed workflow, and skips external connection checks. `pack verify` checks bundle inventory and hashes without running or importing the pack.
+`pack init` creates a minimal deterministic pack scaffold with a bounded author-only offline fixture and refuses non-empty directories unless `--force` is supplied. `pack inspect` reports manifest, setup, capability, platform, file, fixture-presence, and integrity metadata without printing workflow or fixture values. `pack test` is offline: it validates setup metadata, applies fixture or synthetic non-secret config plus fake credential IDs in temporary state, prepares the managed workflow, and skips external connection checks. `pack verify` checks bundle inventory and hashes without running or importing the pack. See `docs/PACK_AUTHOR_TUTORIAL.md` for the complete author flow.
 
 ## Pack Build
 

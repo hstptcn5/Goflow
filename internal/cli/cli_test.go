@@ -320,7 +320,7 @@ func TestPackInitScaffoldValidateTestBuildVerify(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("pack init failed code=%d stderr=%q", code, stderr.String())
 	}
-	for _, rel := range []string{"pack.json", filepath.Join("workflows", "main.json"), "README.md"} {
+	for _, rel := range []string{"pack.json", filepath.Join("workflows", "main.json"), filepath.Join("tests", "offline.json"), "README.md"} {
 		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
 			t.Fatalf("expected scaffold file %s: %v", rel, err)
 		}
@@ -348,6 +348,13 @@ func TestPackInitScaffoldValidateTestBuildVerify(t *testing.T) {
 	}
 	if testResult["status"] != "PASS" || testResult["managed_workflow"] != "PASS" {
 		t.Fatalf("unexpected pack test result: %#v", testResult)
+	}
+	if testResult["fixture"] != "PASS" {
+		t.Fatalf("scaffold offline fixture was not used: %#v", testResult)
+	}
+	manifestData, err := os.ReadFile(filepath.Join(dir, "pack.json"))
+	if err != nil || !strings.Contains(string(manifestData), pack.CapabilityPackV1) {
+		t.Fatalf("scaffold capability declaration missing: %v", err)
 	}
 
 	runtimePath := filepath.Join(t.TempDir(), "goflow-runtime")
@@ -433,6 +440,52 @@ func TestPackInitScaffoldValidateTestBuildVerify(t *testing.T) {
 	}
 	if verifyResult["status"] != "FAILED" {
 		t.Fatalf("tampered verify status = %#v", verifyResult)
+	}
+}
+
+func TestPackTestUsesAndValidatesOfflineFixtureValues(t *testing.T) {
+	dir := writePackFixture(t, `{
+		"schema_version":1,
+		"id":"example.fixture",
+		"name":"Fixture",
+		"version":"0.1.0",
+		"entry_workflow":"workflows/main.json",
+		"required_credentials":[],
+		"supported_platforms":["`+pack.CurrentPlatform()+`"],
+		"offline_test_fixture":"tests/offline.json",
+		"config_schema":[{"key":"count","label":"Count","type":"integer","required":true,"min":1,"max":5,"display_only":true}]
+	}`, `{
+		"name":"Fixture",
+		"nodes":[{"id":"trigger","type":"webhookTrigger","params":{}}],
+		"edges":[]
+	}`)
+	if err := os.MkdirAll(filepath.Join(dir, "tests"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	fixturePath := filepath.Join(dir, "tests", "offline.json")
+	if err := os.WriteFile(fixturePath, []byte(`{"schema_version":1,"config":{"count":4}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	runner := Runner{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")}
+	if code := runner.Run([]string{"pack", "test", dir, "--output", "json"}); code != ExitOK {
+		t.Fatalf("valid fixture failed: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"fixture": "PASS"`) {
+		t.Fatalf("fixture evidence missing: %s", stdout.String())
+	}
+	if err := os.WriteFile(fixturePath, []byte(`{"schema_version":1,"config":{"count":9}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code := runner.Run([]string{"pack", "test", dir, "--output", "json"})
+	var failed map[string]interface{}
+	if err := json.Unmarshal(stdout.Bytes(), &failed); err != nil {
+		t.Fatalf("decode failed fixture result: %v", err)
+	}
+	if code == ExitOK || !strings.Contains(failed["error"].(string), "must be <= 5") {
+		t.Fatalf("invalid fixture was accepted: code=%d result=%#v stderr=%q", code, failed, stderr.String())
 	}
 }
 

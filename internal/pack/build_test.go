@@ -19,6 +19,8 @@ func TestBuildBundleValidZipLayoutAndContents(t *testing.T) {
 	dir := writeBuildPack(t, func(m *Manifest) {
 		m.Plugins = []string{"plugins/plugin.txt"}
 		m.Assets = []string{"assets/sample.txt"}
+		m.RequiredCapabilities = []string{CapabilityPackV1}
+		m.OfflineTestFixture = "tests/offline.json"
 	})
 	writeFile(t, filepath.Join(dir, "plugins", "plugin.txt"), "plugin payload")
 	writeFile(t, filepath.Join(dir, "assets", "sample.txt"), "asset payload")
@@ -28,6 +30,10 @@ func TestBuildBundleValidZipLayoutAndContents(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "notes.txt"), "notes")
 	writeFile(t, filepath.Join(dir, "plugins", "unlisted.txt"), "unlisted plugin")
 	writeFile(t, filepath.Join(dir, "assets", "unlisted.txt"), "unlisted asset")
+	if err := os.MkdirAll(filepath.Join(dir, "tests"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "tests", "offline.json"), `{"schema_version":1,"config":{}}`)
 	runtimePath := writeRuntimeFixture(t, "runtime payload")
 	outputDir := t.TempDir()
 
@@ -63,6 +69,13 @@ func TestBuildBundleValidZipLayoutAndContents(t *testing.T) {
 			t.Fatalf("unexpected archive member %s", unexpected)
 		}
 	}
+	if hasZipMember(members, "pack/tests/offline.json") {
+		t.Fatal("author-only offline fixture was included in runtime bundle")
+	}
+	packedManifest := readZipEntry(t, result.ArchivePath, "pack/pack.json")
+	if strings.Contains(packedManifest, "offline_test_fixture") {
+		t.Fatal("runtime manifest retained author-only fixture reference")
+	}
 	info := readPackInfo(t, result.ArchivePath)
 	if info.RuntimeEntry != runtimeEntry(CurrentPlatform()) || info.EntryWorkflow != "pack/workflows/main.json" {
 		t.Fatalf("unexpected PACK_INFO: %#v", info)
@@ -72,6 +85,9 @@ func TestBuildBundleValidZipLayoutAndContents(t *testing.T) {
 	}
 	if inventoryHasPath(info.Files, "PACK_INFO.json") {
 		t.Fatalf("PACK_INFO must not be self-inventoried")
+	}
+	if len(info.RequiredCapabilities) != 1 || info.RequiredCapabilities[0] != CapabilityPackV1 {
+		t.Fatalf("PACK_INFO capabilities mismatch: %#v", info.RequiredCapabilities)
 	}
 	if err := VerifyBundleArchive(result.ArchivePath, buildLimits{}); err != nil {
 		t.Fatalf("VerifyBundleArchive failed: %v", err)
