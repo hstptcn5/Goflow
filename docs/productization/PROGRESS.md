@@ -334,7 +334,7 @@ Verification:
 
 ## Phase 3: Trust And Pack Author Platform
 
-Status: Checkpoint G in progress
+Status: Checkpoint G complete; Checkpoint H pending
 
 Branch: `feature/goflow-productization-trust`
 
@@ -344,7 +344,7 @@ Stack base: exact Phase 2 closure head
 
 ### Checkpoint G: Pack Author Compatibility Toolkit
 
-Status: IN_PROGRESS
+Status: DONE
 
 Design decision:
 
@@ -356,8 +356,30 @@ Design decision:
   from built appliance artifacts.
 - Schedule and migration remain host-managed; no Pack executable hook is added.
 
-Planned verification follows the author contract matrix in `PLAN.md` and the
-new Pack author compatibility threat in `THREAT_MODEL.md`.
+Implementation and verification:
+
+- Exact implementation head:
+  `23cbabba29e18a2a7fd15417a32e7da504409434`.
+- Pack Format v1 remains compatible when capability/fixture declarations are
+  omitted. New capability declarations use a closed allowlist and fail with
+  exact manifest locations when unknown, duplicate, malformed, unavailable,
+  or inconsistent with bindings/connection tests.
+- A bounded strict offline fixture is validated during `pack validate`, uses
+  the same config-value validator as persisted setup/migrations, rejects
+  unknown keys, future schemas, secrets, traversal, symlinks, oversize, and
+  invalid types/ranges, and is excluded from runtime bundles.
+- `pack init -> validate -> test -> build -> verify` passes for a generated
+  scaffold. Legacy hello-webhook and DailyOps both validate; DailyOps offline
+  test passes with fixture evidence and external checks skipped.
+- Two native DailyOps builds were byte-identical with SHA-256
+  `adb4315d764a6ddbff315fdaf54bf0cc22454edf3aee4ce17a01ed531e52cb63`.
+- Full Go test/vet/build: PASS. `govulncheck`: 0 reachable vulnerabilities.
+  npm audit: 0 vulnerabilities.
+- Clean LF exact-head checkout: full Go test/vet/build and legacy/DailyOps/
+  scaffold author acceptance PASS with no tracked worktree changes. The run
+  also fixed a pre-existing CRLF-only diagnostics golden comparison.
+- GitHub Actions run `31726801228`: SUCCESS, including race/security,
+  frontend, Pack contracts, Playwright, build matrix, and native Windows gate.
 
 ## Remaining Checkpoints
 
@@ -368,7 +390,7 @@ new Pack author compatibility threat in `THREAT_MODEL.md`.
 | D: Versioned Pack setup migration | DONE |
 | E: Diagnostics, retention, local metrics | DONE |
 | F: Windows experience and offline update | DONE |
-| G: Pack author compatibility toolkit | NOT_STARTED |
+| G: Pack author compatibility toolkit | DONE |
 | H: Authenticity/signing foundation | NOT_STARTED |
 | I: Adapter architecture | NOT_STARTED |
 | J: Vendor selection dossier | NOT_STARTED |
