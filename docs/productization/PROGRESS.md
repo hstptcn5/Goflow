@@ -334,7 +334,7 @@ Verification:
 
 ## Phase 3: Trust And Pack Author Platform
 
-Status: Checkpoint G complete; Checkpoint H in progress
+Status: Checkpoints G-H complete; Phase 3 complete
 
 Branch: `feature/goflow-productization-trust`
 
@@ -383,7 +383,7 @@ Implementation and verification:
 
 ### Checkpoint H: Authenticity And Signing Foundation
 
-Status: IN_PROGRESS
+Status: DONE
 
 Design-first evidence:
 
@@ -396,6 +396,37 @@ Design-first evidence:
 - Threat model covers modified/malicious/stolen/revoked/replayed/unsigned inputs
   and separates valid signatures from publisher governance.
 
+Implementation and verification:
+
+- Exact implementation head:
+  `19fd735c28e1ecfab235c7fd7e34c74570b4deac`.
+- Standard-library Ed25519 signs deterministic canonical bytes binding exact
+  `PACK_INFO.json`, Pack ID/version/target/capabilities, schema, algorithm, and
+  explicit key ID. One bounded strict signature member remains outside
+  inventory; self-inventory is rejected.
+- `pack sign` accepts one PEM PKCS#8 private key from an explicit local file or
+  stdin and atomically creates a different ZIP without overwrite. `pack
+  verify-signature` requires a separately supplied matching PEM PKIX public-key
+  file and key ID. No embedded/network/TOFU key is trusted.
+- Integrity-only `pack verify` reports `UNSIGNED` or `SIGNED_UNVERIFIED`; only
+  explicit trust verification reports `VERIFIED`. Extracted signed bundles are
+  supported under the same inventory-first order.
+- Tests pass for valid/deterministic signatures; wrong key/ID; unsigned policy;
+  modified manifest/workflow/asset/runtime/inventory; version/target/capability
+  mismatch; unknown schema/algorithm/field; duplicate/oversized/symlink
+  metadata; circular inventory; existing-output protection; and private-key
+  leakage scans.
+- Full Go test/vet/build and clean LF exact-head checkout: PASS. `govulncheck`:
+  0 reachable vulnerabilities. npm audit: 0 vulnerabilities.
+- Native unsigned Windows beta regression: PASS; artifact remains explicitly
+  `UNSIGNED-PILOT-BETA` and no CI signing behavior was added.
+- GitHub Actions run `31729541465`: SUCCESS, including backend race/security,
+  frontend, Pack contracts, Playwright, build matrix, and native Windows gate.
+- Residual external gate: production key governance, publisher identity,
+  rotation/revocation, minimum-version policy, certificate/signing authority,
+  and signed release remain unimplemented and must not be inferred from this
+  offline foundation.
+
 ## Remaining Checkpoints
 
 | Checkpoint | State |
@@ -406,7 +437,7 @@ Design-first evidence:
 | E: Diagnostics, retention, local metrics | DONE |
 | F: Windows experience and offline update | DONE |
 | G: Pack author compatibility toolkit | DONE |
-| H: Authenticity/signing foundation | IN_PROGRESS |
+| H: Authenticity/signing foundation | DONE |
 | I: Adapter architecture | NOT_STARTED |
 | J: Vendor selection dossier | NOT_STARTED |
 | K: DailyOps Beta journey | NOT_STARTED |
