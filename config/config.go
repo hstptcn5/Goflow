@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"goflow/internal/storage"
 )
 
 type Config struct {
@@ -73,12 +75,18 @@ func LoadConfig() *Config {
 		MaxConcurrentExecutions:   getEnvInt("GOFLOW_MAX_CONCURRENT_EXECUTIONS", 10),
 		MaxParallelNodesPerRun:    getEnvInt("GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION", 4),
 		WebhookRateLimitPerMinute: getEnvInt("GOFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE", 60),
-		ExecutionRetentionDays:    getEnvInt("GOFLOW_EXECUTION_RETENTION_DAYS", 30),
-		MaxExecutionsPerWorkflow:  getEnvInt("GOFLOW_MAX_EXECUTIONS_PER_WORKFLOW", 1000),
-		MCPBaseURL:                os.Getenv("GOFLOW_MCP_BASE_URL"),
-		MCPAllowedOrigins:         getEnvCSV("GOFLOW_MCP_ALLOWED_ORIGINS", defaultMCPAllowedOrigins(host, port)),
-		MCPMaxInflightPerClient:   getEnvInt("GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT", 2),
-		MCPRateLimitPerMinute:     getEnvInt("GOFLOW_MCP_RATE_LIMIT_PER_MINUTE", 30),
+		ExecutionRetentionDays: getEnvIntRange(
+			"GOFLOW_EXECUTION_RETENTION_DAYS", storage.DefaultExecutionRetentionDays,
+			storage.MinExecutionRetentionDays, storage.MaxExecutionRetentionDays,
+		),
+		MaxExecutionsPerWorkflow: getEnvIntRange(
+			"GOFLOW_MAX_EXECUTIONS_PER_WORKFLOW", storage.DefaultExecutionsPerWorkflow,
+			storage.MinExecutionsPerWorkflow, storage.MaxExecutionsPerWorkflow,
+		),
+		MCPBaseURL:              os.Getenv("GOFLOW_MCP_BASE_URL"),
+		MCPAllowedOrigins:       getEnvCSV("GOFLOW_MCP_ALLOWED_ORIGINS", defaultMCPAllowedOrigins(host, port)),
+		MCPMaxInflightPerClient: getEnvInt("GOFLOW_MCP_MAX_INFLIGHT_PER_CLIENT", 2),
+		MCPRateLimitPerMinute:   getEnvInt("GOFLOW_MCP_RATE_LIMIT_PER_MINUTE", 30),
 	}
 }
 
@@ -138,6 +146,18 @@ func getEnvInt(name string, fallback int) int {
 	}
 	value, err := strconv.Atoi(raw)
 	if err != nil || value < 0 {
+		return fallback
+	}
+	return value
+}
+
+func getEnvIntRange(name string, fallback, minValue, maxValue int) int {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < minValue || value > maxValue {
 		return fallback
 	}
 	return value

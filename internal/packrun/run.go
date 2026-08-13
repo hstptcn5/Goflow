@@ -38,14 +38,16 @@ import (
 )
 
 type Options struct {
-	PackDir string
-	DataDir string
-	Port    int
-	NoOpen  bool
-	UIFS    fs.FS
-	Stdout  io.Writer
-	Stderr  io.Writer
-	Opener  func(string) error
+	PackDir        string
+	DataDir        string
+	Port           int
+	NoOpen         bool
+	UIFS           fs.FS
+	Stdout         io.Writer
+	Stderr         io.Writer
+	Opener         func(string) error
+	AppVersion     string
+	IntegrityState string
 
 	Registry             *nodes.PluginRegistry
 	TelegramAPIBaseURL   string
@@ -84,6 +86,7 @@ func RunExtractedBundle(ctx context.Context, bundleDir string, opts Options) err
 		return fmt.Errorf("pack run: extracted bundle verification failed: %w", err)
 	}
 	opts.PackDir = filepath.Join(bundleDir, "pack")
+	opts.IntegrityState = "verified"
 	return Run(ctx, opts)
 }
 
@@ -107,6 +110,12 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	if len(loaded.Manifest.Plugins) > 0 {
 		return fmt.Errorf("pack run: packaged plugin execution is not supported in Pack Run MVP")
+	}
+	if strings.TrimSpace(opts.AppVersion) == "" {
+		opts.AppVersion = "development"
+	}
+	if strings.TrimSpace(opts.IntegrityState) == "" {
+		opts.IntegrityState = "source_validated"
 	}
 	dataDir, err := resolveDataDir(opts.DataDir, loaded.Manifest.ID)
 	if err != nil {
@@ -149,8 +158,8 @@ func Run(ctx context.Context, opts Options) error {
 		MaxConcurrentExecutions:   10,
 		MaxParallelNodesPerRun:    4,
 		WebhookRateLimitPerMinute: 60,
-		ExecutionRetentionDays:    30,
-		MaxExecutionsPerWorkflow:  1000,
+		ExecutionRetentionDays:    storage.DefaultExecutionRetentionDays,
+		MaxExecutionsPerWorkflow:  storage.DefaultExecutionsPerWorkflow,
 		MCPAllowedOrigins:         []string{"http://127.0.0.1"},
 		MCPMaxInflightPerClient:   2,
 		MCPRateLimitPerMinute:     30,
@@ -164,6 +173,8 @@ func Run(ctx context.Context, opts Options) error {
 		ScheduleWake:  opts.ScheduleWake,
 		Appliance: &api.ApplianceContext{
 			Enabled:                true,
+			AppVersion:             opts.AppVersion,
+			IntegrityState:         opts.IntegrityState,
 			Origin:                 origin,
 			SessionToken:           sessionToken,
 			PackID:                 loaded.Manifest.ID,

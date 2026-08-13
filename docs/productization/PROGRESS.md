@@ -185,7 +185,7 @@ Manual/external gates: none for Phase 1.
 
 ## Phase 2: Lifecycle And Operational Hardening
 
-Status: Checkpoint D complete; Checkpoint E pending
+Status: Checkpoint D complete; Checkpoint E in progress
 
 Branch: `feature/goflow-productization-lifecycle`
 
@@ -233,6 +233,41 @@ Verification:
 - GitHub Actions run `31717261835`: SUCCESS, including native Windows
   DailyOps E2E and artifact verification.
 
+## Checkpoint E: Diagnostics, Retention, And Local Pilot Metrics
+
+Status: IN_PROGRESS
+
+Implementation in progress:
+
+- Normalize internal and legacy failures through a closed public category
+  catalog with fixed safe messages.
+- Replace the broad diagnostics payload with a stable versioned allowlist for
+  app/Pack/platform, setup, schedule, recent status/duration/category, integrity,
+  and explicit privacy flags.
+- Bound recent diagnostics to ten entries and omit IDs, timestamps, config,
+  URLs, chat IDs, payloads, responses, logs, request metadata, and paths.
+- Make age/count cleanup transactional, validate finite safe ranges, and retain
+  every active `RUNNING` execution.
+- Keep export local-only behind explicit Copy/Download actions; add no
+  analytics, remote endpoint, fingerprinting, or background telemetry.
+
+Verification so far:
+
+- Scoped app-error/storage/config/API/Pack Run tests: PASS.
+- Golden diagnostics, restart stability, canary redaction, malformed legacy
+  error, large history, active-row retention, and concurrent prune/read tests:
+  PASS.
+- Full Go test/vet/build and `govulncheck`: PASS; zero reachable
+  vulnerabilities.
+- npm audit: PASS with zero vulnerabilities; UI unit/build: PASS (59/59).
+- Appliance Playwright (2/2), DailyOps setup/restart E2E, and runner smoke:
+  PASS.
+- Pack validate/offline test, deterministic Windows bundle build/verify, and
+  extracted text canary/path scan: PASS. Deterministic SHA-256:
+  `8a08b1578e70e39008acffdf1a1f4d387f5e452866b4fbc82e74a889032d44a1`.
+- Local race execution is unavailable because this Windows Go environment has
+  CGO disabled; the required Linux race gate remains pending in GitHub Actions.
+
 ## Remaining Checkpoints
 
 | Checkpoint | State |
@@ -240,7 +275,7 @@ Verification:
 | B: Scheduler backend MVP | DONE |
 | C: Scheduler appliance UX and DailyOps | DONE |
 | D: Versioned Pack setup migration | DONE |
-| E: Diagnostics, retention, local metrics | NOT_STARTED |
+| E: Diagnostics, retention, local metrics | IN_PROGRESS |
 | F: Windows experience and offline update | NOT_STARTED |
 | G: Pack author compatibility toolkit | NOT_STARTED |
 | H: Authenticity/signing foundation | NOT_STARTED |

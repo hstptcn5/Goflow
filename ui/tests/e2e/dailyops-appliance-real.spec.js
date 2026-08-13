@@ -61,12 +61,12 @@ test('DailyOps appliance completes real setup and execution with mocked Telegram
 
   await page.getByLabel('Source URL').fill(sourceURL.replace('/dailyops.json', '/html'));
   await page.getByRole('button', { name: 'Test source' }).click();
-  await expect(page.getByText('The source returned a web page instead of JSON.')).toBeVisible();
+  await expect(page.getByText('The source configuration or response is invalid.')).toBeVisible();
   await expect(page.getByText('Invalid', { exact: true })).toBeVisible();
 
   await page.getByLabel('Source URL').fill(sourceURL.replace('/dailyops.json', '/missing'));
   await page.getByRole('button', { name: 'Test source' }).click();
-  await expect(page.getByText('The source JSON does not match the required DailyOps fields and types.')).toBeVisible();
+  await expect(page.getByText('The source data does not match the required contract.')).toBeVisible();
 
   await page.getByLabel('Source URL').fill(sourceURL);
   await page.getByRole('button', { name: 'Test source' }).click();
@@ -77,7 +77,7 @@ test('DailyOps appliance completes real setup and execution with mocked Telegram
   await page.locator('input[type="password"]').fill(`000000:invalid-${tokenParts[1]}`);
   await page.getByRole('button', { name: 'Create' }).click();
   await page.getByRole('button', { name: 'Test Telegram' }).click();
-  await expect(page.getByText('Invalid bot token. Check the token from BotFather and try again.')).toBeVisible();
+  await expect(page.getByText('Telegram rejected the configured bot credential.')).toBeVisible();
   await expectNoSecret(page);
 
   await page.locator('input[type="password"]').fill(fakeToken());
@@ -86,7 +86,7 @@ test('DailyOps appliance completes real setup and execution with mocked Telegram
   await expectNoSecret(page);
 
   await page.getByRole('button', { name: 'Test Telegram' }).click();
-  await expect(page.getByText('Bot cannot access this chat. Send /start to the bot, add it to the destination, and check the chat ID.')).toBeVisible();
+  await expect(page.getByText('Telegram could not access the configured destination.')).toBeVisible();
 
   await page.getByLabel('Telegram chat ID').fill(chatID);
   await page.getByRole('button', { name: 'Test Telegram' }).click();

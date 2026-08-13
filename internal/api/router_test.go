@@ -856,7 +856,7 @@ func TestApplianceSourceAndTelegramValidationRecheckCurrentConfig(t *testing.T) 
 
 	saveValidationConfig(t, router, source.URL+"/html?access_token=query-secret", "@accessible")
 	failed := applianceRequestStatus(t, router, http.MethodPost, "/api/appliance/setup/complete", []byte(`{}`), applianceMutationHeaders(), http.StatusBadRequest)
-	if !strings.Contains(failed, `"category":"source_non_json"`) || strings.Contains(failed, "query-secret") || strings.Contains(failed, "secret dashboard") {
+	if !strings.Contains(failed, `"category":"source_invalid"`) || strings.Contains(failed, "query-secret") || strings.Contains(failed, "secret dashboard") {
 		t.Fatalf("changed source was not safely revalidated: %s", failed)
 	}
 	if state, err := packsetup.LoadState(appliance.DataDir, applianceManifest(appliance)); err == nil && state.Completed {
@@ -865,7 +865,7 @@ func TestApplianceSourceAndTelegramValidationRecheckCurrentConfig(t *testing.T) 
 
 	saveValidationConfig(t, router, source.URL+"/valid", "@inaccessible")
 	failed = applianceRequestStatus(t, router, http.MethodPost, "/api/appliance/setup/complete", []byte(`{}`), applianceMutationHeaders(), http.StatusBadRequest)
-	if !strings.Contains(failed, `"category":"telegram_chat_inaccessible"`) || strings.Contains(failed, "token-secret") {
+	if !strings.Contains(failed, `"category":"telegram_chat_not_found"`) || strings.Contains(failed, "token-secret") {
 		t.Fatalf("changed chat was not safely revalidated: %s", failed)
 	}
 

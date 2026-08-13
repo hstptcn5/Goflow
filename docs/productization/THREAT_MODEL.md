@@ -112,6 +112,17 @@ state; existing redaction and artifact scans remain mandatory.
 Evidence required: seeded canary scans across database-safe exports, logs, UI,
 Playwright output, bundles, and extracted files.
 
+Diagnostics are local-only and created on request. Their versioned DTO omits
+workflow/execution/credential identifiers, timestamps, input/output/log data,
+URLs, chat IDs, host identity, and paths. Recent history is capped at ten
+status/duration/public-category rows. Unknown legacy errors become fixed
+`internal_error` text. Copy/download requires an explicit user action; no
+analytics, remote collection, fingerprinting, or background telemetry exists.
+
+Execution retention uses validated finite bounds and one transaction for age
+and per-workflow count pruning. Both deletion paths exclude `RUNNING` rows;
+engine concurrency separately bounds the number of active rows.
+
 ### Version Upgrade
 
 Threat: Pack or schema upgrade loses a schedule, silently runs an incompatible

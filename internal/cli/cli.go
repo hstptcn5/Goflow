@@ -39,6 +39,7 @@ type Runner struct {
 	Stdin           io.Reader
 	PackRuntimePath string
 	UIFS            fs.FS
+	AppVersion      string
 }
 
 type clientOptions struct {
@@ -478,13 +479,14 @@ func (r Runner) packRun(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := packrun.Run(ctx, packrun.Options{
-		PackDir: dir,
-		DataDir: *dataDir,
-		Port:    *port,
-		NoOpen:  *noOpen,
-		UIFS:    r.UIFS,
-		Stdout:  r.Stdout,
-		Stderr:  r.Stderr,
+		PackDir:    dir,
+		DataDir:    *dataDir,
+		Port:       *port,
+		NoOpen:     *noOpen,
+		UIFS:       r.UIFS,
+		AppVersion: r.AppVersion,
+		Stdout:     r.Stdout,
+		Stderr:     r.Stderr,
 	}); err != nil {
 		fmt.Fprintln(r.Stderr, err)
 		return ExitExecutionFailed

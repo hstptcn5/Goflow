@@ -22,7 +22,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 1 && args[1] != "serve" {
-		return cli.Runner{Stdout: stdout, Stderr: stderr, Stdin: os.Stdin, UIFS: getEmbeddedUI()}.Run(args[1:])
+		return cli.Runner{Stdout: stdout, Stderr: stderr, Stdin: os.Stdin, UIFS: getEmbeddedUI(), AppVersion: getAppVersion()}.Run(args[1:])
 	}
 
 	log.Println("==================================================")
@@ -35,9 +35,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 1 {
 		if bundleDir, ok := detectExtractedBundle(); ok {
 			if err := packrun.RunExtractedBundle(ctx, bundleDir, packrun.Options{
-				UIFS:   getEmbeddedUI(),
-				Stdout: stdout,
-				Stderr: stderr,
+				UIFS:       getEmbeddedUI(),
+				AppVersion: getAppVersion(),
+				Stdout:     stdout,
+				Stderr:     stderr,
 			}); err != nil {
 				fmt.Fprintf(stderr, "[ERROR] %v\n", err)
 				return 1

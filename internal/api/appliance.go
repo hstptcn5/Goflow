@@ -11,10 +11,12 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
+	"goflow/internal/apperror"
 	"goflow/internal/application"
 	"goflow/internal/client"
 	"goflow/internal/engine"
@@ -31,6 +33,8 @@ const applianceMaxJSONBody int64 = 64 << 10
 
 type ApplianceContext struct {
 	Enabled                bool
+	AppVersion             string
+	IntegrityState         string
 	Origin                 string
 	SessionToken           string
 	PackID                 string
@@ -297,20 +301,107 @@ func applianceScheduleNow(appliance *ApplianceContext) time.Time {
 
 func applianceDiagnosticsHandler(appliance *ApplianceContext, wfStore *storage.WorkflowStore, execStore *storage.ExecutionStore, credStore *storage.CredentialStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		state, missing, completed := applianceRuntimeState(appliance, wfStore, execStore, applianceCredentialResolver(credStore))
-		latest, _ := applianceLatestExecution(execStore, appliance.WorkflowID)
-		renderJSON(w, http.StatusOK, map[string]interface{}{
-			"pack":                  applianceIdentity(appliance),
-			"workflow_id":           appliance.WorkflowID,
-			"server":                "ok",
-			"state":                 state,
-			"missing":               missing,
-			"setup_complete":        completed,
-			"latest_execution":      latest,
-			"credential_ids_hidden": true,
-			"secrets_hidden":        true,
-			"generated_at":          time.Now().UTC(),
-		})
+		renderJSON(w, http.StatusOK, buildApplianceDiagnostics(appliance, wfStore, execStore, credStore))
+	}
+}
+
+type applianceDiagnostics struct {
+	SchemaVersion int                             `json:"schema_version"`
+	App           applianceDiagnosticsApp         `json:"app"`
+	Pack          applianceDiagnosticsPack        `json:"pack"`
+	Setup         applianceDiagnosticsSetup       `json:"setup"`
+	Schedule      applianceDiagnosticsSchedule    `json:"schedule"`
+	Executions    []applianceDiagnosticsExecution `json:"recent_executions"`
+	Integrity     applianceDiagnosticsIntegrity   `json:"integrity"`
+	Privacy       applianceDiagnosticsPrivacy     `json:"privacy"`
+}
+
+type applianceDiagnosticsApp struct {
+	Name     string `json:"name"`
+	Version  string `json:"version"`
+	Platform string `json:"platform"`
+}
+
+type applianceDiagnosticsPack struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+}
+
+type applianceDiagnosticsSetup struct {
+	State    string `json:"state"`
+	Category string `json:"category"`
+}
+
+type applianceDiagnosticsSchedule struct {
+	Configured    bool   `json:"configured"`
+	Enabled       bool   `json:"enabled"`
+	State         string `json:"state"`
+	ErrorCategory string `json:"error_category,omitempty"`
+}
+
+type applianceDiagnosticsExecution struct {
+	Status        string `json:"status"`
+	DurationMs    int64  `json:"duration_ms"`
+	ErrorCategory string `json:"error_category,omitempty"`
+}
+
+type applianceDiagnosticsIntegrity struct {
+	State string `json:"state"`
+}
+
+type applianceDiagnosticsPrivacy struct {
+	LocalOnly           bool `json:"local_only"`
+	CredentialIDsHidden bool `json:"credential_ids_hidden"`
+	SecretsHidden       bool `json:"secrets_hidden"`
+}
+
+func buildApplianceDiagnostics(appliance *ApplianceContext, wfStore *storage.WorkflowStore, execStore *storage.ExecutionStore, credStore *storage.CredentialStore) applianceDiagnostics {
+	state, _, completed := applianceReadiness(appliance, applianceCredentialResolver(credStore))
+	setupCategory := apperror.CategorySetupIncomplete
+	if state == "READY" {
+		setupCategory = "ready"
+	} else if migration, err := packsetup.LoadMigrationState(appliance.DataDir, applianceManifest(appliance)); err == nil && !completed {
+		if category, _, ok := apperror.Public(migration.Category); ok {
+			setupCategory = category
+		}
+	}
+	schedule := applianceDiagnosticsSchedule{State: storage.ScheduleStateDisabled}
+	if view, _, err := applianceScheduleViewFor(appliance, execStore); err == nil {
+		schedule.Configured = view.Configured
+		schedule.Enabled = view.Enabled
+		schedule.State = view.State
+		if category, _, ok := apperror.Public(view.ErrorCategory); ok {
+			schedule.ErrorCategory = category
+		}
+	} else {
+		schedule.State = storage.ScheduleStateNeedsAttention
+		schedule.ErrorCategory = apperror.CategoryInternal
+	}
+	executions := []applianceDiagnosticsExecution{}
+	if list, err := applianceRecentExecutions(execStore, appliance.WorkflowID, 10); err == nil {
+		for _, execution := range list {
+			executions = append(executions, applianceDiagnosticsExecution{
+				Status: execution.Status, DurationMs: execution.DurationMs, ErrorCategory: execution.ErrorCategory,
+			})
+		}
+	}
+	integrity := appliance.IntegrityState
+	if integrity != "verified" && integrity != "source_validated" {
+		integrity = "unknown"
+	}
+	version := strings.TrimSpace(appliance.AppVersion)
+	if version == "" {
+		version = "development"
+	}
+	return applianceDiagnostics{
+		SchemaVersion: 1,
+		App:           applianceDiagnosticsApp{Name: "Goflow", Version: version, Platform: runtime.GOOS + "/" + runtime.GOARCH},
+		Pack:          applianceDiagnosticsPack{ID: appliance.PackID, Version: appliance.PackVersion},
+		Setup:         applianceDiagnosticsSetup{State: state, Category: setupCategory},
+		Schedule:      schedule,
+		Executions:    executions,
+		Integrity:     applianceDiagnosticsIntegrity{State: integrity},
+		Privacy:       applianceDiagnosticsPrivacy{LocalOnly: true, CredentialIDsHidden: true, SecretsHidden: true},
 	}
 }
 

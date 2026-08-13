@@ -33,10 +33,12 @@ function applianceFetch(overrides = {}) {
       state: 'DISABLED',
     },
     diagnostics: {
-      pack: bootstrap.pack,
-      state: 'READY',
-      latest_execution: { id: 'exec-1', status: 'SUCCESS', duration_ms: 42 },
-      secrets_hidden: true,
+      schema_version: 1,
+      app: { name: 'Goflow', version: '0.5.0-test', platform: 'windows/amd64' },
+      pack: { id: bootstrap.pack.id, version: bootstrap.pack.version },
+      setup: { state: 'READY', category: 'ready' },
+      recent_executions: [{ status: 'SUCCESS', duration_ms: 42 }],
+      privacy: { local_only: true, credential_ids_hidden: true, secrets_hidden: true },
     },
     ...overrides,
   };
@@ -256,8 +258,9 @@ describe('appliance UI', () => {
 
   it('runs the workflow and renders latest execution plus redacted diagnostics', async () => {
     vi.stubGlobal('fetch', applianceFetch({ configSaved: true, credentialAssigned: true, completed: true }));
+    const writeText = vi.fn(async () => {});
     vi.stubGlobal('navigator', {
-      clipboard: { writeText: vi.fn(async () => {}) },
+      clipboard: { writeText },
     });
     const { root } = await mountWithApp(ApplianceApp, { props: { bootstrap } });
     await nextFrame();
@@ -272,8 +275,16 @@ describe('appliance UI', () => {
 
     root.querySelector('.appliance-side .btn-secondary').click();
     await nextFrame();
+    expect(root.textContent).toContain('Local pilot summary');
     expect(root.textContent).toContain('"secrets_hidden": true');
     expect(root.textContent).not.toContain('secret-canary');
+
+    const copy = [...root.querySelectorAll('button')].find((button) => button.textContent.includes('Copy diagnostics'));
+    copy.click();
+    await nextFrame();
+    expect(writeText).toHaveBeenCalledOnce();
+    expect(writeText.mock.calls[0][0]).toContain('"local_only": true');
+    expect(writeText.mock.calls[0][0]).not.toContain('secret-canary');
   });
 
   it('requires tests for current source and Telegram values before completion', async () => {
@@ -335,8 +346,8 @@ describe('appliance UI', () => {
     vi.stubGlobal('fetch', applianceFetch({
       configSaved: true,
       credentialAssigned: true,
-      sourceTestError: { category: 'source_non_json', message: 'The source returned a web page instead of JSON.' },
-      telegramTestError: { category: 'telegram_chat_inaccessible', message: 'Bot cannot access this chat. Send /start to the bot.' },
+      sourceTestError: { category: 'source_invalid', message: 'The source configuration or response is invalid.' },
+      telegramTestError: { category: 'telegram_chat_not_found', message: 'Telegram could not access the configured destination.' },
     }));
     const { root } = await mountWithApp(ApplianceApp, { props: { bootstrap } });
     await nextFrame();
@@ -344,12 +355,12 @@ describe('appliance UI', () => {
     root.querySelector('.test-row button').click();
     await nextFrame();
     await nextFrame();
-    expect(root.textContent).toContain('The source returned a web page instead of JSON.');
+    expect(root.textContent).toContain('The source configuration or response is invalid.');
 
     root.querySelector('.credential-controls .toolbar-actions button:last-child').click();
     await nextFrame();
     await nextFrame();
-    expect(root.textContent).toContain('Bot cannot access this chat. Send /start to the bot.');
+    expect(root.textContent).toContain('Telegram could not access the configured destination.');
     expect(root.textContent).not.toContain('secret-canary');
   });
 

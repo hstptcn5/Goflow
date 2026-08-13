@@ -3,10 +3,20 @@ package storage
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+)
+
+const (
+	DefaultExecutionRetentionDays = 30
+	MinExecutionRetentionDays     = 1
+	MaxExecutionRetentionDays     = 365
+	DefaultExecutionsPerWorkflow  = 1000
+	MinExecutionsPerWorkflow      = 1
+	MaxExecutionsPerWorkflow      = 10000
 )
 
 type Execution struct {
@@ -240,22 +250,31 @@ func (s *ExecutionStore) MarkRunningInterrupted() (int64, error) {
 }
 
 func (s *ExecutionStore) Cleanup(retentionDays int, maxPerWorkflow int) (int64, error) {
-	var total int64
-
-	if retentionDays > 0 {
-		cutoff := time.Now().AddDate(0, 0, -retentionDays)
-		res, err := s.db.WriteDB.Exec(`DELETE FROM executions WHERE started_at < ?`, cutoff)
-		if err != nil {
-			return total, err
-		}
-		affected, _ := res.RowsAffected()
-		total += affected
+	if retentionDays < MinExecutionRetentionDays || retentionDays > MaxExecutionRetentionDays {
+		return 0, fmt.Errorf("execution retention days must be between %d and %d", MinExecutionRetentionDays, MaxExecutionRetentionDays)
 	}
-
-	if maxPerWorkflow > 0 {
-		res, err := s.db.WriteDB.Exec(`
+	if maxPerWorkflow < MinExecutionsPerWorkflow || maxPerWorkflow > MaxExecutionsPerWorkflow {
+		return 0, fmt.Errorf("executions per workflow must be between %d and %d", MinExecutionsPerWorkflow, MaxExecutionsPerWorkflow)
+	}
+	tx, err := s.db.WriteDB.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	var total int64
+	cutoff := time.Now().AddDate(0, 0, -retentionDays)
+	res, err := tx.Exec(`DELETE FROM executions WHERE status != 'RUNNING' AND started_at < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	total += affected
+	res, err = tx.Exec(`
 			DELETE FROM executions
-			WHERE id IN (
+			WHERE status != 'RUNNING' AND id IN (
 				SELECT id FROM (
 					SELECT id,
 						ROW_NUMBER() OVER (PARTITION BY workflow_id ORDER BY started_at DESC) AS rn
@@ -264,13 +283,17 @@ func (s *ExecutionStore) Cleanup(retentionDays int, maxPerWorkflow int) (int64, 
 				WHERE rn > ?
 			)
 		`, maxPerWorkflow)
-		if err != nil {
-			return total, err
-		}
-		affected, _ := res.RowsAffected()
-		total += affected
+	if err != nil {
+		return 0, err
 	}
-
+	affected, err = res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	total += affected
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
 	return total, nil
 }
 

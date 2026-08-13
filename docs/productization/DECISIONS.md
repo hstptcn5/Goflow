@@ -161,3 +161,20 @@ closed. Setup becomes incomplete and the enabled schedule is suspended for
 revalidation before the server starts. Stable workflow identity, encrypted
 credential records, schedule configuration, and execution history remain in
 their existing stores.
+
+## ADR-004: Local-Only Bounded Diagnostics
+
+Status: Accepted
+
+Pilot diagnostics are an allowlisted, versioned DTO generated only in response
+to a local appliance request and copied or downloaded only after an explicit UI
+action. It contains build/Pack/platform identity, bounded setup and schedule
+state, at most ten execution status/duration/error-category summaries, and an
+integrity state. It excludes identifiers, timestamps, values, URLs, payloads,
+responses, logs, and paths. There is no analytics SDK, remote collector,
+fingerprint, or background telemetry.
+
+Internal and legacy errors map to a closed public category catalog with fixed
+messages. Unknown categories fail to `internal_error`; raw legacy messages are
+not exported. Execution cleanup uses one transaction, validates finite safe
+bounds, and excludes active `RUNNING` rows from both age and count pruning.

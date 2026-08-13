@@ -400,6 +400,7 @@ async function loadDiagnostics() {
 
 async function copyDiagnostics() {
   if (!diagnostics.value) await loadDiagnostics();
+  if (!diagnostics.value) return;
   await navigator.clipboard.writeText(JSON.stringify(diagnostics.value, null, 2));
   notice.value = 'Diagnostics copied';
 }
@@ -413,6 +414,7 @@ function downloadDiagnostics() {
   link.download = `${pack.value.id || 'goflow-pack'}-diagnostics.json`;
   link.click();
   URL.revokeObjectURL(url);
+  notice.value = 'Diagnostics downloaded';
 }
 
 onMounted(load);
@@ -664,11 +666,11 @@ onBeforeUnmount(stopPolling);
 
       <aside class="appliance-side">
         <section class="appliance-panel compact">
-          <h2>Diagnostics</h2>
+          <h2>Local pilot summary</h2>
           <div class="toolbar-actions">
             <button class="btn btn-secondary" type="button" @click="loadDiagnostics">Refresh</button>
-            <button class="btn btn-secondary" type="button" @click="copyDiagnostics">Copy</button>
-            <button class="btn btn-secondary" type="button" :disabled="!diagnostics" @click="downloadDiagnostics">Download</button>
+            <button class="btn btn-secondary" type="button" @click="copyDiagnostics">Copy diagnostics</button>
+            <button class="btn btn-secondary" type="button" :disabled="!diagnostics" @click="downloadDiagnostics">Download diagnostics</button>
           </div>
           <pre v-if="diagnostics" class="diagnostics-box">{{ JSON.stringify(diagnostics, null, 2) }}</pre>
         </section>

@@ -267,6 +267,14 @@ func writeApplianceValidationError(w http.ResponseWriter, status int, err error)
 	if errors.Is(err, context.Canceled) {
 		status = http.StatusRequestTimeout
 	}
+	if publicCategory, publicMessage, supported := apperror.Public(category); supported {
+		category = publicCategory
+		message = publicMessage
+	} else {
+		category = apperror.CategoryInternal
+		message = "The request could not be completed. Refresh and try again."
+		status = http.StatusInternalServerError
+	}
 	renderJSON(w, status, applianceValidationResult{Status: "INVALID", Category: category, Message: message})
 }
 
@@ -275,10 +283,14 @@ func appliancePublicExecutionError(status, raw string) (string, string) {
 		return "", ""
 	}
 	if category, message, ok := apperror.DetailsText(raw); ok {
-		return category, message
+		_ = message
+		if publicCategory, publicMessage, supported := apperror.Public(category); supported {
+			return publicCategory, publicMessage
+		}
 	}
 	if strings.EqualFold(status, "CANCELLED") || strings.EqualFold(status, "INTERRUPTED") {
-		return strings.ToLower(status), "The workflow stopped before it completed."
+		category, message, _ := apperror.Public(strings.ToLower(status))
+		return category, message
 	}
-	return "internal_error", "The workflow could not complete. Open redacted diagnostics when reporting this error."
+	return apperror.CategoryInternal, "The workflow could not complete. Open redacted diagnostics when reporting this error."
 }
