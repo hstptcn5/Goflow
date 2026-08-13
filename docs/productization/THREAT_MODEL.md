@@ -215,6 +215,27 @@ inventory; wrong key/ID; unknown schema/algorithm; duplicate/oversized metadata;
 path/symlink tricks; target/version/capability mismatch; unsigned policy; key
 canary scans; and equal canonical payload for equal metadata.
 
+### Declarative Source Adapters
+
+Threats: SSRF/unsafe redirects; credentials in Pack fields, URLs, output, or
+logs; cross-origin authorization forwarding; pagination loops or unbounded item
+growth; retry storms; hostile `Retry-After`; duplicate reads; malformed vendor
+errors/payloads; vendor-specific fields reaching a destination; and arbitrary
+native adapter execution.
+
+Controls: one reviewed built-in GET-only adapter; absolute HTTP(S) and existing
+safe redirect policy; credentials resolved only from vault IDs and attached
+after URL validation; bounded headers/body/pages/items/cursor lengths; visited-
+cursor loop detection; fixed retry count and bounded delta wait through an
+injectable waiter; normalized response contract before downstream execution;
+closed safe error categories; no URL/header/raw body in output; no Pack plugin
+or process execution.
+
+Evidence required: single-object and cursor pagination fixtures; cursor loop,
+page/item/body bounds; 429 retry and invalid `Retry-After`; 4xx/5xx/error mapping;
+wrong JSON/contract; redirect credential stripping; cancellation; exact request
+counts; destination not called after adapter error; and token/URL/payload scans.
+
 ## Residual Risk
 
 The scheduler can prevent duplicate admission inside the local appliance but

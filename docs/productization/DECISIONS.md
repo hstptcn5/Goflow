@@ -257,3 +257,33 @@ automatic trust-store mutation, downgrade acceptance, production keys, signing
 claims, or release publishing. If canonical payload, container, trust input, or
 failure semantics cannot be proven by the complete H matrix, record
 `BLOCKED_SECURITY_REVIEW` and ship only the specification.
+
+## ADR-008: Declarative Normalized HTTP Source Adapter
+
+Status: Accepted for Checkpoint I implementation
+
+The first adapter boundary is one reviewed built-in node,
+`normalizedHttpSource`, not a Pack executable or plugin process. It owns a
+bounded HTTP GET source call, optional vault-backed bearer/API-key auth,
+same-origin safe redirects, cursor pagination, bounded rate-limit retry, fixed
+vendor/source error mapping, and normalized output validation. Workflows consume
+only its normalized data output. Destination behavior remains a separate node.
+
+Declarative parameters are strict: absolute HTTP(S) URL, auth mode and optional
+credential ID, pagination mode, cursor/query/response field names, finite page
+and item limits, and a response contract for single-object mode. Cursor mode
+requires `{items: [...], next_cursor: string|null}` semantics and emits a
+bounded `{items, page_count}` object. GET makes retry idempotent; redirects never
+forward authorization cross-origin. `429 Retry-After` is accepted only as a
+small bounded delta through an injectable waiter for deterministic tests.
+
+The node returns no token, authorization header, source URL, raw response body,
+or vendor-specific payload outside the declared normalized result. Errors map
+to closed public categories before any destination side effect. DailyOps may
+continue using the generic REST node because it already consumes the normalized
+contract; vendor-specific mapping is not added before the decision gate.
+
+A future process adapter remains design-only until sandboxing, protocol,
+capability grants, executable authenticity, update, crash isolation, and secret
+transport receive a separate security review. Arbitrary native Pack execution
+remains fail closed.

@@ -110,3 +110,15 @@ the next phase starts.
 | Schedule/migration | host-managed capabilities declared when required | executable migration or raw appliance cron declaration remains unsupported | contract and documentation tests |
 | Build inventory | runtime, manifest, workflow, declared assets/plugins exactly inventoried | missing/extra/duplicate/tampered archive member | bundle tests |
 | Clean author flow | init, validate, offline test, build, verify | internet access is unnecessary and connection tests are skipped | clean-checkout CLI acceptance |
+
+## Checkpoint I Adapter Contract Test Matrix
+
+| Area | Positive cases | Negative cases | Evidence |
+| --- | --- | --- | --- |
+| Validation | single object; cursor pages; none/bearer/API-key auth | non-GET behavior; bad URL/field/auth/bounds/contract | table-driven node validation |
+| Pagination | one/multiple pages; terminal null cursor; stable ordering | repeated/oversized cursor; page/item overflow | exact requests and normalized output |
+| Rate/retry | bounded 429 then success; cancellation | invalid/large Retry-After; retry exhaustion | injected waiter, no sleeps |
+| Errors | normalized contract result | timeout, unreachable, 4xx, 5xx, invalid JSON/contract | closed safe categories |
+| Secrets | vault credential applied to request | cross-origin redirect, output/log/error leak | captured requests and canary scans |
+| Side effects | normalized output reaches downstream | every adapter failure blocks destination | real engine fixture |
+| Compatibility | DailyOps generic REST remains valid | native Pack/plugin execution remains disabled | regression and registry tests |

@@ -427,6 +427,27 @@ Implementation and verification:
   and signed release remain unimplemented and must not be inferred from this
   offline foundation.
 
+## Phase 4: Adapter Architecture And Commercial Discovery
+
+Status: Checkpoint I in progress
+
+Branch: `feature/goflow-productization-adapters`
+
+Stack base: exact Phase 3 closure head
+`e0baf54dd678c329c8dbdf8fd0d4e23fe4f5ca02`, whose GitHub Actions run
+`31730282252` completed successfully.
+
+### Checkpoint I: Adapter Architecture
+
+Status: IN_PROGRESS
+
+- ADR-008 selects a reviewed declarative GET-only normalized HTTP source node,
+  not arbitrary Pack/native execution.
+- Auth, pagination, rate limit, retry/idempotency, normalized output, public
+  error mapping, secrets, compatibility, and offline contract tests are defined
+  before runtime mutation.
+- Future process adapters remain design-only pending a separate security review.
+
 ## Remaining Checkpoints
 
 | Checkpoint | State |
@@ -438,7 +459,7 @@ Implementation and verification:
 | F: Windows experience and offline update | DONE |
 | G: Pack author compatibility toolkit | DONE |
 | H: Authenticity/signing foundation | DONE |
-| I: Adapter architecture | NOT_STARTED |
+| I: Adapter architecture | IN_PROGRESS |
 | J: Vendor selection dossier | NOT_STARTED |
 | K: DailyOps Beta journey | NOT_STARTED |
 | L: Final acceptance suite | NOT_STARTED |
