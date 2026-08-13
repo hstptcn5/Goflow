@@ -469,6 +469,34 @@ Both setup files are written atomically with restricted file permissions where s
 
 The pack workflow is a managed workflow. Its workflow ID is deterministic from the pack ID, so repeated runs update the same record instead of creating duplicates. A same-version restart preserves completed setup and the active bound workflow. A pack version change preserves the stable workflow ID, database, credential records, slot assignments, config, and execution history, but fails setup closed to incomplete until current source and destination checks are run again. This conservative migration prevents a behavior-changing pack from inheriting stale acceptance evidence without requiring the user to re-enter the encrypted credential.
 
+### Versioned setup migration
+
+Pack setup migration is host-managed. A Pack cannot declare executable
+migration code, commands, scripts, plugins, or download locations. Goflow uses
+a closed registry keyed by Pack ID and exact source version:
+
+- steps run in an ordered forward-only chain and never downgrade automatically;
+- known config transforms operate on bounded non-secret JSON values;
+- credential slots are retained as IDs and expected types only; migration never
+  resolves, copies, or decrypts a credential value;
+- a pre-mutation snapshot with a sorted SHA-256 inventory is written under the
+  Pack data directory, outside the application/bundle directory;
+- transformed values are validated against the destination manifest in memory,
+  then setup files are atomically replaced; a failed multi-file operation
+  compensates by restoring every original file from memory;
+- completion becomes incomplete before the appliance starts serving, and an
+  enabled schedule retains its configuration but enters
+  `NEEDS_ATTENTION/revalidation_required`;
+- repeated startup recognizes the recorded migration and does not reapply it;
+- unknown changes preserve safe data but require explicit user review;
+- corrupt or future migration/config/credential/state schemas fail closed.
+
+Migration categories are `revalidation` (values retained), `config` (a
+registered non-secret transform ran), and `user_review` (no complete registered
+chain exists). They are user-attention states, not claims that validation
+succeeded. The latest Pack workflow definition replaces the inactive managed
+workflow content while the stable workflow ID and execution history remain.
+
 `required_credentials` remains metadata only. Pack Run prints credential requirements and opens the credentials page when requirements exist, but it does not embed secrets, create placeholder credentials, or treat matching names as proof that requirements are satisfied.
 
 Packaged plugin execution is not supported in Pack Run MVP. Packs with non-empty `plugins` fail early.

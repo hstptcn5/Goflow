@@ -40,6 +40,10 @@ type ScheduleStore interface {
 	Advance(workflowID, packID string, advance storage.ScheduleAdvance) (bool, error)
 }
 
+type RevalidationStore interface {
+	ClearRevalidationRequired(workflowID, packID string, now time.Time) error
+}
+
 type Triggerer interface {
 	Trigger(ctx context.Context, req application.TriggerRequest) (*application.TriggerResult, error)
 }
@@ -138,6 +142,25 @@ func (s *Service) Tick(ctx context.Context) (TickResult, error) {
 		return resultForSchedule(schedule), nil
 	}
 	now := s.clock.Now().UTC()
+	if ready, category := s.readiness(); !ready {
+		category = safeReadinessCategory(category)
+		return TickResult{
+			State: storage.ScheduleStateNeedsAttention, Category: category,
+			ExecutionID: schedule.LastExecutionID, ScheduledFor: schedule.LastScheduledFor,
+			NextRunAt: schedule.NextRunAt,
+		}, nil
+	}
+	if schedule.State == storage.ScheduleStateNeedsAttention && schedule.ErrorCategory == CategoryRevalidation {
+		if store, ok := s.store.(RevalidationStore); ok {
+			if err := store.ClearRevalidationRequired(schedule.WorkflowID, schedule.PackID, now); err != nil {
+				return TickResult{}, err
+			}
+			return TickResult{
+				State: storage.ScheduleStateOK, ExecutionID: schedule.LastExecutionID,
+				ScheduledFor: schedule.LastScheduledFor, NextRunAt: schedule.NextRunAt,
+			}, nil
+		}
+	}
 	if schedule.NextRunAt == nil {
 		next, err := NextDailyAfter(schedule.LocalTime, schedule.Timezone, now)
 		if err != nil {
@@ -162,10 +185,6 @@ func (s *Service) Tick(ctx context.Context) (TickResult, error) {
 	}
 	if now.Sub(due) > s.dueGrace {
 		return s.advance(schedule, &due, next, "", storage.ScheduleStateNeedsAttention, CategoryMissedSkipped, false, false)
-	}
-	if ready, category := s.readiness(); !ready {
-		category = safeReadinessCategory(category)
-		return s.advance(schedule, &due, next, "", storage.ScheduleStateNeedsAttention, category, false, false)
 	}
 	key, requestID := scheduledIdentifiers(s.packID, s.workflowID, due)
 	triggerResult, err := s.triggerer.Trigger(ctx, application.TriggerRequest{

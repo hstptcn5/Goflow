@@ -105,7 +105,7 @@ func applianceBootstrapHandler(appliance *ApplianceContext) http.HandlerFunc {
 func applianceStatusHandler(appliance *ApplianceContext, wfStore *storage.WorkflowStore, execStore *storage.ExecutionStore, credStore *storage.CredentialStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		state, missing, completed := applianceRuntimeState(appliance, wfStore, execStore, applianceCredentialResolver(credStore))
-		renderJSON(w, http.StatusOK, map[string]interface{}{
+		response := map[string]interface{}{
 			"pack":           applianceIdentity(appliance),
 			"workflow_id":    appliance.WorkflowID,
 			"server":         "ok",
@@ -113,7 +113,11 @@ func applianceStatusHandler(appliance *ApplianceContext, wfStore *storage.Workfl
 			"missing":        missing,
 			"setup_complete": completed,
 			"can_complete":   len(missing) == 0,
-		})
+		}
+		if migration, err := packsetup.LoadMigrationState(appliance.DataDir, applianceManifest(appliance)); err == nil && !completed {
+			response["attention_category"] = migration.Category
+		}
+		renderJSON(w, http.StatusOK, response)
 	}
 }
 
@@ -318,7 +322,7 @@ func applianceSetupHandler(appliance *ApplianceContext, credStore *storage.Crede
 		if loaded, err := packsetup.LoadConfig(appliance.DataDir, applianceManifest(appliance)); err == nil {
 			configValues = loaded.Config.Values
 		}
-		renderJSON(w, http.StatusOK, map[string]interface{}{
+		response := map[string]interface{}{
 			"state":                     state,
 			"missing":                   missing,
 			"config_schema":             appliance.ConfigSchema,
@@ -330,7 +334,11 @@ func applianceSetupHandler(appliance *ApplianceContext, credStore *storage.Crede
 			"decrypted_values_returned": false,
 			"setup_complete":            completed,
 			"can_complete":              len(missing) == 0,
-		})
+		}
+		if migration, err := packsetup.LoadMigrationState(appliance.DataDir, applianceManifest(appliance)); err == nil && !completed {
+			response["attention_category"] = migration.Category
+		}
+		renderJSON(w, http.StatusOK, response)
 	}
 }
 

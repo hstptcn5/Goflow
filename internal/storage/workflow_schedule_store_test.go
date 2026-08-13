@@ -123,6 +123,39 @@ func TestWorkflowScheduleStoreConfigureUsesOptimisticRevision(t *testing.T) {
 	}
 }
 
+func TestWorkflowScheduleStoreSuspendsAndResumesForRevalidation(t *testing.T) {
+	db := scheduleTestDB(t)
+	store := NewWorkflowScheduleStore(db)
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	schedule := validWorkflowSchedule(now.Add(time.Hour))
+	if err := store.Configure(schedule, 0, now); err != nil {
+		t.Fatalf("Configure failed: %v", err)
+	}
+	if err := store.MarkRevalidationRequired(schedule.WorkflowID, schedule.PackID, now.Add(time.Minute)); err != nil {
+		t.Fatalf("MarkRevalidationRequired failed: %v", err)
+	}
+	suspended, err := store.GetByWorkflow(schedule.WorkflowID)
+	if err != nil || !suspended.Enabled || suspended.State != ScheduleStateNeedsAttention ||
+		suspended.ErrorCategory != ScheduleErrorRevalidation || suspended.NextRunAt == nil {
+		t.Fatalf("suspended schedule = %+v, %v", suspended, err)
+	}
+	revision := suspended.Revision
+	if err := store.MarkRevalidationRequired(schedule.WorkflowID, schedule.PackID, now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("idempotent MarkRevalidationRequired failed: %v", err)
+	}
+	unchanged, _ := store.GetByWorkflow(schedule.WorkflowID)
+	if unchanged.Revision != revision {
+		t.Fatalf("idempotent suspension changed revision: %d -> %d", revision, unchanged.Revision)
+	}
+	if err := store.ClearRevalidationRequired(schedule.WorkflowID, schedule.PackID, now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("ClearRevalidationRequired failed: %v", err)
+	}
+	resumed, err := store.GetByWorkflow(schedule.WorkflowID)
+	if err != nil || !resumed.Enabled || resumed.State != ScheduleStateOK || resumed.ErrorCategory != "" {
+		t.Fatalf("resumed schedule = %+v, %v", resumed, err)
+	}
+}
+
 func TestWorkflowScheduleStoreRejectsCrossPackOverwriteAndCorruptState(t *testing.T) {
 	db := scheduleTestDB(t)
 	store := NewWorkflowScheduleStore(db)

@@ -59,6 +59,7 @@ function applianceFetch(overrides = {}) {
         credential_requirements: [
           { key: 'telegram', label: 'Telegram', type: 'TELEGRAM_BOT', required: true, test_kind: 'telegram_get_me', assigned: state.credentialAssigned },
         ],
+        attention_category: state.attentionCategory,
       });
     }
     if (path === '/api/appliance/status') {
@@ -209,6 +210,20 @@ describe('appliance UI', () => {
       timezone: 'Asia/Bangkok',
     });
     expect(root.textContent).toContain('Schedule saved');
+  });
+
+  it('explains migration review without asking for the assigned credential again', async () => {
+    vi.stubGlobal('fetch', applianceFetch({
+      configSaved: true,
+      credentialAssigned: true,
+      attentionCategory: 'config',
+    }));
+    const { root } = await mountWithApp(ApplianceApp, { props: { bootstrap } });
+    await nextFrame();
+
+    expect(root.textContent).toContain('migrated non-secret setup fields');
+    expect(root.textContent).toContain('Assigned');
+    expect(root.textContent).not.toContain('credential-');
   });
 
   it('shows schedule, next run, last scheduled result, and manual state on the dashboard', async () => {

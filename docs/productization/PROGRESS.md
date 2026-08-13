@@ -199,6 +199,35 @@ Planned phase scope:
 - E: bounded diagnostics, retention, local metrics, and redacted export.
 - F: Windows appliance experience and safe offline update/rollback.
 
+## Checkpoint D: Versioned Pack Setup Migration
+
+Status: IN_PROGRESS
+
+Implementation in progress:
+
+- Add a closed, host-managed, forward-only migration registry with explicit
+  revalidation/config/user-review categories.
+- Add bounded migration metadata and pre-mutation setup snapshots with sorted
+  SHA-256 inventory.
+- Apply config transforms in memory, retain credential ID/type references
+  without resolution/decryption, validate the destination contract, and
+  compensate all setup files on persistence failure.
+- Integrate migration before appliance server start; retain stable workflow,
+  history, credential, and schedule rows while suspending enabled schedules for
+  revalidation.
+- Bump DailyOps to `0.3.0` for the lifecycle behavior contract and register
+  `0.1.0 -> 0.2.0 -> 0.3.0`.
+- Expose only a bounded attention category to setup/status and explain the
+  required review without requiring the encrypted Telegram credential again.
+
+Verification so far:
+
+- Scoped Pack setup/storage/scheduler/Pack Run/API/Pack tests: PASS.
+- Migration fixtures cover ordered 0.1/0.2 upgrades, retain/remove/rename,
+  rollback injection, idempotency, downgrade/future schema failure, credential
+  reference preservation, and no credential reference in migration metadata.
+- Full local/security/E2E/clean-checkout and GitHub Actions: pending.
+
 ## Remaining Checkpoints
 
 | Checkpoint | State |

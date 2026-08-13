@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "official.dailyops-rest-telegram",
   "name": "DailyOps REST to Telegram",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Experimental example pack that reads a normalized daily operations JSON endpoint and sends one Telegram report.",
   "entry_workflow": "workflows/main.json",
   "required_credentials": [],

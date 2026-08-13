@@ -134,8 +134,8 @@ func TestDailyOpsReferencePackDeclaresHonestSetupAndRejectConcurrency(t *testing
 	if err != nil {
 		t.Fatalf("load pack: %v", err)
 	}
-	if loaded.Manifest.Version != "0.2.0" {
-		t.Fatalf("expected behavior-changing pack version 0.2.0, got %s", loaded.Manifest.Version)
+	if loaded.Manifest.Version != "0.3.0" {
+		t.Fatalf("expected lifecycle-aware pack version 0.3.0, got %s", loaded.Manifest.Version)
 	}
 	keys := map[string]bool{}
 	for _, field := range loaded.Manifest.ConfigSchema {

@@ -450,6 +450,15 @@ onBeforeUnmount(stopPolling);
             </div>
             <span class="badge badge-muted">Unsigned pack integrity</span>
           </div>
+          <p v-if="setup?.attention_category === 'config'" class="attention-copy" role="status">
+            This Pack update migrated non-secret setup fields. Review and test the current source and Telegram destination before continuing.
+          </p>
+          <p v-else-if="setup?.attention_category === 'user_review'" class="attention-copy" role="status">
+            This Pack update changes its setup contract. Review the current configuration and test the destination before continuing.
+          </p>
+          <p v-else-if="setup?.attention_category === 'revalidation'" class="attention-copy" role="status">
+            This Pack update kept your settings. Test the current source and destination before scheduled or manual runs resume.
+          </p>
 
           <form class="setup-section" @submit.prevent="saveConfig">
             <h3>Configuration</h3>

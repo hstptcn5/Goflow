@@ -14,6 +14,12 @@ Automated tests use mock HTTP and Telegram servers. Real Telegram credentials ar
 
 `report_title` and `low_stock_threshold` were removed in pack `0.2.0` because the workflow did not apply them. Existing safe config values and the assigned credential are retained during upgrade, but setup must be revalidated once for the new behavior contract.
 
+Pack `0.3.0` adds the host-managed lifecycle contract. Upgrades from `0.1.0`
+drop only those two obsolete non-secret fields; upgrades from `0.2.0` retain
+the current config and credential ID reference. Both paths create a setup
+snapshot and require explicit source/destination revalidation before the
+workflow or daily schedule resumes.
+
 No bot token, authorization header, database, key file, or credential value belongs in `pack.json`, workflow JSON, this README, or built bundles.
 
 ## Normalized Source API Contract

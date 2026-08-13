@@ -231,6 +231,30 @@ func prepare(ctx context.Context, loaded *pack.Pack, dataDir string) (*Prepared,
 	workflowDef.ID = workflowID
 	workflowDef.Description = managedDescription(loaded.Manifest.Description, workflowDef.Description)
 	credentialStore := storage.NewCredentialStore(db, nil)
+	if previous, err := readPackState(dataDir); err == nil {
+		if previous.PackID != loaded.Manifest.ID || previous.WorkflowID != workflowID {
+			return nil, fmt.Errorf("pack run: persisted pack identity mismatch")
+		}
+		migration, err := packsetup.ApplyMigrations(
+			dataDir,
+			loaded.Manifest,
+			previous.PackVersion,
+			packsetup.DefaultMigrationRegistry(),
+			packsetup.MigrationOptions{Now: time.Now()},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("pack run: setup migration failed: %w", err)
+		}
+		if migration.Changed || previous.PackVersion != loaded.Manifest.Version {
+			if err := storage.NewWorkflowScheduleStore(db).MarkRevalidationRequired(
+				workflowID, loaded.Manifest.ID, time.Now(),
+			); err != nil {
+				return nil, fmt.Errorf("pack run: suspend schedule for revalidation: %w", err)
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
 	desired, _, setupErr := packsetup.ReconstructManagedWorkflow(workflowDef, loaded.Manifest, dataDir, packRunCredentialResolver(credentialStore))
 	managed := &storage.Workflow{
 		ID:                desired.ID,
@@ -627,6 +651,22 @@ func printCredentialRequirements(w io.Writer, credentials []string) {
 
 func writePackState(dataDir string, state State) error {
 	return writeJSONAtomic(filepath.Join(dataDir, "pack-state.json"), state)
+}
+
+func readPackState(dataDir string) (State, error) {
+	var state State
+	data, err := os.ReadFile(filepath.Join(dataDir, "pack-state.json"))
+	if err != nil {
+		return state, err
+	}
+	if err := json.Unmarshal(data, &state); err != nil {
+		return state, fmt.Errorf("pack run: pack-state.json is invalid")
+	}
+	if strings.TrimSpace(state.PackID) == "" || !pack.IsValidSemVer(state.PackVersion) ||
+		strings.TrimSpace(state.WorkflowID) == "" {
+		return state, fmt.Errorf("pack run: pack-state.json identity is invalid")
+	}
+	return state, nil
 }
 
 func writeRunState(dataDir string, state RunState) error {

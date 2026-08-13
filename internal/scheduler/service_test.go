@@ -189,6 +189,16 @@ func TestServiceSkipsMissedAndBlockedSchedulesWithoutTrigger(t *testing.T) {
 			if result.Category != test.want || calls.Load() != 0 {
 				t.Fatalf("result=%+v calls=%d", result, calls.Load())
 			}
+			if !test.ready {
+				unchanged, err := fixture.store.GetByWorkflow(fixture.workflow.ID)
+				if err != nil {
+					t.Fatalf("load blocked schedule: %v", err)
+				}
+				wantDue := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+				if unchanged.NextRunAt == nil || !unchanged.NextRunAt.Equal(wantDue) || unchanged.LastScheduledFor != nil {
+					t.Fatalf("blocked schedule consumed due instant: %+v", unchanged)
+				}
+			}
 		})
 	}
 }
@@ -219,6 +229,38 @@ func TestServiceMapsInactiveAndConcurrencyWithoutCrashing(t *testing.T) {
 				t.Fatalf("Tick = %+v, %v", result, err)
 			}
 		})
+	}
+}
+
+func TestServiceClearsMigrationSuspensionBeforeNextAdmission(t *testing.T) {
+	fixture := newServiceFixture(t)
+	if err := fixture.store.MarkRevalidationRequired(fixture.workflow.ID, fixture.packID, fixture.clock.now.Add(-time.Minute)); err != nil {
+		t.Fatalf("MarkRevalidationRequired failed: %v", err)
+	}
+	var calls atomic.Int32
+	service, err := NewService(Options{
+		Store: fixture.store,
+		Triggerer: triggerFunc(func(context.Context, application.TriggerRequest) (*application.TriggerResult, error) {
+			calls.Add(1)
+			return nil, errors.New("must not trigger on resume tick")
+		}),
+		Clock: fixture.clock, PackID: fixture.packID, WorkflowID: fixture.workflow.ID,
+		Readiness: func() (bool, string) { return true, "" },
+	})
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
+	}
+	result, err := service.Tick(context.Background())
+	if err != nil {
+		t.Fatalf("Tick failed: %v", err)
+	}
+	if result.State != storage.ScheduleStateOK || calls.Load() != 0 {
+		t.Fatalf("resume result=%+v calls=%d", result, calls.Load())
+	}
+	resumed, err := fixture.store.GetByWorkflow(fixture.workflow.ID)
+	if err != nil || resumed.State != storage.ScheduleStateOK || resumed.ErrorCategory != "" ||
+		resumed.NextRunAt == nil || resumed.LastScheduledFor != nil {
+		t.Fatalf("resumed schedule consumed due instant: %+v, %v", resumed, err)
 	}
 }
 

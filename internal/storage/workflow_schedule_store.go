@@ -316,6 +316,47 @@ func (s *WorkflowScheduleStore) Advance(workflowID, packID string, advance Sched
 	return affected == 1, nil
 }
 
+// MarkRevalidationRequired operationally suspends an enabled schedule without
+// discarding the user's enabled preference or next eligible instant.
+func (s *WorkflowScheduleStore) MarkRevalidationRequired(workflowID, packID string, now time.Time) error {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	result, err := s.db.WriteDB.Exec(`
+		UPDATE workflow_schedules
+		SET state = ?, error_category = ?, revision = revision + 1,
+			updated_at = CASE WHEN ? > updated_at THEN ? ELSE updated_at END
+		WHERE workflow_id = ? AND pack_id = ? AND enabled = 1
+			AND (state != ? OR error_category IS NULL OR error_category != ?)
+	`, ScheduleStateNeedsAttention, ScheduleErrorRevalidation, now.UTC(), now.UTC(),
+		workflowID, packID, ScheduleStateNeedsAttention, ScheduleErrorRevalidation)
+	if err != nil {
+		return fmt.Errorf("suspend workflow schedule for revalidation: %w", err)
+	}
+	if _, err := result.RowsAffected(); err != nil {
+		return fmt.Errorf("suspend workflow schedule for revalidation: %w", err)
+	}
+	return nil
+}
+
+func (s *WorkflowScheduleStore) ClearRevalidationRequired(workflowID, packID string, now time.Time) error {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	_, err := s.db.WriteDB.Exec(`
+		UPDATE workflow_schedules
+		SET state = ?, error_category = NULL, revision = revision + 1,
+			updated_at = CASE WHEN ? > updated_at THEN ? ELSE updated_at END
+		WHERE workflow_id = ? AND pack_id = ? AND enabled = 1
+			AND state = ? AND error_category = ?
+	`, ScheduleStateOK, now.UTC(), now.UTC(), workflowID, packID,
+		ScheduleStateNeedsAttention, ScheduleErrorRevalidation)
+	if err != nil {
+		return fmt.Errorf("resume workflow schedule after revalidation: %w", err)
+	}
+	return nil
+}
+
 type scheduleScanner interface {
 	Scan(dest ...interface{}) error
 }

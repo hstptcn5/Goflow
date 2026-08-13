@@ -52,6 +52,34 @@ func TestPrepareIdempotentlyUpsertsManagedWorkflow(t *testing.T) {
 	assertWorkflowCount(t, dataDir, 1, first.WorkflowID, "Hello Pack Updated")
 }
 
+func TestPrepareRejectsTamperedPackStateIdentity(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*State)
+	}{
+		{name: "workflow id", mutate: func(state *State) { state.WorkflowID = "other-workflow" }},
+		{name: "invalid version", mutate: func(state *State) { state.PackVersion = "01.0.0" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			packDir := writeRunPack(t, "example.pack-state", "1.0.0", "Pack State", false, nil)
+			loaded := loadPack(t, packDir)
+			dataDir := t.TempDir()
+			prepared, err := prepare(context.Background(), loaded, dataDir)
+			if err != nil {
+				t.Fatalf("initial prepare: %v", err)
+			}
+			state := prepared.State
+			test.mutate(&state)
+			if err := writePackState(dataDir, state); err != nil {
+				t.Fatalf("write tampered state: %v", err)
+			}
+			if _, err := prepare(context.Background(), loaded, dataDir); err == nil {
+				t.Fatal("tampered pack state was accepted")
+			}
+		})
+	}
+}
+
 func TestPrepareReconstructsCompletedSetupAcrossRestartsAndPackUpgrade(t *testing.T) {
 	packDir := t.TempDir()
 	writeSetupRunPackFiles(t, packDir, "0.1.0", "v1")
@@ -112,6 +140,28 @@ func TestPrepareReconstructsCompletedSetupAcrossRestartsAndPackUpgrade(t *testin
 		}
 	}
 
+	preUpgradeDB, err := storage.NewDB(filepath.Join(dataDir, "goflow.db"))
+	if err != nil {
+		t.Fatalf("open pre-upgrade database: %v", err)
+	}
+	nextRun := time.Date(2026, 8, 10, 1, 5, 0, 0, time.UTC)
+	if err := storage.NewWorkflowScheduleStore(preUpgradeDB).Configure(&storage.WorkflowSchedule{
+		WorkflowID: first.WorkflowID, PackID: loaded.Manifest.ID,
+		SchemaVersion: storage.WorkflowScheduleSchemaVersion, Enabled: true,
+		Kind: storage.ScheduleKindDaily, LocalTime: "08:05", Timezone: "Asia/Bangkok",
+		MissedRunPolicy: storage.ScheduleMissedRunSkip, NextRunAt: &nextRun,
+		State: storage.ScheduleStateOK,
+	}, 0, completedAt); err != nil {
+		preUpgradeDB.Close()
+		t.Fatalf("save pre-upgrade schedule: %v", err)
+	}
+	history := &storage.Execution{ID: "history-1", WorkflowID: first.WorkflowID, Status: "SUCCESS", LogsJSON: "[]"}
+	if err := storage.NewExecutionStore(preUpgradeDB).Create(history); err != nil {
+		preUpgradeDB.Close()
+		t.Fatalf("save pre-upgrade execution: %v", err)
+	}
+	preUpgradeDB.Close()
+
 	writeSetupRunPackFiles(t, packDir, "0.2.0", "v2")
 	upgraded := loadPack(t, packDir)
 	upgradePrepared, err := prepare(context.Background(), upgraded, dataDir)
@@ -141,6 +191,18 @@ func TestPrepareReconstructsCompletedSetupAcrossRestartsAndPackUpgrade(t *testin
 	if err != nil || loadedCredentials.Credentials.Slots["telegram"].CredentialID != credentialID {
 		t.Fatalf("upgrade did not preserve the assigned credential: credentials=%#v err=%v", loadedCredentials, err)
 	}
+	upgradedSchedule, err := storage.NewWorkflowScheduleStore(upgradeDB).GetByWorkflow(first.WorkflowID)
+	if err != nil {
+		t.Fatalf("load upgraded schedule: %v", err)
+	}
+	if !upgradedSchedule.Enabled || upgradedSchedule.State != storage.ScheduleStateNeedsAttention ||
+		upgradedSchedule.ErrorCategory != storage.ScheduleErrorRevalidation ||
+		upgradedSchedule.NextRunAt == nil || !upgradedSchedule.NextRunAt.Equal(nextRun) {
+		t.Fatalf("upgrade did not preserve and suspend schedule: %+v", upgradedSchedule)
+	}
+	if _, err := storage.NewExecutionStore(upgradeDB).GetByID(history.ID); err != nil {
+		t.Fatalf("upgrade lost execution history: %v", err)
+	}
 	if _, err := packsetup.SaveState(dataDir, upgraded.Manifest, true, time.Now()); err != nil {
 		t.Fatalf("save revalidated upgraded setup: %v", err)
 	}
@@ -152,6 +214,13 @@ func TestPrepareReconstructsCompletedSetupAcrossRestartsAndPackUpgrade(t *testin
 		t.Fatalf("revalidated upgraded workflow was not active")
 	}
 	assertManagedBindings(t, revalidated, "https://source.example.test/daily.json", credentialID, "v2")
+	if err := storage.NewWorkflowScheduleStore(upgradeDB).ClearRevalidationRequired(first.WorkflowID, upgraded.Manifest.ID, time.Now()); err != nil {
+		t.Fatalf("resume revalidated schedule: %v", err)
+	}
+	resumed, err := storage.NewWorkflowScheduleStore(upgradeDB).GetByWorkflow(first.WorkflowID)
+	if err != nil || !resumed.Enabled || resumed.State != storage.ScheduleStateOK || resumed.ErrorCategory != "" {
+		t.Fatalf("revalidated schedule did not resume: %+v, %v", resumed, err)
+	}
 }
 
 func TestPrepareInvalidPersistedSetupFailsClosed(t *testing.T) {

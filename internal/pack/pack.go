@@ -835,6 +835,12 @@ func isValidSemVer(version string) bool {
 	return true
 }
 
+// IsValidSemVer exposes the Pack format's single SemVer validator to other
+// internal lifecycle components.
+func IsValidSemVer(version string) bool {
+	return isValidSemVer(version)
+}
+
 func validDotIdentifiers(value string, rejectNumericLeadingZero bool) bool {
 	if value == "" {
 		return false

@@ -117,12 +117,22 @@ Playwright output, bundles, and extracted files.
 Threat: Pack or schema upgrade loses a schedule, silently runs an incompatible
 workflow, or duplicates the managed workflow/schedule.
 
-Controls: ordered transactional migrations; stable workflow ID; schedule remains
-persisted but disabled while migration/revalidation is required; unknown future
-schema fails closed; no automatic downgrade.
+Controls: ordered compensating migrations; stable workflow ID; schedule remains
+persisted and retains the enabled preference but is operationally suspended
+while migration/revalidation is required; unknown future schema fails closed;
+no automatic downgrade.
 
-Evidence required: DailyOps fixture upgrades, rollback injection, repeated
-restart, and cardinality assertions.
+Additional controls: migration code is compiled into a closed host registry,
+never loaded from a Pack; it sees non-secret config plus credential ID/type
+references only. A pre-mutation snapshot includes a sorted hash inventory.
+Multi-file persistence compensates to original bytes on failure. Unknown chains
+require review; corrupt/future migration metadata and downgrade attempts fail
+closed before the appliance serves.
+
+Evidence required: DailyOps 0.1.0 and 0.2.0 fixture upgrades, intentional
+retain/remove/rename transforms, rollback injection, repeated restart, future
+schema/downgrade rejection, and workflow/credential/schedule/history
+cardinality assertions.
 
 ## Residual Risk
 

@@ -134,6 +134,40 @@ func TestApplianceConfigChangeReopensSetupWithoutChangingSchedule(t *testing.T) 
 	}
 }
 
+func TestApplianceSetupExposesBoundedMigrationAttentionCategory(t *testing.T) {
+	dir := t.TempDir()
+	appliance := &ApplianceContext{
+		Enabled: true, PackID: "example.attention", PackName: "Attention Pack",
+		PackVersion: "2.0.0", WorkflowID: "workflow-1", DataDir: dir,
+	}
+	registry, err := packsetup.NewMigrationRegistry()
+	if err != nil {
+		t.Fatalf("NewMigrationRegistry: %v", err)
+	}
+	if _, err := packsetup.ApplyMigrations(
+		dir, applianceManifest(appliance), "1.0.0", registry, packsetup.MigrationOptions{},
+	); err != nil {
+		t.Fatalf("ApplyMigrations: %v", err)
+	}
+	recorder := httptest.NewRecorder()
+	applianceSetupHandler(appliance, nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/appliance/setup", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("setup status = %d, body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response map[string]interface{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode setup response: %v", err)
+	}
+	if response["attention_category"] != packsetup.MigrationUserReview {
+		t.Fatalf("attention category = %#v", response["attention_category"])
+	}
+	for _, forbidden := range []string{"backup_relative", "applied_steps", "from_version", "to_version"} {
+		if _, exposed := response[forbidden]; exposed {
+			t.Fatalf("setup response exposed internal migration field %q", forbidden)
+		}
+	}
+}
+
 func createScheduleTestWorkflow(t *testing.T, db *storage.DB, workflowID string) {
 	t.Helper()
 	err := storage.NewWorkflowStore(db).Create(&storage.Workflow{

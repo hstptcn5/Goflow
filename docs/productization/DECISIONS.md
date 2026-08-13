@@ -138,3 +138,26 @@ Status: Accepted
 Scheduler work does not select or download an installer toolchain. Installer or
 portable-upgrade decisions belong to Checkpoint F after a pinned-toolchain and
 supply-chain comparison.
+
+## ADR-003: Host-Managed Pack Setup Migration
+
+Status: Accepted
+
+Pack upgrades use a closed migration registry compiled into Goflow. Pack
+manifests cannot point at migration scripts, commands, plugins, binaries, or
+network locations. A registry step is keyed by Pack ID and exact source/target
+versions and is classified as `revalidation`, `config`, or `user_review`.
+
+The migration runner is forward-only. It snapshots setup files with a sorted
+SHA-256 inventory, reads bounded config and credential ID/type references,
+applies the ordered chain in memory, validates against the destination manifest,
+and atomically replaces individual files. A later write failure compensates by
+restoring all original bytes. The migration record contains only versions,
+category, step IDs, backup-relative path, and timestamp.
+
+Unknown chains preserve safe values and require user review. Downgrades,
+corrupt/future schemas, unsafe stale data, and invalid transformed data fail
+closed. Setup becomes incomplete and the enabled schedule is suspended for
+revalidation before the server starts. Stable workflow identity, encrypted
+credential records, schedule configuration, and execution history remain in
+their existing stores.
