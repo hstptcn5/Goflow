@@ -429,7 +429,7 @@ Implementation and verification:
 
 ## Phase 4: Adapter Architecture And Commercial Discovery
 
-Status: Checkpoint I implementation complete; CI pending
+Status: Checkpoints I-J implemented; final CI pending
 
 Branch: `feature/goflow-productization-adapters`
 
@@ -465,6 +465,24 @@ Status: IMPLEMENTED_CI_PENDING
 - Local race execution is unavailable because this Windows environment has
   `CGO_ENABLED=0`; the required race result remains delegated to GitHub Actions.
 
+### Checkpoint J: Vendor Selection Dossier
+
+Status: COMPLETE; `VENDOR_DECISION_REQUIRED`
+
+- `VENDOR_SELECTION.md` compares KiotViet, Sapo, and Haravan using only official
+  current documentation reviewed on 2026-08-14. It covers API/auth, test access,
+  order/inventory/reporting surfaces, pagination, limits, webhooks, partner and
+  commercial approval, privacy, effort, 3-5-user pilot fit, support, and lock-in.
+- Haravan has the clearest documented technical test path through Partner Dev
+  Shops. KiotViet is the conditional business-fit candidate when target pilot
+  stores actually use it. Sapo requires product-edition, sandbox, and numeric
+  rate-policy clarification. None is claimed compatible with Goflow.
+- The five-part production-adapter gate is not satisfied: user vendor approval,
+  sufficient official contract, authorized sandbox credentials, confirmed
+  legal/terms permission, and non-production test data are not all present.
+  Phase 5 therefore continues with the generic reference adapter and loopback
+  normalized source only; no vendor credential or production API call was used.
+
 ## Remaining Checkpoints
 
 | Checkpoint | State |
@@ -477,7 +495,7 @@ Status: IMPLEMENTED_CI_PENDING
 | G: Pack author compatibility toolkit | DONE |
 | H: Authenticity/signing foundation | DONE |
 | I: Adapter architecture | IMPLEMENTED_CI_PENDING |
-| J: Vendor selection dossier | NOT_STARTED |
+| J: Vendor selection dossier | DONE_DECISION_REQUIRED |
 | K: DailyOps Beta journey | NOT_STARTED |
 | L: Final acceptance suite | NOT_STARTED |
 | M: Pilot operations package | NOT_STARTED |
