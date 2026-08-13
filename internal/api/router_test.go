@@ -85,6 +85,7 @@ func TestApplianceRoutesAreAbsentInGenericMode(t *testing.T) {
 func TestApplianceBootstrapAndMutationGuard(t *testing.T) {
 	appliance := &ApplianceContext{
 		Enabled:      true,
+		AppVersion:   "0.5.0-test",
 		Origin:       "http://example.com",
 		SessionToken: "test-session-token",
 		PackID:       "example.appliance",
@@ -108,6 +109,10 @@ func TestApplianceBootstrapAndMutationGuard(t *testing.T) {
 	}
 	if bootstrap["token"] != "test-session-token" {
 		t.Fatalf("unexpected bootstrap response: %#v", bootstrap)
+	}
+	app, ok := bootstrap["app"].(map[string]interface{})
+	if !ok || app["version"] != "0.5.0-test" || app["channel"] != "UNSIGNED-PILOT-BETA" {
+		t.Fatalf("bootstrap omitted version/unsigned channel: %#v", bootstrap)
 	}
 
 	mutation := func(origin, token, contentType, host string) int {

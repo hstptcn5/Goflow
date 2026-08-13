@@ -1,12 +1,12 @@
 # Windows DailyOps Pilot Guide
 
-This guide covers the unsigned Goflow DailyOps alpha for Windows x86-64. The native artifact is built and tested on the GitHub Actions `windows-latest` image. It is pilot software, not a signed installer or a production release.
+This guide covers the unsigned Goflow DailyOps beta candidate for Windows x86-64. The native artifact is built and tested on the GitHub Actions `windows-latest` image. It is pilot software, not a signed installer or a production release.
 
 ## Download And Verify
 
-1. Download the draft PR's Actions artifact named `UNSIGNED-PILOT-ALPHA-goflow-dailyops-windows-amd64` from the pilot coordinator.
+1. Download the draft PR's Actions artifact named `UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64` from the pilot coordinator.
 2. Extract the downloaded artifact ZIP to a temporary folder.
-3. Confirm that `UNSIGNED-PILOT-ALPHA.txt` says `target=windows-amd64` and lists the expected commit.
+3. Confirm that `UNSIGNED-PILOT-BETA.txt` says `target=windows-amd64` and lists the expected commit.
 4. In PowerShell, run:
 
 ```powershell
@@ -55,6 +55,37 @@ This external directory contains the database, master key, setup state, credenti
 - Restart: double-click the same `goflow.exe`. Goflow reuses the external data directory and the stable managed workflow identity.
 - Single instance: starting the same appliance again reuses the running local instance instead of creating another managed workflow.
 
+## User-Approved Offline Upgrade
+
+There is no automatic download or silent update. Obtain the new unsigned beta
+artifact through the pilot coordinator, verify its `SHA256SUMS.txt`, and extract
+the outer artifact to a separate folder. Do not overwrite the running app.
+
+1. Stop Goflow with `Ctrl+C` and wait for `goflow.exe` to exit.
+2. Back up the external data directory using [Pack Data Backup And Restore](DATA_BACKUP_RESTORE.md).
+3. From the newly extracted artifact folder, run PowerShell with the current
+   application folder and the new candidate bundle:
+
+```powershell
+.\Update-Goflow.ps1 `
+  -ApplicationDirectory 'C:\Apps\Goflow-DailyOps-Windows-amd64' `
+  -CandidateBundle '.\Goflow-DailyOps-Windows-amd64.zip'
+```
+
+The helper performs no network request. It rejects a running instance, verifies
+the candidate ZIP and extracted inventory with `goflow.exe pack verify`, checks
+the Pack identity and Windows AMD64 target, snapshots external data, retains the
+old app directory, activates the candidate, and waits for local `/healthz`.
+Tamper, startup, or health failure restores the prior app and data. A successful
+update prints the rollback directory paths and may require source/Telegram
+revalidation before manual or scheduled execution resumes.
+
+Keep the `.rollback-<timestamp>` app/data directories until the updated
+appliance has completed setup revalidation, one manual run, one scheduled run,
+and a restart. To recover manually, stop Goflow, move the failed app/data aside,
+restore those rollback directories to their original names, and start the prior
+`goflow.exe`. Never combine app files from two candidates.
+
 ## Uninstall Completely
 
 1. Stop Goflow with `Ctrl+C` and confirm that `goflow.exe` is no longer running.
@@ -66,16 +97,20 @@ Removing only the application folder does not remove the external data directory
 
 ## Diagnostics And Feedback
 
-Use the appliance diagnostics view and record the workflow state, execution ID, timestamp, and visible error category. Before sharing diagnostics, screenshots, console output, or logs, remove tokens, credential values, source URLs containing authorization, customer data, local usernames, and filesystem paths. Never attach `goflow.db`, `goflow.master.key`, `.env` files, or the complete data directory.
+Use **Copy diagnostics** or **Download diagnostics** in the local pilot summary.
+The bounded export omits credential/workflow/execution IDs, timestamps, source
+URLs, chat IDs, payloads, logs, and filesystem paths. Still review any
+screenshots, console output, or additional logs before sharing. Never attach
+`goflow.db`, `goflow.master.key`, `.env` files, or the complete data directory.
 
 Report pilot feedback with [Windows Pilot Feedback Template](WINDOWS_PILOT_FEEDBACK_TEMPLATE.md) through the channel provided by the pilot coordinator. Obtain explicit consent before collecting or sharing diagnostics.
 
 ## Known Limitations
 
-- The alpha is unsigned, so SmartScreen or organizational policy may block it.
-- There is no installer, auto-update, release channel, or automatic uninstall.
+- The beta candidate is unsigned, so SmartScreen or organizational policy may block it.
+- There is no installer, auto-update, release channel, signing, or automatic uninstall. `BLOCKED_INSTALLER_TOOLCHAIN` remains until a compiler/SDK and signing path are pinned and reviewed.
 - The appliance supports the DailyOps normalized HTTP(S)-to-Telegram example only.
-- Pack `0.2.0` removes the unused Report title and Low-stock threshold setup fields. Upgrading preserves the encrypted Telegram credential but requires one setup revalidation before Run is enabled again.
+- Pack `0.3.0` includes the host-managed 0.1 -> 0.2 -> 0.3 setup migration path. Upgrading preserves the encrypted Telegram credential and schedule preference but requires bounded setup revalidation before execution resumes.
 - No store software or vendor integration is claimed compatible unless it has been tested separately.
 - The service listens only on the local machine; remote hosting and multi-user operation are outside this pilot.
 - Pilot feedback is not evidence of production readiness, customer validation, or willingness to pay.

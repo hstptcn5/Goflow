@@ -5,6 +5,7 @@ import { mountWithApp, nextFrame } from './mount';
 
 const bootstrap = {
   token: 'session-token',
+  app: { name: 'Goflow', version: '0.5.0-test', platform: 'windows/amd64', channel: 'UNSIGNED-PILOT-BETA' },
   pack: {
     id: 'example.appliance',
     name: 'Example Appliance',
@@ -145,6 +146,15 @@ function applianceFetch(overrides = {}) {
 }
 
 describe('appliance UI', () => {
+  it('shows the runtime version and unsigned beta status', async () => {
+    vi.stubGlobal('fetch', applianceFetch());
+    const { root } = await mountWithApp(ApplianceApp, { props: { bootstrap } });
+    await nextFrame();
+
+    expect(root.textContent).toContain('Goflow 0.5.0-test');
+    expect(root.textContent).toContain('Unsigned pilot beta');
+  });
+
   it('falls back to generic workspace when appliance bootstrap is absent', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url) => {
       if (String(url) === '/api/appliance/bootstrap') return new Response('', { status: 404 });

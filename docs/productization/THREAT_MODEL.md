@@ -145,6 +145,33 @@ retain/remove/rename transforms, rollback injection, repeated restart, future
 schema/downgrade rejection, and workflow/credential/schedule/history
 cardinality assertions.
 
+### Offline Windows Update
+
+Threat: an untrusted candidate, active process, cross-Pack archive, reparse
+point, partial rename, failed migration/startup, or cleanup race mutates the
+application or external state without a recoverable prior version.
+
+Controls: update is explicit and offline; no network/download path exists. The
+current runtime verifies the archive and extracted inventory, the candidate
+runtime verifies itself, and Pack ID plus Windows AMD64 target must match before
+mutation. Any active instance or reparse point in the app/data tree fails
+closed. External data is snapshotted and the entire prior app directory is
+retained before two-step activation. State tracks the window between old-app
+rename and candidate activation; every later error compensates app and data.
+Local health must succeed before update acceptance. Tampered and unhealthy
+candidates are deterministic Windows CI fixtures.
+
+Residual risk: the candidate is unsigned, so hashes/inventory prove integrity
+but not publisher authenticity. The portable helper is not an installer and
+does not provide automatic distribution, Windows registration, or signed
+anti-rollback. These remain blocked on trust/signing review and an installer
+toolchain decision.
+
+Evidence required: native valid update, active-instance/reparse rejection,
+tamper rejection before mutation, health-failure compensation, preserved
+external sentinel/state, retained rollback directories, PE/inventory checks,
+restart/migration/revalidation, and artifact-wide leakage scans.
+
 ## Residual Risk
 
 The scheduler can prevent duplicate admission inside the local appliance but

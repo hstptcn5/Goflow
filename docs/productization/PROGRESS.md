@@ -289,6 +289,30 @@ Design decision:
   verification, stopped-instance check, external-data snapshot, retained app
   rollback, startup health gate, compensation, and no download/silent update.
 
+Implementation in progress:
+
+- Add `Update-Goflow.ps1` outside the application directory and include it only
+  in the outer Windows artifact with the pilot guide and SHA-256 inventory.
+- Require current-runtime archive/extracted verification, candidate self-
+  verification, exact Pack/target identity, ordinary non-reparse app/data
+  trees, and no active process before mutation.
+- Retain the prior application directory and external-data snapshot; compensate
+  failures between rename, activation, migration/startup, and local health.
+- Fix `pack verify/test --output json` to return a nonzero exit code on failed
+  JSON results; updater additionally requires parsed `status=PASS`.
+- Rename the exact-head Windows artifact/marker to `UNSIGNED-PILOT-BETA` and
+  expose runtime version plus unsigned channel in bootstrap/UI.
+
+Verification so far:
+
+- CLI/API/Pack Run scoped tests and build/vet: PASS.
+- UI unit/build: PASS (60/60); appliance Playwright: PASS (2/2).
+- Native local portable update acceptance: PASS for valid health-checked
+  update, tamper rejection before mutation, unhealthy-start app/data rollback,
+  reparse rejection, and active-instance rejection.
+- The same update acceptance harness is now required inside the native Windows
+  artifact build before upload; exact-head GitHub Actions is pending.
+
 ## Remaining Checkpoints
 
 | Checkpoint | State |

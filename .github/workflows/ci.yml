@@ -295,7 +295,7 @@ jobs:
       - name: Upload unsigned Windows pilot artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UNSIGNED-PILOT-ALPHA-goflow-dailyops-windows-amd64
+          name: UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64
           path: ${{ runner.temp }}/windows-pilot-artifact/
           if-no-files-found: error
 

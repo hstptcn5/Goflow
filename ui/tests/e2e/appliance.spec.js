@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 const bootstrap = {
   token: 'session-token',
+  app: { name: 'Goflow', version: '0.5.0-test', platform: 'windows/amd64', channel: 'UNSIGNED-PILOT-BETA' },
   pack: {
     id: 'example.appliance',
     name: 'Example Appliance',

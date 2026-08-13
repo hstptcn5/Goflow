@@ -500,6 +500,11 @@ summary:focus-visible {
   color: var(--color-text-secondary);
 }
 
+.badge-warning {
+  background: var(--color-warning-surface);
+  color: var(--color-warning);
+}
+
 .badge-status-failed {
   background: var(--color-danger-surface);
   color: var(--color-danger);

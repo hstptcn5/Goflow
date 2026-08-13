@@ -8,6 +8,7 @@ const props = defineProps({
 
 const token = props.bootstrap.token;
 const pack = computed(() => props.bootstrap.pack || {});
+const app = computed(() => props.bootstrap.app || {});
 const loading = ref(true);
 const saving = ref(false);
 const running = ref(false);
@@ -430,6 +431,8 @@ onBeforeUnmount(stopPolling);
         <p>{{ pack.description || 'Managed workflow appliance' }}</p>
       </div>
       <div class="appliance-meta" aria-label="Pack identity">
+        <span class="badge badge-muted">Goflow {{ app.version || 'development' }}</span>
+        <span class="badge badge-warning">Unsigned pilot beta</span>
         <span class="badge badge-muted">{{ pack.version || '0.0.0' }}</span>
         <span class="badge" :class="`badge-status-${String(status?.state || 'loading').toLowerCase()}`">
           {{ status?.state || 'LOADING' }}

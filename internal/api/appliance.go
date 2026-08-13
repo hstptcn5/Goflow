@@ -102,8 +102,22 @@ func applianceBootstrapHandler(appliance *ApplianceContext) http.HandlerFunc {
 		renderJSON(w, http.StatusOK, map[string]interface{}{
 			"token": appliance.SessionToken,
 			"pack":  applianceIdentity(appliance),
+			"app": map[string]string{
+				"name":     "Goflow",
+				"version":  appliancePublicAppVersion(appliance),
+				"platform": runtime.GOOS + "/" + runtime.GOARCH,
+				"channel":  "UNSIGNED-PILOT-BETA",
+			},
 		})
 	}
+}
+
+func appliancePublicAppVersion(appliance *ApplianceContext) string {
+	version := strings.TrimSpace(appliance.AppVersion)
+	if version == "" {
+		return "development"
+	}
+	return version
 }
 
 func applianceStatusHandler(appliance *ApplianceContext, wfStore *storage.WorkflowStore, execStore *storage.ExecutionStore, credStore *storage.CredentialStore) http.HandlerFunc {
@@ -389,13 +403,9 @@ func buildApplianceDiagnostics(appliance *ApplianceContext, wfStore *storage.Wor
 	if integrity != "verified" && integrity != "source_validated" {
 		integrity = "unknown"
 	}
-	version := strings.TrimSpace(appliance.AppVersion)
-	if version == "" {
-		version = "development"
-	}
 	return applianceDiagnostics{
 		SchemaVersion: 1,
-		App:           applianceDiagnosticsApp{Name: "Goflow", Version: version, Platform: runtime.GOOS + "/" + runtime.GOARCH},
+		App:           applianceDiagnosticsApp{Name: "Goflow", Version: appliancePublicAppVersion(appliance), Platform: runtime.GOOS + "/" + runtime.GOARCH},
 		Pack:          applianceDiagnosticsPack{ID: appliance.PackID, Version: appliance.PackVersion},
 		Setup:         applianceDiagnosticsSetup{State: state, Category: setupCategory},
 		Schedule:      schedule,

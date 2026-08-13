@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"flag"
@@ -375,6 +376,63 @@ func TestPackInitScaffoldValidateTestBuildVerify(t *testing.T) {
 	}
 	if verifyResult["status"] != "PASS" || verifyResult["id"] != "example.fresh-pack" {
 		t.Fatalf("unexpected verify result: %#v", verifyResult)
+	}
+
+	extracted := t.TempDir()
+	reader, err := zip.OpenReader(archive)
+	if err != nil {
+		t.Fatalf("open bundle fixture: %v", err)
+	}
+	for _, file := range reader.File {
+		target := filepath.Join(extracted, filepath.FromSlash(file.Name))
+		if file.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, 0700); err != nil {
+				t.Fatalf("create extracted fixture directory: %v", err)
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+			t.Fatalf("create extracted fixture parent: %v", err)
+		}
+		input, err := file.Open()
+		if err != nil {
+			t.Fatalf("open bundle member: %v", err)
+		}
+		output, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+		if err != nil {
+			input.Close()
+			t.Fatalf("create extracted member: %v", err)
+		}
+		_, copyErr := io.Copy(output, input)
+		closeInputErr := input.Close()
+		closeOutputErr := output.Close()
+		if copyErr != nil || closeInputErr != nil || closeOutputErr != nil {
+			t.Fatalf("extract bundle member: copy=%v input=%v output=%v", copyErr, closeInputErr, closeOutputErr)
+		}
+	}
+	reader.Close()
+	workflowPath := filepath.Join(extracted, "pack", "workflows", "main.json")
+	file, err := os.OpenFile(workflowPath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open workflow for tamper: %v", err)
+	}
+	if _, err := file.WriteString("\n"); err != nil {
+		file.Close()
+		t.Fatalf("tamper workflow: %v", err)
+	}
+	file.Close()
+	stdout.Reset()
+	stderr.Reset()
+	code = runner.Run([]string{"pack", "verify", extracted, "--output", "json"})
+	if code == ExitOK {
+		t.Fatalf("tampered pack verify returned success exit code: stdout=%q", stdout.String())
+	}
+	verifyResult = nil
+	if err := json.Unmarshal(stdout.Bytes(), &verifyResult); err != nil {
+		t.Fatalf("failed verify JSON was not parseable: %v", err)
+	}
+	if verifyResult["status"] != "FAILED" {
+		t.Fatalf("tampered verify status = %#v", verifyResult)
 	}
 }
 

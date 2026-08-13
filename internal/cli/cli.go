@@ -400,7 +400,10 @@ func (r Runner) packTest(args []string) int {
 		result.Status = "FAILED"
 		result.Error = err.Error()
 		if *output == "json" {
-			return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {})
+			if code := writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {}); code != ExitOK {
+				return code
+			}
+			return ExitInvalidInput
 		}
 		fmt.Fprintln(r.Stderr, err)
 		return ExitInvalidInput
@@ -423,7 +426,10 @@ func (r Runner) packVerify(args []string) int {
 		result.Status = "FAILED"
 		result.Error = err.Error()
 		if *output == "json" {
-			return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {})
+			if code := writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {}); code != ExitOK {
+				return code
+			}
+			return ExitInvalidInput
 		}
 		fmt.Fprintln(r.Stderr, err)
 		return ExitInvalidInput

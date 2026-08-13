@@ -6,7 +6,7 @@ Do not include credentials, tokens, customer data, private source URLs, database
 
 - Pilot date:
 - Windows version and architecture:
-- Goflow commit from `UNSIGNED-PILOT-ALPHA.txt`:
+- Goflow commit from `UNSIGNED-PILOT-BETA.txt`:
 - Installation and first startup successful: Yes / No
 - Time from download to first UI load:
 - Time from first UI load to first successful workflow run:
