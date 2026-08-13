@@ -185,7 +185,7 @@ Manual/external gates: none for Phase 1.
 
 ## Phase 2: Lifecycle And Operational Hardening
 
-Status: Checkpoints D-E complete; Checkpoint F in progress
+Status: Checkpoints D-F complete; Phase 2 complete
 
 Branch: `feature/goflow-productization-lifecycle`
 
@@ -275,7 +275,7 @@ Verification:
 
 ## Checkpoint F: Windows Experience And Offline Update
 
-Status: IN_PROGRESS
+Status: DONE
 
 Design decision:
 
@@ -289,7 +289,7 @@ Design decision:
   verification, stopped-instance check, external-data snapshot, retained app
   rollback, startup health gate, compensation, and no download/silent update.
 
-Implementation in progress:
+Implementation:
 
 - Add `Update-Goflow.ps1` outside the application directory and include it only
   in the outer Windows artifact with the pilot guide and SHA-256 inventory.
@@ -303,15 +303,34 @@ Implementation in progress:
 - Rename the exact-head Windows artifact/marker to `UNSIGNED-PILOT-BETA` and
   expose runtime version plus unsigned channel in bootstrap/UI.
 
-Verification so far:
+Verification:
 
 - CLI/API/Pack Run scoped tests and build/vet: PASS.
 - UI unit/build: PASS (60/60); appliance Playwright: PASS (2/2).
+- Exact implementation head:
+  `0832758b986130a1c9cef8314fae982525d5f52e`.
 - Native local portable update acceptance: PASS for valid health-checked
   update, tamper rejection before mutation, unhealthy-start app/data rollback,
   reparse rejection, and active-instance rejection.
-- The same update acceptance harness is now required inside the native Windows
-  artifact build before upload; exact-head GitHub Actions is pending.
+- Native exact-head artifact acceptance: PASS, including setup, manual and
+  scheduled execution, restart, single-instance reuse, tamper rejection,
+  external state, PE AMD64, update compensation, and leakage scans.
+- Artifact: `UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64`;
+  `Goflow-DailyOps-Windows-amd64.zip` SHA-256
+  `63a1cee814a48f6d67874f33a4115335825bb084bfbe2b9a478ccd6c76fd440c`;
+  `SHA256SUMS.txt` SHA-256
+  `d4d29a989a16ff49646c083bc8ba43382c6ac9ce5b3ec5ed314d926105581b6a`.
+- Smoke request evidence: source `4`, Telegram `getMe` `2`, `getChat` `2`,
+  and `sendMessage` `2` across the manual/scheduled/restart scenarios; no
+  duplicate message was accepted for a concurrent request pair.
+- UI build output is byte-identical across CRLF and clean LF checkouts; unit
+  tests pass 60/60 and the committed production asset hashes are stable.
+- GitHub Actions run `31723919989`: SUCCESS, including backend race/vet/
+  vulnerability checks, frontend, Playwright, Pack contracts, all target
+  builds, and native Windows artifact/update verification.
+- `MANUAL_GATE_REQUIRED`: a nontechnical pilot user must still perform the
+  documented unsigned Windows install and offline upgrade on a real pilot
+  machine. This is not represented as an automated PASS.
 
 ## Remaining Checkpoints
 
@@ -321,7 +340,7 @@ Verification so far:
 | C: Scheduler appliance UX and DailyOps | DONE |
 | D: Versioned Pack setup migration | DONE |
 | E: Diagnostics, retention, local metrics | DONE |
-| F: Windows experience and offline update | IN_PROGRESS |
+| F: Windows experience and offline update | DONE |
 | G: Pack author compatibility toolkit | NOT_STARTED |
 | H: Authenticity/signing foundation | NOT_STARTED |
 | I: Adapter architecture | NOT_STARTED |
