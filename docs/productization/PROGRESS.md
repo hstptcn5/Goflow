@@ -183,6 +183,22 @@ Implementation and CI:
 
 Manual/external gates: none for Phase 1.
 
+## Phase 2: Lifecycle And Operational Hardening
+
+Status: Checkpoint D in progress
+
+Branch: `feature/goflow-productization-lifecycle`
+
+Stack base: exact Phase 1 closure head
+`9af5fa34acffab28a822f6f4e64d88558c3311e8`, whose GitHub Actions run
+`31715066909` completed successfully.
+
+Planned phase scope:
+
+- D: versioned Pack setup migration and fail-closed revalidation.
+- E: bounded diagnostics, retention, local metrics, and redacted export.
+- F: Windows appliance experience and safe offline update/rollback.
+
 ## Remaining Checkpoints
 
 | Checkpoint | State |
