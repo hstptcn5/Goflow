@@ -34,6 +34,8 @@ Prerequisites:
 - signed update metadata and authenticated artifacts;
 - anti-rollback policy;
 - atomic installation, health verification, and tested rollback;
+- select and pin one Windows installer toolchain together with dependency
+  provenance, uninstall identity, and production code-signing verification;
 - explicit user consent and no silent/background install;
 - privacy and support documentation.
 

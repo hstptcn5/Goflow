@@ -185,7 +185,7 @@ Manual/external gates: none for Phase 1.
 
 ## Phase 2: Lifecycle And Operational Hardening
 
-Status: Checkpoints D-E complete; Checkpoint F pending
+Status: Checkpoints D-E complete; Checkpoint F in progress
 
 Branch: `feature/goflow-productization-lifecycle`
 
@@ -273,6 +273,22 @@ Verification:
   appliance Playwright, DailyOps restart, Pack contracts, build matrix, and
   native Windows artifact verification.
 
+## Checkpoint F: Windows Experience And Offline Update
+
+Status: IN_PROGRESS
+
+Design decision:
+
+- ADR-005 compares WiX 4, Inno Setup, MSIX/Windows SDK, and a verified portable
+  PowerShell flow across per-user install, uninstall, reproducibility, CI,
+  signing, and supply-chain risk.
+- `BLOCKED_INSTALLER_TOOLCHAIN`: no installer is added before an exact
+  compiler/SDK, dependency lock, provenance policy, uninstall identity, and
+  signing verification are selected together.
+- Proceed with the required portable fallback: explicit offline candidate
+  verification, stopped-instance check, external-data snapshot, retained app
+  rollback, startup health gate, compensation, and no download/silent update.
+
 ## Remaining Checkpoints
 
 | Checkpoint | State |
@@ -281,7 +297,7 @@ Verification:
 | C: Scheduler appliance UX and DailyOps | DONE |
 | D: Versioned Pack setup migration | DONE |
 | E: Diagnostics, retention, local metrics | DONE |
-| F: Windows experience and offline update | NOT_STARTED |
+| F: Windows experience and offline update | IN_PROGRESS |
 | G: Pack author compatibility toolkit | NOT_STARTED |
 | H: Authenticity/signing foundation | NOT_STARTED |
 | I: Adapter architecture | NOT_STARTED |

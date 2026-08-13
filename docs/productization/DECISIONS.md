@@ -178,3 +178,40 @@ Internal and legacy errors map to a closed public category catalog with fixed
 messages. Unknown categories fail to `internal_error`; raw legacy messages are
 not exported. Execution cleanup uses one transaction, validates finite safe
 bounds, and excludes active `RUNNING` rows from both age and count pruning.
+
+## ADR-005: Windows Beta Packaging And Offline Update
+
+Status: Accepted for Checkpoint F implementation
+
+### Compared Options
+
+| Option | Per-user/admin and uninstall | Reproducibility and CI | Future signing path | Supply-chain assessment |
+| --- | --- | --- | --- | --- |
+| WiX Toolset 4 MSI | Can model per-user install, shortcuts, upgrades, and data-preserving uninstall, but Windows Installer identity and upgrade rules add a second lifecycle system | A specific .NET tool/NuGet version can be pinned, but this repository has no pinned .NET SDK, NuGet lock, or WiX verification gate | Supports Authenticode/MSI signing later | Adds .NET/NuGet/WiX compiler inputs and generated MSI behavior before signing infrastructure exists |
+| Inno Setup | Straightforward per-user mode, shortcuts, upgrades, and uninstall scripting | Compiler can be version-pinned on `windows-latest`, but would require downloading or vendoring a new executable toolchain and verifying it | Supports Authenticode signing later | Adds a binary compiler and a second installer script runtime with no current repository provenance policy |
+| MSIX / Windows SDK | Per-user deployment and clean uninstall are strong, but normal pilot installation depends on package trust/signing and Windows policy | Runner images include SDK tools, but image/SDK selection is not pinned by the repository today | Designed around package signing | Unsigned sideloading conflicts with the no-bypass pilot policy; SDK provenance would still need an explicit pin |
+| Verified portable bundle plus PowerShell update helper | No installer or automatic shortcut; uninstall is explicit application-folder removal while external data is retained | Uses Windows PowerShell/.NET APIs already present on supported Windows and the exact current `goflow.exe pack verify`; no downloaded tool | The same PE/bundle can be Authenticode-signed later without changing state ownership | No new third-party build dependency; update remains explicit, offline, and inspectable |
+
+### Decision
+
+Checkpoint F does not add an installer. `BLOCKED_INSTALLER_TOOLCHAIN` records
+that an installer candidate is deferred until its compiler/SDK, dependency
+lock, provenance, uninstall identity, and signing verification can be pinned
+and reviewed together. This is not a blocker for the required portable fallback.
+
+The beta candidate remains a native Windows AMD64 portable bundle marked
+`UNSIGNED-PILOT-BETA`. A bundled PowerShell helper performs only a user-started
+offline update: reject an active instance, verify candidate archive and
+extracted inventory before mutation, require matching Pack identity/target,
+snapshot external data, retain the previous application directory, activate
+the candidate, wait for local health, and compensate application/data state on
+failure. It never downloads, silently updates, disables Windows protections,
+or deletes user data. Successful update retains rollback material until the
+user explicitly removes it.
+
+### Revisit Gate
+
+Reconsider an installer only after a security review chooses and pins the exact
+toolchain, CI verifies deterministic inputs and uninstall behavior, and a
+production code-signing process exists. Until then, no MSI, MSIX, setup EXE,
+auto-update channel, or installer claim is permitted.
