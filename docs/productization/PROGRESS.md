@@ -524,6 +524,22 @@ Status: DONE
 
 Status: IN_PROGRESS
 
+### Checkpoint M: Pilot Operations Package
+
+Status: DONE
+
+- `BETA_OPERATIONS.md` indexes the Windows guide, source JSON contract,
+  Telegram setup, schedule/timezone behavior, troubleshooting matrix, offline
+  update/rollback, backup/data location, credential rotation, diagnostics and
+  privacy, consent/feedback, support response, limitations, and manual
+  acceptance checklist.
+- Pilot metrics are explicitly local or user-recorded and exclude source
+  payloads, tokens, chat IDs, personal content, host identity, and paths.
+- Commercial adapter go/no-go requires three consenting real users and all
+  defined setup, duplicate prevention, persistence, supportability, value, and
+  continuation/payment signals. Its current state remains
+  `MANUAL_GATE_REQUIRED`; no customer or commercial acceptance is claimed.
+
 ## Remaining Checkpoints
 
 | Checkpoint | State |
@@ -539,4 +555,4 @@ Status: IN_PROGRESS
 | J: Vendor selection dossier | DONE_DECISION_REQUIRED |
 | K: DailyOps Beta journey | DONE |
 | L: Final acceptance suite | IN_PROGRESS |
-| M: Pilot operations package | NOT_STARTED |
+| M: Pilot operations package | DONE |

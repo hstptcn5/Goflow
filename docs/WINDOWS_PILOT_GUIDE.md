@@ -2,6 +2,8 @@
 
 This guide covers the unsigned Goflow DailyOps beta candidate for Windows x86-64. The native artifact is built and tested on the GitHub Actions `windows-latest` image. It is pilot software, not a signed installer or a production release.
 
+The full document set is indexed in [DailyOps Beta Operations](BETA_OPERATIONS.md).
+
 ## Download And Verify
 
 1. Download the draft PR's Actions artifact named `UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64` from the pilot coordinator.
@@ -52,8 +54,8 @@ This external directory contains the database, master key, setup state, credenti
 ## Stop And Restart
 
 - Stop: focus the Goflow console window and press `Ctrl+C`. Wait for the process to exit before moving files, backing up, or shutting down Windows.
-- Restart: double-click the same `goflow.exe`. Goflow reuses the external data directory and the stable managed workflow identity.
-- Single instance: starting the same appliance again reuses the running local instance instead of creating another managed workflow.
+- Restart: double-click the same `goflow.exe`. Goflow reuses the external data directory and the stable managed report identity.
+- Single instance: starting the same appliance again reuses the running local instance instead of creating another managed report.
 
 ## User-Approved Offline Upgrade
 

@@ -29,17 +29,19 @@ Connection tests are closed by field/credential type and test kind. URL fields m
 
 Source and credential test requests are rate-limited and serialized to avoid repeated network or secret use.
 
-Common categories:
-
-- `source_invalid_url`: enter an absolute `http` or `https` JSON endpoint.
-- `source_timeout` or `source_unreachable`: confirm the endpoint is online and reachable from this Windows computer.
-- `source_http_error`: fix authentication or the upstream service; Goflow requires HTTP 2xx.
-- `source_non_json` or `source_invalid_json`: use the API endpoint, not an HTML website, and fix malformed JSON.
-- `source_contract_invalid`: add the required DailyOps fields with the documented types.
-- `telegram_unauthorized`: replace the bot token from BotFather.
-- `telegram_chat_inaccessible`: send `/start`, add the bot to the destination, and verify the chat ID.
-- `already_running`: wait for the current execution; Goflow rejected the duplicate request.
-- `internal_error`: refresh once, then collect redacted diagnostics if it repeats.
+| Category | Next action |
+| --- | --- |
+| `source_invalid_url` | Enter an absolute `http` or `https` JSON endpoint. |
+| `source_timeout`, `source_unreachable` | Confirm the endpoint is online and reachable from this Windows computer. |
+| `source_http_error` | Fix upstream access; Goflow requires HTTP 2xx. |
+| `source_non_json`, `source_invalid_json` | Use the API endpoint instead of an HTML page and fix malformed JSON. |
+| `source_contract_invalid` | Supply every field and type in the [source contract](BETA_SOURCE_JSON_CONTRACT.md). |
+| `telegram_unauthorized` | Revoke and replace the bot token through BotFather. |
+| `telegram_chat_inaccessible` | Send `/start`, add the bot, check permissions, and verify the chat ID. |
+| `already_running` | Wait for the current report; the duplicate request was rejected. |
+| `migration_required`, `revalidation_required` | Review setup, rerun connection tests, and complete setup again. |
+| `artifact_tamper` | Stop and obtain a fresh artifact; do not reuse the failed files. |
+| `internal_error` | Refresh once, then collect redacted diagnostics with consent if it repeats. |
 
 ## Diagnostics
 
