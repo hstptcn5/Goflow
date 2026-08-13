@@ -62,6 +62,24 @@ function Assert-NoRunningInstance {
     }
 }
 
+function Move-DirectoryWithRetry {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        try {
+            Move-Item -LiteralPath $Source -Destination $Destination
+            return
+        } catch {
+            if ($attempt -eq 19) {
+                throw
+            }
+            Start-Sleep -Milliseconds 250
+        }
+    }
+}
+
 function Wait-GoflowHealth {
     param(
         [Parameter(Mandatory = $true)][System.Diagnostics.Process]$Process,
@@ -152,9 +170,9 @@ try {
         $dataSnapshotted = $true
     }
 
-    Move-Item -LiteralPath $ApplicationDirectory -Destination $applicationBackup
+    Move-DirectoryWithRetry -Source $ApplicationDirectory -Destination $applicationBackup
     $applicationMoved = $true
-    Move-Item -LiteralPath $candidateStage -Destination $ApplicationDirectory
+    Move-DirectoryWithRetry -Source $candidateStage -Destination $ApplicationDirectory
     $activated = $true
 
     $updatedRuntime = Join-Path $ApplicationDirectory 'goflow.exe'
@@ -181,17 +199,17 @@ try {
     }
     if ($activated) {
         if (Test-Path -LiteralPath $ApplicationDirectory) {
-            Move-Item -LiteralPath $ApplicationDirectory -Destination $failedApplication
+            Move-DirectoryWithRetry -Source $ApplicationDirectory -Destination $failedApplication
         }
-        Move-Item -LiteralPath $applicationBackup -Destination $ApplicationDirectory
+        Move-DirectoryWithRetry -Source $applicationBackup -Destination $ApplicationDirectory
         if ($dataSnapshotted -and (Test-Path -LiteralPath $dataBackup)) {
             if (Test-Path -LiteralPath $DataDirectory) {
-                Move-Item -LiteralPath $DataDirectory -Destination $failedData
+                Move-DirectoryWithRetry -Source $DataDirectory -Destination $failedData
             }
-            Move-Item -LiteralPath $dataBackup -Destination $DataDirectory
+            Move-DirectoryWithRetry -Source $dataBackup -Destination $DataDirectory
         }
     } elseif ($applicationMoved -and (Test-Path -LiteralPath $applicationBackup)) {
-        Move-Item -LiteralPath $applicationBackup -Destination $ApplicationDirectory
+        Move-DirectoryWithRetry -Source $applicationBackup -Destination $ApplicationDirectory
     }
     if (-not $activated -and (Test-Path -LiteralPath $candidateStage)) {
         Remove-Item -LiteralPath $candidateStage -Recurse -Force
