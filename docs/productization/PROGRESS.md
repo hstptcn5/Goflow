@@ -185,7 +185,7 @@ Manual/external gates: none for Phase 1.
 
 ## Phase 2: Lifecycle And Operational Hardening
 
-Status: Checkpoint D in progress
+Status: Checkpoint D complete; Checkpoint E pending
 
 Branch: `feature/goflow-productization-lifecycle`
 
@@ -201,9 +201,9 @@ Planned phase scope:
 
 ## Checkpoint D: Versioned Pack Setup Migration
 
-Status: IN_PROGRESS
+Status: DONE
 
-Implementation in progress:
+Implemented:
 
 - Add a closed, host-managed, forward-only migration registry with explicit
   revalidation/config/user-review categories.
@@ -220,13 +220,18 @@ Implementation in progress:
 - Expose only a bounded attention category to setup/status and explain the
   required review without requiring the encrypted Telegram credential again.
 
-Verification so far:
+Verification:
 
 - Scoped Pack setup/storage/scheduler/Pack Run/API/Pack tests: PASS.
 - Migration fixtures cover ordered 0.1/0.2 upgrades, retain/remove/rename,
   rollback injection, idempotency, downgrade/future schema failure, credential
   reference preservation, and no credential reference in migration metadata.
-- Full local/security/E2E/clean-checkout and GitHub Actions: pending.
+- Local backend, vet, build, `govulncheck`, npm audit, UI unit/build,
+  appliance Playwright, and DailyOps E2E gates: PASS.
+- Exact implementation commit:
+  `7760198601e7be774da2c2ceac454575ab44ef4e`.
+- GitHub Actions run `31717261835`: SUCCESS, including native Windows
+  DailyOps E2E and artifact verification.
 
 ## Remaining Checkpoints
 
@@ -234,7 +239,7 @@ Verification so far:
 | --- | --- |
 | B: Scheduler backend MVP | DONE |
 | C: Scheduler appliance UX and DailyOps | DONE |
-| D: Versioned Pack setup migration | NOT_STARTED |
+| D: Versioned Pack setup migration | DONE |
 | E: Diagnostics, retention, local metrics | NOT_STARTED |
 | F: Windows experience and offline update | NOT_STARTED |
 | G: Pack author compatibility toolkit | NOT_STARTED |
