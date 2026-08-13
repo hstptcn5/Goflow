@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"goflow/internal/nodes"
@@ -52,7 +53,7 @@ func main() {
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	registry := nodes.NewBuiltinRegistryWithTelegramExecutor(nodes.NewTelegramBotExecutorWithClient(client, *telegramBaseURL))
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	clock := &controlledClock{now: time.Date(2026, 8, 9, 1, 0, 0, 0, time.UTC)}
 	wake := make(chan scheduler.WakeRequest)
