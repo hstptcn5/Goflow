@@ -1,6 +1,7 @@
 # Goflow Productization Progress
 
-Overall status: IN_PROGRESS
+Overall status: DONE; manual pilot, vendor, production signing, and release
+gates remain external and are not represented as passed.
 
 Allowed checkpoint states: NOT_STARTED, IN_PROGRESS, BLOCKED,
 MANUAL_GATE_REQUIRED, DONE.
@@ -493,7 +494,7 @@ the Phase 3 trust branch, unmerged, and not ready.
 
 ## Phase 5: Productization Beta Candidate
 
-Status: Checkpoint K complete; Checkpoint L in progress
+Status: Checkpoints K-M complete; Phase 5 complete
 
 Branch: `feature/goflow-productization-beta`
 
@@ -522,7 +523,7 @@ Status: DONE
 
 ### Checkpoint L: Final Acceptance Suite
 
-Status: IN_PROGRESS
+Status: DONE
 
 Local candidate evidence:
 
@@ -542,11 +543,22 @@ Local candidate evidence:
   duplicate rejection, external state, tamper rejection, update/rollback, and
   leakage scans: PASS on candidate commit `59aa7b0`. Bundle SHA-256:
   `22848853e84d644b2fe52cf9e6d5b47fac9c413eb138e4b93233c5ac5b0eb529`.
-- Local `gofmt -l .` reflects pre-existing CRLF worktree files, including
-  historical release copies. Formatting and race remain required in the clean
-  LF/Linux CI gates; local race is unavailable without a CGO C compiler.
-- Final clean-LF checkout and exact-head GitHub Actions/native Windows artifact
-  are pending before Checkpoint L can be marked done.
+- Local `gofmt -l .` reflects Windows checkout CRLF conversion. GitHub's clean
+  Linux checkout passed formatting and race; local race is unavailable without
+  a CGO C compiler.
+- A source-only export of exact candidate head
+  `e37e9f83c76f63eff84957364ddb122f04e242ca` passed full Go test/vet/build/
+  vulnerability, clean `npm ci`, UI 60/60/build, and two-phase DailyOps E2E.
+- GitHub Actions run `31736037645`: SUCCESS on that exact head. It passed
+  backend formatting/test/race/vet/vulnerability, frontend, Playwright and
+  DailyOps, Pack contract/determinism/leakage, all five target builds, and the
+  native Windows artifact gate.
+- CI artifact `UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64` has outer
+  digest `sha256:ead1c70b9322c753655a5bd349a69fdfbc5da9f25f892fbbd99096852e626242`
+  and expiry `2026-11-11`. Local exact-candidate bundle SHA-256 is
+  `22848853e84d644b2fe52cf9e6d5b47fac9c413eb138e4b93233c5ac5b0eb529`;
+  checksum inventory SHA-256 is
+  `9e41582870cba267e323f084ebb6c92d3b87d82117e8e079308c8d05faaa621e`.
 
 ### Checkpoint M: Pilot Operations Package
 
@@ -578,5 +590,5 @@ Status: DONE
 | I: Adapter architecture | DONE |
 | J: Vendor selection dossier | DONE_DECISION_REQUIRED |
 | K: DailyOps Beta journey | DONE |
-| L: Final acceptance suite | IN_PROGRESS |
+| L: Final acceptance suite | DONE |
 | M: Pilot operations package | DONE |
