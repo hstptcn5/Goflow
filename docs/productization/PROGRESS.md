@@ -185,7 +185,7 @@ Manual/external gates: none for Phase 1.
 
 ## Phase 2: Lifecycle And Operational Hardening
 
-Status: Checkpoint D complete; Checkpoint E in progress
+Status: Checkpoints D-E complete; Checkpoint F pending
 
 Branch: `feature/goflow-productization-lifecycle`
 
@@ -235,9 +235,9 @@ Verification:
 
 ## Checkpoint E: Diagnostics, Retention, And Local Pilot Metrics
 
-Status: IN_PROGRESS
+Status: DONE
 
-Implementation in progress:
+Implemented:
 
 - Normalize internal and legacy failures through a closed public category
   catalog with fixed safe messages.
@@ -251,7 +251,7 @@ Implementation in progress:
 - Keep export local-only behind explicit Copy/Download actions; add no
   analytics, remote endpoint, fingerprinting, or background telemetry.
 
-Verification so far:
+Verification:
 
 - Scoped app-error/storage/config/API/Pack Run tests: PASS.
 - Golden diagnostics, restart stability, canary redaction, malformed legacy
@@ -266,7 +266,12 @@ Verification so far:
   extracted text canary/path scan: PASS. Deterministic SHA-256:
   `8a08b1578e70e39008acffdf1a1f4d387f5e452866b4fbc82e74a889032d44a1`.
 - Local race execution is unavailable because this Windows Go environment has
-  CGO disabled; the required Linux race gate remains pending in GitHub Actions.
+  CGO disabled; the required Linux race gate passed in GitHub Actions.
+- Exact implementation commit:
+  `55607077664c805c48e43ac03935cb8f094320f2`.
+- GitHub Actions run `31719917790`: SUCCESS, including Linux race/security,
+  appliance Playwright, DailyOps restart, Pack contracts, build matrix, and
+  native Windows artifact verification.
 
 ## Remaining Checkpoints
 
@@ -275,7 +280,7 @@ Verification so far:
 | B: Scheduler backend MVP | DONE |
 | C: Scheduler appliance UX and DailyOps | DONE |
 | D: Versioned Pack setup migration | DONE |
-| E: Diagnostics, retention, local metrics | IN_PROGRESS |
+| E: Diagnostics, retention, local metrics | DONE |
 | F: Windows experience and offline update | NOT_STARTED |
 | G: Pack author compatibility toolkit | NOT_STARTED |
 | H: Authenticity/signing foundation | NOT_STARTED |
