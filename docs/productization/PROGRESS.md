@@ -524,6 +524,30 @@ Status: DONE
 
 Status: IN_PROGRESS
 
+Local candidate evidence:
+
+- `go test -count=1 ./...`, repository-policy `go vet`, and `go build ./...`:
+  PASS. `govulncheck ./...`: zero reachable vulnerabilities.
+- A clean `npm ci` and `npm audit --audit-level=moderate`: PASS with zero
+  vulnerabilities. UI unit tests: 60/60; production build: PASS.
+- Full Playwright: 26 PASS and 2 intentionally skipped real-DailyOps phase
+  selectors. Scoped DailyOps two-phase E2E and occupied-port runner smoke:
+  PASS. The focus-trap test now asserts the topology-independent last focusable
+  favorite after the adapter node expanded the picker.
+- Legacy hello Pack validation, DailyOps validation/offline test, and scaffold
+  `init -> validate -> test -> build -> verify`: PASS; scaffold authenticity
+  remains explicitly `UNSIGNED`.
+- Native Windows candidate verification: deterministic build, ZIP/extracted
+  inventory, PE/runtime, setup, manual/scheduled/restart, single instance,
+  duplicate rejection, external state, tamper rejection, update/rollback, and
+  leakage scans: PASS on candidate commit `59aa7b0`. Bundle SHA-256:
+  `22848853e84d644b2fe52cf9e6d5b47fac9c413eb138e4b93233c5ac5b0eb529`.
+- Local `gofmt -l .` reflects pre-existing CRLF worktree files, including
+  historical release copies. Formatting and race remain required in the clean
+  LF/Linux CI gates; local race is unavailable without a CGO C compiler.
+- Final clean-LF checkout and exact-head GitHub Actions/native Windows artifact
+  are pending before Checkpoint L can be marked done.
+
 ### Checkpoint M: Pilot Operations Package
 
 Status: DONE
