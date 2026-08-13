@@ -37,8 +37,8 @@ Status: IN_PROGRESS
 
 Branch: `feature/goflow-productization-scheduler`
 
-Pull request: pending initial push; it must be draft and based on
-`feature/goflow-pilot-ux-hardening`.
+Pull request: `https://github.com/hstptcn5/Goflow/pull/15`, draft/open/unmerged,
+based on `feature/goflow-pilot-ux-hardening`.
 
 Design decisions:
 
@@ -56,9 +56,19 @@ Files:
 - `docs/productization/THREAT_MODEL.md`
 - `docs/productization/POST_BETA_ROADMAP.md`
 
-Checkpoint commit: pending.
+Checkpoint design commit:
+`81349053070f3b6718386103dd48d2a8c2fc7c0f`.
 
 CI evidence: pending final pushed head.
+
+Checkpoint verification:
+
+- `go test -count=1 ./...`: PASS.
+- `go vet ./...`: PASS.
+- `go build ./...`: PASS.
+- `npm run test`: PASS, 11 files and 56 tests.
+- `npm run build`: PASS.
+- `npm audit --audit-level=moderate`: PASS, 0 vulnerabilities.
 
 Known limitations:
 
