@@ -70,6 +70,7 @@ func TestApplianceDiagnosticsGoldenRedactedAndRestartStable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read golden diagnostics: %v", err)
 	}
+	want = bytes.ReplaceAll(want, []byte("\r\n"), []byte("\n"))
 	if !bytes.Equal(bytes.TrimSpace(normalized), bytes.TrimSpace(want)) {
 		t.Fatalf("diagnostics golden mismatch:\nwant=%s\ngot=%s", want, normalized)
 	}
