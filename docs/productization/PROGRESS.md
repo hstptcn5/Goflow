@@ -501,6 +501,9 @@ Branch: `feature/goflow-productization-beta`
 Stack base: exact Phase 4 closure head
 `051ef109f4719714fe71d938e8bfc29854f5a82e`.
 
+Pull request: `https://github.com/hstptcn5/Goflow/pull/19`, draft/open/unmerged,
+based on `feature/goflow-productization-adapters`.
+
 ### Checkpoint K: DailyOps Beta Journey
 
 Status: DONE
@@ -518,6 +521,10 @@ Status: DONE
   and zero unexpected requests.
 - UI unit tests: 60/60 PASS; production build, scoped appliance Playwright,
   two-phase DailyOps E2E, and E2E runner occupied-port smoke: PASS.
+- Implementation commit: `b91baad93b86940fd9c9a29f4acaf5b0bff9f9b3`.
+- Primary files: `ui/src/components/ApplianceApp.vue`,
+  `ui/tests/e2e/dailyops-appliance-real.spec.js`, and
+  `ui/tests/run-dailyops-appliance-e2e.mjs`.
 - Manual pilot, vendor access, production signing, and release are external
   gates and cannot be inferred from automated loopback acceptance.
 
@@ -541,7 +548,7 @@ Local candidate evidence:
 - Native Windows candidate verification: deterministic build, ZIP/extracted
   inventory, PE/runtime, setup, manual/scheduled/restart, single instance,
   duplicate rejection, external state, tamper rejection, update/rollback, and
-  leakage scans: PASS on candidate commit `59aa7b0`. Bundle SHA-256:
+  leakage scans: PASS. Bundle SHA-256:
   `22848853e84d644b2fe52cf9e6d5b47fac9c413eb138e4b93233c5ac5b0eb529`.
 - Local `gofmt -l .` reflects Windows checkout CRLF conversion. GitHub's clean
   Linux checkout passed formatting and race; local race is unavailable without
@@ -549,16 +556,19 @@ Local candidate evidence:
 - A source-only export of exact candidate head
   `e37e9f83c76f63eff84957364ddb122f04e242ca` passed full Go test/vet/build/
   vulnerability, clean `npm ci`, UI 60/60/build, and two-phase DailyOps E2E.
-- GitHub Actions run `31736037645`: SUCCESS on that exact head. It passed
+- GitHub Actions candidate run `31736037645`: SUCCESS. It passed
   backend formatting/test/race/vet/vulnerability, frontend, Playwright and
   DailyOps, Pack contract/determinism/leakage, all five target builds, and the
   native Windows artifact gate.
-- CI artifact `UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64` has outer
-  digest `sha256:ead1c70b9322c753655a5bd349a69fdfbc5da9f25f892fbbd99096852e626242`
-  and expiry `2026-11-11`. Local exact-candidate bundle SHA-256 is
+- Verified implementation closure head
+  `3af783c8c832c60fa5f39c89d1c71ff8d512dea8`
+  passed GitHub Actions run `31737427875`, including the native Windows gate.
+- Final CI artifact `UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64` has
+  outer digest
+  `sha256:43261fc5afeda8f24a14bc1eac7fcdd20eeaf326ec72d660efd192e60276ca13`
+  and expiry `2026-11-11`. Deterministic bundle SHA-256 is
   `22848853e84d644b2fe52cf9e6d5b47fac9c413eb138e4b93233c5ac5b0eb529`;
-  checksum inventory SHA-256 is
-  `9e41582870cba267e323f084ebb6c92d3b87d82117e8e079308c8d05faaa621e`.
+  no installer was implemented.
 
 ### Checkpoint M: Pilot Operations Package
 
@@ -575,11 +585,14 @@ Status: DONE
   defined setup, duplicate prevention, persistence, supportability, value, and
   continuation/payment signals. Its current state remains
   `MANUAL_GATE_REQUIRED`; no customer or commercial acceptance is claimed.
+- Operations-package commit: `59aa7b096d476e66b7f849b781f3e8beefa70372`.
+- Primary index: `docs/BETA_OPERATIONS.md`.
 
 ## Remaining Checkpoints
 
 | Checkpoint | State |
 | --- | --- |
+| A: Baseline, architecture, scheduler contract | DONE |
 | B: Scheduler backend MVP | DONE |
 | C: Scheduler appliance UX and DailyOps | DONE |
 | D: Versioned Pack setup migration | DONE |

@@ -1,6 +1,6 @@
 # Goflow Productization Threat Model
 
-Status: Checkpoint A scheduler design baseline
+Status: Productization Beta Candidate final review
 
 This document extends the ecosystem alpha threat model. Existing Pack,
 credential, localhost, path, diagnostics, and artifact controls remain required.
