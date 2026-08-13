@@ -24,7 +24,6 @@ const diagnostics = ref(null);
 const configValues = ref({});
 const credentialDrafts = ref({});
 const credentialResults = ref({});
-const runInputText = ref('{}');
 const runError = ref('');
 const sourceResults = ref({});
 const schedule = ref(null);
@@ -333,27 +332,18 @@ async function runNow() {
   if (running.value || executionRunning.value) return;
   runError.value = '';
   running.value = true;
-  let input = {};
   try {
-    input = JSON.parse(runInputText.value || '{}');
-  } catch {
-    runError.value = 'Run input must be valid JSON';
-    running.value = false;
-    return;
-  }
-  try {
-    await applianceApi.runNow(token, input);
-    runInputText.value = '{}';
-    notice.value = 'Workflow run started';
+    await applianceApi.runNow(token, {});
+    notice.value = 'Report run started';
     await refreshRuntime();
     startPolling();
   } catch (err) {
     if (err.category === 'already_running') {
-      notice.value = 'A workflow run is already in progress';
+      notice.value = 'A report run is already in progress';
       await refreshRuntime().catch(() => {});
       startPolling();
     } else {
-      runError.value = err.message || 'Workflow could not be started';
+      runError.value = err.message || 'Report could not be started';
     }
   } finally {
     running.value = false;
@@ -428,7 +418,7 @@ onBeforeUnmount(stopPolling);
       <div>
         <div class="shell-kicker">Pack appliance</div>
         <h1>{{ pack.name || 'Goflow Pack' }}</h1>
-        <p>{{ pack.description || 'Managed workflow appliance' }}</p>
+        <p>{{ pack.description || 'Managed report appliance' }}</p>
       </div>
       <div class="appliance-meta" aria-label="Pack identity">
         <span class="badge badge-muted">Goflow {{ app.version || 'development' }}</span>
@@ -594,7 +584,7 @@ onBeforeUnmount(stopPolling);
           <div class="panel-heading">
             <div>
               <div class="shell-kicker">Dashboard</div>
-              <h2 id="dashboard-title">Managed workflow</h2>
+              <h2 id="dashboard-title">DailyOps report</h2>
             </div>
             <button class="btn btn-secondary" type="button" @click="reopenSetup">Reconfigure</button>
           </div>
@@ -605,7 +595,7 @@ onBeforeUnmount(stopPolling);
               <strong>{{ status?.server || 'ok' }}</strong>
             </div>
             <div>
-              <span>Workflow</span>
+              <span>Report</span>
               <strong>{{ workflowStatus?.workflow?.name || status?.workflow_id }}</strong>
             </div>
             <div>
@@ -627,8 +617,6 @@ onBeforeUnmount(stopPolling);
           </section>
 
           <form class="run-panel" @submit.prevent="runNow">
-            <label for="run-input">Run input</label>
-            <textarea id="run-input" v-model="runInputText" class="form-textarea" spellcheck="false"></textarea>
             <p v-if="runError" class="field-error">{{ runError }}</p>
             <button class="btn btn-primary" type="submit" :disabled="running || executionRunning || (workflowStatus?.state || status?.state) === 'NEEDS_SETUP'">
               {{ running || executionRunning ? 'Running...' : 'Run now' }}

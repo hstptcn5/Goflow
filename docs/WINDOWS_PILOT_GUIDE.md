@@ -31,9 +31,9 @@ Stop if the hashes differ. Do not run the executable from an artifact that faile
 3. Enter the Telegram destination chat ID. Send `/start` to the bot first for a direct chat, or add the bot to the target group/channel.
 4. Create a Telegram bot credential in the appliance UI. Do not send the token through chat, email, screenshots, issues, or diagnostics.
 5. Select **Test Telegram** and require `Valid`. This checks the bot token and chat access without sending a message.
-6. Complete setup, then run the managed workflow once with non-production sample data.
+6. Complete setup, then run the DailyOps report once with non-production sample data.
 7. Keep the page open while `Running...` is displayed. Status and recent executions update automatically.
-8. Confirm `SUCCESS` and exactly one Telegram message before using the workflow again.
+8. Confirm `SUCCESS` and exactly one Telegram message before running the report again.
 
 Changing the source URL or chat ID returns the related test to `Not tested`. Setup completion repeats both checks against the saved current values. A second Run request while DailyOps is active reports `already_running`; wait for the current execution to finish rather than clicking again.
 

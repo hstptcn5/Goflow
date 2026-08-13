@@ -275,6 +275,10 @@ describe('appliance UI', () => {
     const { root } = await mountWithApp(ApplianceApp, { props: { bootstrap } });
     await nextFrame();
 
+    expect(root.querySelector('.run-panel textarea')).toBeNull();
+    expect(root.textContent).not.toContain('Run input');
+    expect(root.textContent).toContain('DailyOps report');
+
     root.querySelector('.run-panel button[type="submit"]').click();
     await nextFrame();
     await nextFrame();
@@ -438,7 +442,7 @@ describe('appliance UI', () => {
     root.querySelector('.run-panel button[type="submit"]').click();
     await nextFrame();
     await nextFrame();
-    expect(root.textContent).toContain('A workflow run is already in progress');
+    expect(root.textContent).toContain('A report run is already in progress');
     expect(root.textContent).not.toContain('Appliance request failed');
     unmount();
   });

@@ -493,7 +493,7 @@ the Phase 3 trust branch, unmerged, and not ready.
 
 ## Phase 5: Productization Beta Candidate
 
-Status: Checkpoint K in progress
+Status: Checkpoint K complete; Checkpoint L in progress
 
 Branch: `feature/goflow-productization-beta`
 
@@ -502,13 +502,27 @@ Stack base: exact Phase 4 closure head
 
 ### Checkpoint K: DailyOps Beta Journey
 
-Status: IN_PROGRESS
+Status: DONE
 
 - The beta acceptance matrix binds the nontechnical Windows journey to exact
   artifact, setup, execution, restart, upgrade, diagnostics, operations, and
   clean-checkout evidence.
+- The appliance primary path now says DailyOps report, accepts no editable JSON
+  run input, and keeps the advanced workflow editor as a secondary link.
+- The real backend/built-UI journey proves one manual report, two scheduled
+  reports, duplicate admission rejected with HTTP 409, redacted diagnostics
+  download, persisted restart, and no unsolicited restart calls.
+- Exact loopback evidence: source 7 total (5 DailyOps JSON, 1 HTML rejection,
+  1 missing-path rejection), Telegram `getMe=4`, `getChat=3`, `sendMessage=3`,
+  and zero unexpected requests.
+- UI unit tests: 60/60 PASS; production build, scoped appliance Playwright,
+  two-phase DailyOps E2E, and E2E runner occupied-port smoke: PASS.
 - Manual pilot, vendor access, production signing, and release are external
   gates and cannot be inferred from automated loopback acceptance.
+
+### Checkpoint L: Final Acceptance Suite
+
+Status: IN_PROGRESS
 
 ## Remaining Checkpoints
 
@@ -523,6 +537,6 @@ Status: IN_PROGRESS
 | H: Authenticity/signing foundation | DONE |
 | I: Adapter architecture | DONE |
 | J: Vendor selection dossier | DONE_DECISION_REQUIRED |
-| K: DailyOps Beta journey | IN_PROGRESS |
-| L: Final acceptance suite | NOT_STARTED |
+| K: DailyOps Beta journey | DONE |
+| L: Final acceptance suite | IN_PROGRESS |
 | M: Pilot operations package | NOT_STARTED |

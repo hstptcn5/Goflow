@@ -47,19 +47,24 @@ try {
   if (exitCode !== 0) throw new Error('DailyOps setup Playwright phase failed');
   await killTree(harness.child);
 
-  assertSourceCalls(sourceServer, { count: 5, dailyops: 3, html: 1, missing: 1 });
-  assertTelegramCalls(telegramServer, { getMe: 4, getChat: 3, sendMessage: 1 });
-
-  harness = await startHarness();
-  assertSourceCalls(sourceServer, { count: 5, dailyops: 3, html: 1, missing: 1 });
-  assertTelegramCalls(telegramServer, { getMe: 4, getChat: 3, sendMessage: 1 });
-  exitCode = await runPlaywright('persist', harness.baseURL, harness.controlURL);
-  if (exitCode !== 0) throw new Error('DailyOps persistence Playwright phase failed');
   assertSourceCalls(sourceServer, { count: 6, dailyops: 4, html: 1, missing: 1 });
   assertTelegramCalls(telegramServer, { getMe: 4, getChat: 3, sendMessage: 2 });
 
+  harness = await startHarness();
+  assertSourceCalls(sourceServer, { count: 6, dailyops: 4, html: 1, missing: 1 });
+  assertTelegramCalls(telegramServer, { getMe: 4, getChat: 3, sendMessage: 2 });
+  exitCode = await runPlaywright('persist', harness.baseURL, harness.controlURL);
+  if (exitCode !== 0) throw new Error('DailyOps persistence Playwright phase failed');
+  assertSourceCalls(sourceServer, { count: 7, dailyops: 5, html: 1, missing: 1 });
+  assertTelegramCalls(telegramServer, { getMe: 4, getChat: 3, sendMessage: 3 });
+
   await scanForForbiddenRuntimeData();
   ensureLogsDoNotExposeSecret();
+  console.log('DAILYOPS_BETA_JOURNEY PASS');
+  console.log('source_total=7 dailyops=5 html=1 missing=1 unexpected=0');
+  console.log('telegram_getMe=4 getChat=3 sendMessage=3 unexpected=0');
+  console.log('reports=manual-1 scheduled-2 duplicate_rejected=409 restart_unsolicited=0');
+  console.log('diagnostics=downloaded-redacted');
   exitCode = 0;
 } catch (err) {
   console.error(String(err.message || err));

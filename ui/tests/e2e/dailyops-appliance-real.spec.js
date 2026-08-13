@@ -33,7 +33,7 @@ async function waitForNewSuccess(page, previousExecutions) {
     const succeeded = executions.find((execution) => !previousIDs.has(execution.id) && execution.status === 'SUCCESS');
     if (succeeded) {
       await page.reload();
-      await expect(page.getByRole('heading', { name: 'Managed workflow' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'DailyOps report' })).toBeVisible();
       await expect(page.getByLabel('Latest execution').getByText('SUCCESS')).toBeVisible();
       return succeeded;
     }
@@ -96,11 +96,20 @@ test('DailyOps appliance completes real setup and execution with mocked Telegram
   await page.getByLabel('Timezone').fill('Asia/Bangkok');
   await page.getByRole('button', { name: 'Complete setup' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Managed workflow' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'DailyOps report' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Daily schedule' })).toBeVisible();
   await expect(page.getByText('Enabled', { exact: true })).toBeVisible();
   await expect(page.getByText('Asia/Bangkok', { exact: true })).toBeVisible();
-  const previousExecutions = await executionSnapshot(page);
+  expect(await page.getByText('Run input').count()).toBe(0);
+  const beforeManual = await executionSnapshot(page);
+  await page.getByRole('button', { name: 'Run now' }).click();
+  const manual = await waitForNewSuccess(page, beforeManual);
+  expect(manual.trigger_source).toBe('ui');
+  const afterManual = await executionSnapshot(page);
+  const beforeManualIDs = new Set(beforeManual.map((item) => item.id));
+  expect(afterManual.filter((execution) => !beforeManualIDs.has(execution.id))).toHaveLength(1);
+
+  const previousExecutions = afterManual;
   const bootstrapResponse = await page.request.get('/api/appliance/bootstrap');
   const bootstrap = await bootstrapResponse.json();
   await controlPost(page, sourceControlURL, '/__control/hold');
@@ -131,6 +140,19 @@ test('DailyOps appliance completes real setup and execution with mocked Telegram
   await page.getByRole('button', { name: 'Refresh' }).click();
   await expect(page.getByText('"secrets_hidden": true')).toBeVisible();
   await expect(page.getByText('"credential_ids_hidden": true')).toBeVisible();
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Download diagnostics' }).click(),
+  ]);
+  expect(download.suggestedFilename()).toContain('diagnostics.json');
+  const stream = await download.createReadStream();
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  const exportedDiagnostics = Buffer.concat(chunks).toString('utf8');
+  expect(exportedDiagnostics).toContain('"secrets_hidden": true');
+  expect(exportedDiagnostics).not.toContain(tokenParts[1]);
+  expect(exportedDiagnostics).not.toContain(sourceURL);
+  expect(exportedDiagnostics).not.toContain(scheduleControlURL);
   await expectNoSecret(page);
 });
 
@@ -140,7 +162,7 @@ test('DailyOps appliance restart preserves setup without exposing decrypted secr
 
   await page.goto('/workflows');
   await expect(page.getByRole('heading', { name: 'DailyOps REST to Telegram' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Managed workflow' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'DailyOps report' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Reconfigure' })).toBeVisible();
   await expect(page.getByLabel('Latest execution').getByText('SUCCESS')).toBeVisible();
   await expect(page.getByLabel('Recent executions').getByText('SUCCESS').first()).toBeVisible();
