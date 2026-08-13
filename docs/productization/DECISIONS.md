@@ -240,3 +240,20 @@ file. Only the manifest, entry workflow, and explicitly declared assets/plugins
 are shipped; the verifier rejects extra, missing, duplicate, or modified archive
 members. Author documentation and offline fixtures are source inputs, not
 runtime assets, unless intentionally declared as an asset.
+
+## ADR-007: Offline Ed25519 Pack Signing Foundation
+
+Status: Accepted for consistency testing before implementation
+
+Use standard-library Ed25519 over the deterministic binary payload specified in
+`PACK_SIGNING.md`. Bind exact `PACK_INFO.json` bytes plus Pack ID, version,
+target, required capabilities, algorithm, schema, and operator-selected key ID.
+Store one strict root `PACK_SIGNATURE.json` outside `PACK_INFO.files` to avoid a
+self-signing cycle. Verification checks inventory first and accepts trust only
+from an explicit public key/key ID supplied by the operator.
+
+Do not add certificates, a registry, remote key lookup, trust-on-first-use,
+automatic trust-store mutation, downgrade acceptance, production keys, signing
+claims, or release publishing. If canonical payload, container, trust input, or
+failure semantics cannot be proven by the complete H matrix, record
+`BLOCKED_SECURITY_REVIEW` and ship only the specification.

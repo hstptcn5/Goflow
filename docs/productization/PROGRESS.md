@@ -334,7 +334,7 @@ Verification:
 
 ## Phase 3: Trust And Pack Author Platform
 
-Status: Checkpoint G complete; Checkpoint H pending
+Status: Checkpoint G complete; Checkpoint H in progress
 
 Branch: `feature/goflow-productization-trust`
 
@@ -381,6 +381,21 @@ Implementation and verification:
 - GitHub Actions run `31726801228`: SUCCESS, including race/security,
   frontend, Pack contracts, Playwright, build matrix, and native Windows gate.
 
+### Checkpoint H: Authenticity And Signing Foundation
+
+Status: IN_PROGRESS
+
+Design-first evidence:
+
+- `PACK_SIGNING.md` defines strict container bounds, deterministic canonical
+  bytes, Ed25519 algorithm agility boundary, key ID semantics, exact identity/
+  target/capability binding, verification order, and unsigned policy.
+- ADR-007 requires explicit operator trust and forbids embedded/downloaded/TOFU
+  keys, production credentials, registry/release behavior, and automatic
+  downgrade acceptance.
+- Threat model covers modified/malicious/stolen/revoked/replayed/unsigned inputs
+  and separates valid signatures from publisher governance.
+
 ## Remaining Checkpoints
 
 | Checkpoint | State |
@@ -391,7 +406,7 @@ Implementation and verification:
 | E: Diagnostics, retention, local metrics | DONE |
 | F: Windows experience and offline update | DONE |
 | G: Pack author compatibility toolkit | DONE |
-| H: Authenticity/signing foundation | NOT_STARTED |
+| H: Authenticity/signing foundation | IN_PROGRESS |
 | I: Adapter architecture | NOT_STARTED |
 | J: Vendor selection dossier | NOT_STARTED |
 | K: DailyOps Beta journey | NOT_STARTED |

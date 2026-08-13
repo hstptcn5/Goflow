@@ -189,6 +189,32 @@ Evidence required: table-driven capability/fixture failures, symlink and path
 containment tests, secret canaries, deterministic repeated offline preparation,
 and missing/extra/duplicate/tampered bundle tests.
 
+### Pack Publisher Authenticity
+
+Threats: modified archives; a malicious publisher; stolen private key; stale
+or revoked key; key-ID collision; replayed metadata; downgrade to an older
+signed Pack; an unsigned legacy Pack treated as trusted; trust-on-first-use;
+signature metadata bombs, duplicates, symlinks, target swaps, or circular
+inventory; and private/public key material leaking into logs or artifacts.
+
+Controls: the v1 spec in `PACK_SIGNING.md`; standard-library Ed25519; one strict
+bounded root signature member outside self-inventory; deterministic binary
+canonical payload binding exact `PACK_INFO` bytes, Pack/version/target, and
+capabilities; inventory verification before authenticity; explicit trusted
+public key plus matching key ID; no embedded/downloaded/TOFU key; no automatic
+downgrade; private key accepted only from an explicit local file or stdin and
+never printed or copied; unsigned execution remains visibly development-only.
+
+Residual risk: a valid signature cannot prove a publisher is benign, a key has
+not been stolen, or an older signed version is acceptable. Rotation, revocation,
+certificate identity, release transparency, and minimum-version policy require
+production trust governance and remain out of scope.
+
+Evidence required: valid signature; changed manifest/workflow/asset/runtime/
+inventory; wrong key/ID; unknown schema/algorithm; duplicate/oversized metadata;
+path/symlink tricks; target/version/capability mismatch; unsigned policy; key
+canary scans; and equal canonical payload for equal metadata.
+
 ## Residual Risk
 
 The scheduler can prevent duplicate admission inside the local appliance but
