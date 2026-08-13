@@ -560,15 +560,19 @@ Local candidate evidence:
   backend formatting/test/race/vet/vulnerability, frontend, Playwright and
   DailyOps, Pack contract/determinism/leakage, all five target builds, and the
   native Windows artifact gate.
-- Verified implementation closure head
-  `3af783c8c832c60fa5f39c89d1c71ff8d512dea8`
-  passed GitHub Actions run `31737427875`, including the native Windows gate.
-- Final CI artifact `UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64` has
-  outer digest
-  `sha256:43261fc5afeda8f24a14bc1eac7fcdd20eeaf326ec72d660efd192e60276ca13`
-  and expiry `2026-11-11`. Deterministic bundle SHA-256 is
-  `22848853e84d644b2fe52cf9e6d5b47fac9c413eb138e4b93233c5ac5b0eb529`;
-  no installer was implemented.
+- Exact-head artifact policy commit
+  `8b7977554566e5e8f691f0526a85511f6c566c82` makes every CI job checkout and
+  assert the PR head SHA rather than GitHub's synthetic pull-request merge SHA.
+  GitHub Actions run `31739631227`: SUCCESS, including the native Windows gate.
+- The resulting `UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64` artifact
+  has outer digest
+  `sha256:95eef9fd3604d5d4d04f3583c9c518c67eeeb08558a0449fa2bde74729920e47`
+  and expiry `2026-11-11`. Direct download verification proved marker commit
+  `8b7977554566e5e8f691f0526a85511f6c566c82`, target `windows-amd64`, bundle
+  SHA-256 `91e2ab07e9b7d7716fd5d9b80a1e6fc6eebea8fea98388f69e72146813f456a1`,
+  checksum inventory SHA-256
+  `e0d3f23d29a9c3a6bd6c719d056626af4d199d6e93c12a78b7a812929c7cb314`,
+  and no forbidden runtime-state files. No installer was implemented.
 
 ### Checkpoint M: Pilot Operations Package
 
