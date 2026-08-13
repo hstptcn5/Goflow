@@ -1,6 +1,6 @@
 # Goflow Productization Plan
 
-Status: Phase 1 complete; Phase 2 Checkpoint D in progress
+Status: Phases 1-2 complete; Phase 3 Checkpoint G in progress
 
 This plan turns the ecosystem alpha into a local-first Productization Beta
 Candidate through five stacked draft pull requests. It does not authorize a
@@ -99,3 +99,14 @@ Each checkpoint records its commit and verification in `PROGRESS.md`. Each phase
 requires full local and clean-checkout acceptance appropriate to its scope, a
 green GitHub Actions run on the exact pushed head, and a draft unmerged PR before
 the next phase starts.
+
+## Checkpoint G Author Contract Test Matrix
+
+| Area | Positive cases | Negative cases | Evidence |
+| --- | --- | --- | --- |
+| Compatibility | omitted declaration for legacy v1; known required capabilities; supported target | unknown/duplicate/oversized capability; unsupported target | Pack validator tables |
+| Offline fixture | scaffold fixture; bounded config overrides; fake credential slots; repeated deterministic prepare | unknown/missing key; wrong type; secret-like value; path escape/symlink/oversize | fixture parser and CLI tests |
+| Setup contract | config, credentials, bindings, response contract | duplicate target/source errors with exact JSON-style locations | Pack unit tests |
+| Schedule/migration | host-managed capabilities declared when required | executable migration or raw appliance cron declaration remains unsupported | contract and documentation tests |
+| Build inventory | runtime, manifest, workflow, declared assets/plugins exactly inventoried | missing/extra/duplicate/tampered archive member | bundle tests |
+| Clean author flow | init, validate, offline test, build, verify | internet access is unnecessary and connection tests are skipped | clean-checkout CLI acceptance |

@@ -215,3 +215,28 @@ Reconsider an installer only after a security review chooses and pins the exact
 toolchain, CI verifies deterministic inputs and uninstall behavior, and a
 production code-signing process exists. Until then, no MSI, MSIX, setup EXE,
 auto-update channel, or installer claim is permitted.
+
+## ADR-006: Capability-Based Pack Author Compatibility
+
+Status: Accepted for Checkpoint G implementation
+
+Pack Format v1 gains optional `required_capabilities` and an optional
+author-only `offline_test_fixture`. Omission preserves existing v1 behavior.
+Capabilities use a versioned closed allowlist maintained by the runtime;
+unknown, duplicate, malformed, or unavailable capabilities fail during Pack
+validation with a precise manifest location. Platform compatibility continues
+to use the existing explicit target list. Runtime min/max version guessing is
+not added because the actual behavior boundary is the capability set.
+
+The offline fixture is bounded JSON containing non-secret config values and
+logical fake credential slots. It is validated, used only by `pack test`, and
+never included in a built appliance. It cannot declare commands, scripts,
+network endpoints to contact, schedule triggers, migration code, or credential
+material. Connection checks remain skipped offline. Host-managed schedule and
+migration behavior are represented by capabilities, not executable Pack hooks.
+
+Bundle inventory remains authoritative over every shipped runtime and Pack
+file. Only the manifest, entry workflow, and explicitly declared assets/plugins
+are shipped; the verifier rejects extra, missing, duplicate, or modified archive
+members. Author documentation and offline fixtures are source inputs, not
+runtime assets, unless intentionally declared as an asset.

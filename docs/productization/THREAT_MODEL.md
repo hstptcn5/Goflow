@@ -172,6 +172,23 @@ tamper rejection before mutation, health-failure compensation, preserved
 external sentinel/state, retained rollback directories, PE/inventory checks,
 restart/migration/revalidation, and artifact-wide leakage scans.
 
+### Pack Author Compatibility Inputs
+
+Threat: a Pack claims unsupported runtime behavior, hides executable migration
+or schedule hooks in author metadata, uses an offline fixture to smuggle secret
+material or a path escape, or ships files that are not covered by inventory.
+
+Controls: closed and bounded capability declarations; strict known-field
+validation with legacy omission compatibility; host-managed schedule/migration
+only; bounded regular-file fixture contained under the Pack root; non-secret
+fixture values and fake logical credential slots; no network execution during
+`pack test`; and exact archive inventory over runtime plus every shipped Pack
+file. Unknown capability and malformed future metadata fail closed.
+
+Evidence required: table-driven capability/fixture failures, symlink and path
+containment tests, secret canaries, deterministic repeated offline preparation,
+and missing/extra/duplicate/tampered bundle tests.
+
 ## Residual Risk
 
 The scheduler can prevent duplicate admission inside the local appliance but

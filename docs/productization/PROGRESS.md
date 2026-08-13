@@ -332,6 +332,33 @@ Verification:
   documented unsigned Windows install and offline upgrade on a real pilot
   machine. This is not represented as an automated PASS.
 
+## Phase 3: Trust And Pack Author Platform
+
+Status: Checkpoint G in progress
+
+Branch: `feature/goflow-productization-trust`
+
+Stack base: exact Phase 2 closure head
+`9739aed00a96dacf0e6c3989bd1ce6ab212a3fb8`, whose GitHub Actions run
+`31724659808` completed successfully.
+
+### Checkpoint G: Pack Author Compatibility Toolkit
+
+Status: IN_PROGRESS
+
+Design decision:
+
+- ADR-006 preserves legacy Pack Format v1 by making capability and offline
+  fixture declarations optional.
+- Runtime compatibility uses a closed capability allowlist instead of brittle
+  runtime version inference; unknown capability fails closed.
+- Offline fixtures remain bounded, non-secret author inputs and are excluded
+  from built appliance artifacts.
+- Schedule and migration remain host-managed; no Pack executable hook is added.
+
+Planned verification follows the author contract matrix in `PLAN.md` and the
+new Pack author compatibility threat in `THREAT_MODEL.md`.
+
 ## Remaining Checkpoints
 
 | Checkpoint | State |
