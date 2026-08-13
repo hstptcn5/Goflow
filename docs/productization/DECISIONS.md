@@ -43,6 +43,7 @@ The planned SQLite table has at most one row per managed workflow:
 | `workflow_id` | non-empty text, workflow FK, primary key | Stable managed workflow identity |
 | `pack_id` | text, 1-200 characters | Prevents cross-Pack reuse |
 | `schema_version` | integer, exactly `1` | Schedule row schema |
+| `revision` | positive integer | Optimistic concurrency for config/status writes |
 | `enabled` | boolean | Explicit user choice; defaults false |
 | `kind` | enum `daily` | No raw cron |
 | `local_time` | canonical `HH:MM` | Wall-clock target |
@@ -86,6 +87,9 @@ not contain credentials, source responses, or local paths.
 - A backward system-clock jump cannot clear `last_scheduled_for` or make an
   already admitted instant eligible again.
 - A forward jump skips elapsed periods and selects the next future occurrence.
+- A due instant has a one-minute admission grace so a short scheduling or
+  restart delay can reconcile it. Anything older follows `skip` and advances to
+  a future period without execution.
 - Timezone database behavior is supplied by Go's `time.LoadLocation`; tests use
   stable named zones with known transitions.
 

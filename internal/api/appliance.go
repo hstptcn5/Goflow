@@ -639,6 +639,28 @@ func applianceReadiness(appliance *ApplianceContext, resolver packsetup.Credenti
 	return "READY", missing, completed
 }
 
+// ApplianceScheduleReadiness exposes only the bounded readiness category needed
+// by the managed scheduler. It never returns setup values or storage errors.
+func ApplianceScheduleReadiness(appliance *ApplianceContext, credStore *storage.CredentialStore) (bool, string) {
+	if appliance == nil || !appliance.Enabled {
+		return false, "setup_incomplete"
+	}
+	if len(applianceMissingRequirements(appliance, applianceCredentialResolver(credStore))) > 0 {
+		return false, "setup_incomplete"
+	}
+	state, err := packsetup.LoadState(appliance.DataDir, applianceManifest(appliance))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, "setup_incomplete"
+		}
+		return false, "revalidation_required"
+	}
+	if !state.Completed {
+		return false, "setup_incomplete"
+	}
+	return true, ""
+}
+
 func applianceRuntimeState(appliance *ApplianceContext, wfStore *storage.WorkflowStore, execStore *storage.ExecutionStore, resolver packsetup.CredentialResolver) (string, []string, bool) {
 	state, missing, completed := applianceReadiness(appliance, resolver)
 	if state != "READY" {

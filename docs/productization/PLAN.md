@@ -1,6 +1,6 @@
 # Goflow Productization Plan
 
-Status: Checkpoint A in progress
+Status: Checkpoint B in progress
 
 This plan turns the ecosystem alpha into a local-first Productization Beta
 Candidate through five stacked draft pull requests. It does not authorize a

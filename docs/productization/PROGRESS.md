@@ -85,11 +85,48 @@ Known limitations:
 
 Manual/external gates: none for Checkpoint A.
 
+## Checkpoint B: Scheduler Backend MVP
+
+Status: IN_PROGRESS
+
+Branch and draft PR remain the Phase 1 branch and PR #15.
+
+Implementation decisions:
+
+- Add transactional SQLite migration `0005_workflow_schedules` with one row per
+  managed workflow and optimistic `revision` updates.
+- Keep a closed daily/IANA/skip schema and fail corrupt or future rows closed.
+- Add a deterministic calendar calculator with explicit DST gap/fold behavior.
+- Use a one-minute due grace; older missed periods skip to the next future run.
+- Call `TriggerService` with a digest-based scheduled-instant idempotency key;
+  only advance schedule metadata after execution admission.
+- Start the managed scheduler only in appliance `serverapp`; secondary Pack Run
+  launches continue to reuse the primary process.
+
+Primary files:
+
+- `internal/storage/schema.go`
+- `internal/storage/workflow_schedule_store.go`
+- `internal/scheduler/calculator.go`
+- `internal/scheduler/service.go`
+- `internal/application/trigger_service.go`
+- `internal/api/appliance.go`
+- `internal/serverapp/serverapp.go`
+
+Verification in progress:
+
+- Scoped storage/scheduler/application/API/serverapp/Pack Run tests: PASS.
+- `go test -count=1 ./...`: PASS.
+- Local race test remains unavailable on this host; GitHub Actions race is the
+  required gate.
+
+Checkpoint commit and final CI: pending.
+
 ## Remaining Checkpoints
 
 | Checkpoint | State |
 | --- | --- |
-| B: Scheduler backend MVP | NOT_STARTED |
+| B: Scheduler backend MVP | IN_PROGRESS |
 | C: Scheduler appliance UX and DailyOps | NOT_STARTED |
 | D: Versioned Pack setup migration | NOT_STARTED |
 | E: Diagnostics, retention, local metrics | NOT_STARTED |
