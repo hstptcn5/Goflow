@@ -92,6 +92,37 @@ func TestWorkflowScheduleStoreEnableDisableKeepsOneRow(t *testing.T) {
 	}
 }
 
+func TestWorkflowScheduleStoreConfigureUsesOptimisticRevision(t *testing.T) {
+	db := scheduleTestDB(t)
+	store := NewWorkflowScheduleStore(db)
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	schedule := validWorkflowSchedule(now.Add(time.Hour))
+	if err := store.Configure(schedule, 0, now); err != nil {
+		t.Fatalf("initial Configure failed: %v", err)
+	}
+	if err := store.Configure(schedule, 0, now.Add(time.Minute)); !errors.Is(err, ErrWorkflowScheduleConflict) {
+		t.Fatalf("duplicate create error = %v, want revision conflict", err)
+	}
+	loaded, err := store.GetByWorkflow(schedule.WorkflowID)
+	if err != nil {
+		t.Fatalf("GetByWorkflow failed: %v", err)
+	}
+	loaded.LocalTime = "18:45"
+	if err := store.Configure(loaded, loaded.Revision, now.Add(time.Minute)); err != nil {
+		t.Fatalf("revision update failed: %v", err)
+	}
+	if err := store.Configure(loaded, loaded.Revision, now.Add(2*time.Minute)); !errors.Is(err, ErrWorkflowScheduleConflict) {
+		t.Fatalf("stale update error = %v, want revision conflict", err)
+	}
+	updated, err := store.GetByWorkflow(schedule.WorkflowID)
+	if err != nil {
+		t.Fatalf("GetByWorkflow after update failed: %v", err)
+	}
+	if updated.Revision != 2 || updated.LocalTime != "18:45" {
+		t.Fatalf("updated schedule = %+v", updated)
+	}
+}
+
 func TestWorkflowScheduleStoreRejectsCrossPackOverwriteAndCorruptState(t *testing.T) {
 	db := scheduleTestDB(t)
 	store := NewWorkflowScheduleStore(db)

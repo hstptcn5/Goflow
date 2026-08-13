@@ -3,6 +3,8 @@ import { expect, test } from '@playwright/test';
 const sourceURL = process.env.GOFLOW_DAILYOPS_SOURCE_URL;
 const chatID = process.env.GOFLOW_DAILYOPS_CHAT_ID || '@dailyops_e2e';
 const tokenParts = (process.env.GOFLOW_DAILYOPS_TOKEN_PARTS || '').split('|');
+const scheduleControlURL = process.env.GOFLOW_DAILYOPS_SCHEDULE_CONTROL_URL;
+const sourceControlURL = process.env.GOFLOW_DAILYOPS_SOURCE_CONTROL_URL;
 const phase = process.env.GOFLOW_DAILYOPS_PHASE || 'setup';
 const hasHarness = Boolean(sourceURL && process.env.GOFLOW_DAILYOPS_TOKEN_PARTS);
 
@@ -30,6 +32,7 @@ async function waitForNewSuccess(page, previousExecutions) {
     const executions = await executionSnapshot(page);
     const succeeded = executions.find((execution) => !previousIDs.has(execution.id) && execution.status === 'SUCCESS');
     if (succeeded) {
+      await page.reload();
       await expect(page.getByRole('heading', { name: 'Managed workflow' })).toBeVisible();
       await expect(page.getByLabel('Latest execution').getByText('SUCCESS')).toBeVisible();
       return succeeded;
@@ -37,6 +40,12 @@ async function waitForNewSuccess(page, previousExecutions) {
     await page.waitForTimeout(500);
   }
   throw new Error('A new successful DailyOps execution was not recorded');
+}
+
+async function controlPost(page, baseURL, path, data) {
+  const response = await page.request.post(`${baseURL}${path}`, data === undefined ? {} : { data });
+  expect(response.ok()).toBeTruthy();
+  return response;
 }
 
 test('DailyOps appliance completes real setup and execution with mocked Telegram', async ({ page }) => {
@@ -82,13 +91,23 @@ test('DailyOps appliance completes real setup and execution with mocked Telegram
   await page.getByLabel('Telegram chat ID').fill(chatID);
   await page.getByRole('button', { name: 'Test Telegram' }).click();
   await expect(page.getByText('Bot token is valid and the configured chat is accessible.')).toBeVisible();
+  await page.getByLabel('Enable scheduled report').check();
+  await page.getByLabel('Local daily time').fill('08:05');
+  await page.getByLabel('Timezone').fill('Asia/Bangkok');
   await page.getByRole('button', { name: 'Complete setup' }).click();
 
   await expect(page.getByRole('heading', { name: 'Managed workflow' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Daily schedule' })).toBeVisible();
+  await expect(page.getByText('Enabled', { exact: true })).toBeVisible();
+  await expect(page.getByText('Asia/Bangkok', { exact: true })).toBeVisible();
   const previousExecutions = await executionSnapshot(page);
   const bootstrapResponse = await page.request.get('/api/appliance/bootstrap');
   const bootstrap = await bootstrapResponse.json();
-  const duplicate = page.request.post('/api/appliance/workflow/run', {
+  await controlPost(page, sourceControlURL, '/__control/hold');
+  const tick = await controlPost(page, scheduleControlURL, '/tick', { now: '2026-08-09T01:05:00Z' });
+  const tickBody = await tick.json();
+  expect(tickBody.Triggered).toBe(true);
+  const duplicateResponse = await page.request.post('/api/appliance/workflow/run', {
     headers: {
       Origin: new URL(page.url()).origin,
       'Content-Type': 'application/json',
@@ -96,15 +115,18 @@ test('DailyOps appliance completes real setup and execution with mocked Telegram
     },
     data: { input: {} },
   });
-  await Promise.all([page.getByRole('button', { name: 'Run now' }).click(), duplicate]);
-  const duplicateResponse = await duplicate;
-  expect([202, 409]).toContain(duplicateResponse.status());
-  await expect(page.getByRole('button', { name: 'Running...' })).toBeDisabled();
+  expect(duplicateResponse.status()).toBe(409);
+  expect((await duplicateResponse.json()).category).toBe('already_running');
+  const activeStatus = await page.request.get('/api/appliance/workflow/status');
+  expect(activeStatus.ok()).toBeTruthy();
+  expect((await activeStatus.json()).state).toBe('RUNNING');
+  await controlPost(page, sourceControlURL, '/__control/release');
   const succeeded = await waitForNewSuccess(page, previousExecutions);
   const previousIDs = new Set(previousExecutions.map((execution) => execution.id));
   const newExecutions = (await executionSnapshot(page)).filter((execution) => !previousIDs.has(execution.id));
   expect(newExecutions).toHaveLength(1);
   expect(newExecutions[0].id).toBe(succeeded.id);
+  expect(newExecutions[0].trigger_source).toBe('schedule');
   await expect(page.getByLabel('Recent executions').getByText('SUCCESS').first()).toBeVisible();
   await page.getByRole('button', { name: 'Refresh' }).click();
   await expect(page.getByText('"secrets_hidden": true')).toBeVisible();
@@ -138,9 +160,19 @@ test('DailyOps appliance restart preserves setup without exposing decrypted secr
   expect(JSON.stringify(body)).not.toContain(tokenParts[1]);
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
 
+  const schedule = await page.request.get('/api/appliance/schedule');
+  expect(schedule.ok()).toBeTruthy();
+  const scheduleBody = await schedule.json();
+  expect(scheduleBody.enabled).toBe(true);
+  expect(scheduleBody.local_time).toBe('08:05');
+  expect(scheduleBody.timezone).toBe('Asia/Bangkok');
+  expect(scheduleBody.next_run_at).toBe('2026-08-10T01:05:00Z');
+
   const previousExecutions = await executionSnapshot(page);
-  await page.getByRole('button', { name: 'Run now' }).click();
-  await waitForNewSuccess(page, previousExecutions);
+  const tick = await controlPost(page, scheduleControlURL, '/tick', { now: '2026-08-10T01:05:00Z' });
+  expect((await tick.json()).Triggered).toBe(true);
+  const succeeded = await waitForNewSuccess(page, previousExecutions);
+  expect(succeeded.trigger_source).toBe('schedule');
   await expect(page.getByLabel('Recent executions').getByText('SUCCESS')).toHaveCount(previousExecutions.length + 1);
   await expectNoSecret(page);
 });

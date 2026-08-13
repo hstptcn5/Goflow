@@ -90,8 +90,9 @@ not contain credentials, source responses, or local paths.
 - A due instant has a one-minute admission grace so a short scheduling or
   restart delay can reconcile it. Anything older follows `skip` and advances to
   a future period without execution.
-- Timezone database behavior is supplied by Go's `time.LoadLocation`; tests use
-  stable named zones with known transitions.
+- Timezone database behavior is supplied by Go's `time.LoadLocation`. The
+  IANA database is embedded with `time/tzdata` so a portable Windows appliance
+  does not depend on a Go installation or host zoneinfo files.
 
 ### Persistence Order
 
@@ -113,6 +114,22 @@ has elapsed; the service never marks it delivered in advance.
   and lifecycle injection, but no new execution engine.
 - Cross-process correctness relies on Pack Run's existing primary lock plus the
   database idempotency uniqueness constraint, not an in-memory check alone.
+
+### Appliance API And Test Control
+
+- The appliance exposes one bounded schedule resource: GET/PUT with
+  `enabled`, `local_time`, `timezone`, and optimistic `revision`.
+- The response may include next/last instants and a redacted last execution
+  summary. It never includes credentials, setup values, idempotency keys, or
+  internal storage errors.
+- A changed Pack configuration reopens setup and blocks scheduled admission
+  until revalidation. Existing encrypted credential bindings remain assigned.
+- Deterministic E2E control is injected only through Go interfaces and the
+  `internal/testharness` binary. It is not a production CLI flag, environment
+  variable, manifest field, HTTP route, or persisted value.
+- DailyOps remains Pack version `0.2.0`: this checkpoint changes the appliance
+  runtime and UI, not the Pack manifest/workflow contract. Therefore no Pack
+  setup migration is required in Checkpoint C.
 
 ## ADR-002: No Installer Decision In Phase 1
 

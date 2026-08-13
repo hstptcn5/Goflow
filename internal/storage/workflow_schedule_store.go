@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	_ "time/tzdata"
 )
 
 const (
@@ -35,6 +36,7 @@ var scheduleLocalTimePattern = regexp.MustCompile(`^(?:[01][0-9]|2[0-3]):[0-5][0
 
 var ErrWorkflowScheduleNotFound = errors.New("workflow schedule not found")
 var ErrInvalidWorkflowSchedule = errors.New("invalid workflow schedule")
+var ErrWorkflowScheduleConflict = errors.New("workflow schedule revision conflict")
 
 type WorkflowSchedule struct {
 	WorkflowID       string     `json:"workflow_id"`
@@ -177,6 +179,67 @@ func (s *WorkflowScheduleStore) Upsert(schedule *WorkflowSchedule, now time.Time
 	}
 	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
 		return fmt.Errorf("save workflow schedule: pack_id ownership mismatch")
+	}
+	return nil
+}
+
+// Configure creates or replaces user-controlled schedule configuration with an
+// optimistic revision check. Runtime metadata is supplied by the caller so a
+// time or timezone change can preserve the last result while recalculating the
+// next eligible instant.
+func (s *WorkflowScheduleStore) Configure(schedule *WorkflowSchedule, expectedRevision int64, now time.Time) error {
+	if err := ValidateWorkflowSchedule(schedule); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidWorkflowSchedule, err)
+	}
+	if expectedRevision < 0 {
+		return fmt.Errorf("expected schedule revision must not be negative")
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	now = now.UTC()
+	var (
+		result sql.Result
+		err    error
+	)
+	if expectedRevision == 0 {
+		result, err = s.db.WriteDB.Exec(`
+			INSERT INTO workflow_schedules (
+				workflow_id, pack_id, schema_version, revision, enabled, kind,
+				local_time, timezone, missed_run_policy, last_scheduled_for,
+				next_run_at, last_execution_id, state, error_category,
+				created_at, updated_at
+			) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(workflow_id) DO NOTHING
+		`, schedule.WorkflowID, schedule.PackID, schedule.SchemaVersion,
+			boolInt(schedule.Enabled), schedule.Kind, schedule.LocalTime, schedule.Timezone,
+			schedule.MissedRunPolicy, schedule.LastScheduledFor, schedule.NextRunAt,
+			nullableString(schedule.LastExecutionID), schedule.State,
+			nullableString(schedule.ErrorCategory), now, now)
+	} else {
+		result, err = s.db.WriteDB.Exec(`
+			UPDATE workflow_schedules
+			SET enabled = ?, kind = ?, local_time = ?, timezone = ?,
+				missed_run_policy = ?, last_scheduled_for = ?, next_run_at = ?,
+				last_execution_id = ?, state = ?, error_category = ?,
+				revision = revision + 1,
+				updated_at = CASE WHEN ? > updated_at THEN ? ELSE updated_at END
+			WHERE workflow_id = ? AND pack_id = ? AND revision = ?
+		`, boolInt(schedule.Enabled), schedule.Kind, schedule.LocalTime,
+			schedule.Timezone, schedule.MissedRunPolicy, schedule.LastScheduledFor,
+			schedule.NextRunAt, nullableString(schedule.LastExecutionID),
+			schedule.State, nullableString(schedule.ErrorCategory), now, now,
+			schedule.WorkflowID, schedule.PackID, expectedRevision)
+	}
+	if err != nil {
+		return fmt.Errorf("configure workflow schedule: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("configure workflow schedule: %w", err)
+	}
+	if affected != 1 {
+		return ErrWorkflowScheduleConflict
 	}
 	return nil
 }

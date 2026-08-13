@@ -23,6 +23,15 @@ function applianceFetch(overrides = {}) {
     credentialAssigned: false,
     completed: false,
     runStarted: false,
+    schedule: {
+      configured: false,
+      revision: 0,
+      enabled: false,
+      kind: 'daily',
+      local_time: '09:00',
+      timezone: 'UTC',
+      state: 'DISABLED',
+    },
     diagnostics: {
       pack: bootstrap.pack,
       state: 'READY',
@@ -81,6 +90,26 @@ function applianceFetch(overrides = {}) {
         limit: 10,
         executions: state.runStarted ? [{ id: 'exec-1', status: 'SUCCESS', duration_ms: 42, started_at: '2026-08-09T00:00:00Z' }] : [],
       });
+    }
+    if (path === '/api/appliance/schedule' && (!options.method || options.method === 'GET')) {
+      return json(state.schedule);
+    }
+    if (path === '/api/appliance/schedule' && options.method === 'PUT') {
+      const request = JSON.parse(options.body);
+      if (request.expected_revision !== state.schedule.revision) {
+        return json({ category: 'revision_conflict', error: 'The schedule changed in another session.' }, 409);
+      }
+      state.schedule = {
+        ...state.schedule,
+        configured: true,
+        revision: state.schedule.revision + 1,
+        enabled: request.enabled,
+        local_time: request.local_time,
+        timezone: request.timezone,
+        state: request.enabled ? 'OK' : 'DISABLED',
+        next_run_at: request.enabled ? '2026-08-09T01:05:00Z' : null,
+      };
+      return json(state.schedule);
     }
     if (path === '/api/appliance/setup/config' && options.method === 'POST') {
       state.configSaved = true;
@@ -151,6 +180,63 @@ describe('appliance UI', () => {
     expect(root.textContent).toContain('Credential saved');
     expect(root.textContent).not.toContain('secret-canary');
     expect(root.querySelector('input[type="password"]')?.value).toBe('');
+  });
+
+  it('keeps scheduling off by default and saves a local daily schedule', async () => {
+    const fetchMock = applianceFetch({ configSaved: true, credentialAssigned: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const { root } = await mountWithApp(ApplianceApp, { props: { bootstrap } });
+    await nextFrame();
+
+    const enabled = root.querySelector('#schedule-title').closest('form').querySelector('input[type="checkbox"]');
+    expect(enabled.checked).toBe(false);
+    enabled.click();
+    const time = root.querySelector('input[type="time"]');
+    time.value = '08:05';
+    time.dispatchEvent(new Event('input'));
+    const timezone = root.querySelector('input[list="appliance-timezones"]');
+    timezone.value = 'Asia/Bangkok';
+    timezone.dispatchEvent(new Event('input'));
+    root.querySelector('#schedule-title').closest('form').querySelector('button[type="submit"]').click();
+    await nextFrame();
+    await nextFrame();
+
+    const request = fetchMock.mock.calls.find(([url, options]) => String(url) === '/api/appliance/schedule' && options.method === 'PUT');
+    expect(JSON.parse(request[1].body)).toEqual({
+      expected_revision: 0,
+      enabled: true,
+      local_time: '08:05',
+      timezone: 'Asia/Bangkok',
+    });
+    expect(root.textContent).toContain('Schedule saved');
+  });
+
+  it('shows schedule, next run, last scheduled result, and manual state on the dashboard', async () => {
+    vi.stubGlobal('fetch', applianceFetch({
+      configSaved: true,
+      credentialAssigned: true,
+      completed: true,
+      schedule: {
+        configured: true,
+        revision: 3,
+        enabled: true,
+        kind: 'daily',
+        local_time: '08:05',
+        timezone: 'Asia/Bangkok',
+        state: 'OK',
+        next_run_at: '2026-08-10T01:05:00Z',
+        last_scheduled_for: '2026-08-09T01:05:00Z',
+        last_result: { id: 'scheduled-1', status: 'SUCCESS', trigger_source: 'schedule' },
+      },
+    }));
+    const { root } = await mountWithApp(ApplianceApp, { props: { bootstrap } });
+    await nextFrame();
+
+    const scheduleSection = root.querySelector('#schedule-status-title').closest('section');
+    expect(scheduleSection.textContent).toContain('Enabled');
+    expect(scheduleSection.textContent).toContain('Asia/Bangkok');
+    expect(scheduleSection.textContent).toContain('SUCCESS');
+    expect(scheduleSection.textContent).toContain('Ready');
   });
 
   it('runs the workflow and renders latest execution plus redacted diagnostics', async () => {

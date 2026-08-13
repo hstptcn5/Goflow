@@ -71,6 +71,10 @@ export const applianceApi = {
     return request('/diagnostics');
   },
 
+  getSchedule() {
+    return request('/schedule');
+  },
+
   saveConfig(token, values) {
     return request('/setup/config', {
       method: 'POST',
@@ -124,6 +128,14 @@ export const applianceApi = {
       method: 'POST',
       headers: jsonHeaders(token),
       body: JSON.stringify({ input }),
+    });
+  },
+
+  saveSchedule(token, schedule) {
+    return request('/schedule', {
+      method: 'PUT',
+      headers: jsonHeaders(token),
+      body: JSON.stringify(schedule),
     });
   },
 };

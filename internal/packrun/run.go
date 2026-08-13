@@ -28,6 +28,7 @@ import (
 	"goflow/internal/nodes"
 	"goflow/internal/pack"
 	"goflow/internal/packsetup"
+	"goflow/internal/scheduler"
 	"goflow/internal/serverapp"
 	"goflow/internal/storage"
 	"goflow/internal/workflow"
@@ -49,6 +50,8 @@ type Options struct {
 	Registry             *nodes.PluginRegistry
 	TelegramAPIBaseURL   string
 	ConnectionTestClient *http.Client
+	ScheduleClock        scheduler.Clock
+	ScheduleWake         <-chan scheduler.WakeRequest
 }
 
 type State struct {
@@ -153,10 +156,12 @@ func Run(ctx context.Context, opts Options) error {
 		MCPRateLimitPerMinute:     30,
 	}
 	app, err := serverapp.Start(ctx, serverapp.Options{
-		Config:   serverCfg,
-		UIFS:     opts.UIFS,
-		Listener: listener,
-		Registry: opts.Registry,
+		Config:        serverCfg,
+		UIFS:          opts.UIFS,
+		Listener:      listener,
+		Registry:      opts.Registry,
+		ScheduleClock: opts.ScheduleClock,
+		ScheduleWake:  opts.ScheduleWake,
 		Appliance: &api.ApplianceContext{
 			Enabled:                true,
 			Origin:                 origin,

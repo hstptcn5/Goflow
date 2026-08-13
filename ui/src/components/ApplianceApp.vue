@@ -26,12 +26,25 @@ const credentialResults = ref({});
 const runInputText = ref('{}');
 const runError = ref('');
 const sourceResults = ref({});
+const schedule = ref(null);
+const scheduleDraft = ref({ enabled: false, local_time: '09:00', timezone: 'UTC' });
+const scheduleSaving = ref(false);
 let pollTimer = null;
 let pollFailures = 0;
 
 const needsSetup = computed(() => status.value?.state === 'NEEDS_SETUP');
 const latestExecution = computed(() => latest.value?.execution || workflowStatus.value?.latest_execution || null);
 const executionRunning = computed(() => String(latestExecution.value?.status || '').toUpperCase() === 'RUNNING' || workflowStatus.value?.state === 'RUNNING');
+const manualRunState = computed(() => {
+  if (running.value || executionRunning.value) return 'Running';
+  if (latestExecution.value?.trigger_source === 'ui') return latestExecution.value.status || 'Complete';
+  return 'Ready';
+});
+const scheduleError = computed(() => {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(scheduleDraft.value.local_time || '')) return 'Choose a valid daily time';
+  if (!String(scheduleDraft.value.timezone || '').trim()) return 'Timezone is required';
+  return '';
+});
 const canComplete = computed(() => {
   if (setup.value?.can_complete !== true || Object.keys(configErrors.value).length > 0) return false;
   for (const field of setup.value?.config_schema || []) {
@@ -125,18 +138,26 @@ function formatDuration(value) {
 
 async function refresh() {
   error.value = '';
-  const [setupData, statusData, workflowData, latestData, recentData] = await Promise.all([
+  const [setupData, statusData, workflowData, latestData, recentData, scheduleData] = await Promise.all([
     applianceApi.getSetup(),
     applianceApi.getStatus(),
     applianceApi.getWorkflowStatus(),
     applianceApi.getLatestExecution(),
     applianceApi.getRecentExecutions(10),
+    applianceApi.getSchedule(),
   ]);
   setup.value = setupData;
   status.value = statusData;
   workflowStatus.value = workflowData;
   latest.value = latestData;
   recent.value = recentData.executions || [];
+  schedule.value = scheduleData;
+  const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  scheduleDraft.value = {
+    enabled: Boolean(scheduleData.enabled),
+    local_time: scheduleData.local_time || '09:00',
+    timezone: scheduleData.configured ? scheduleData.timezone : browserTimezone,
+  };
   configValues.value = { ...(setupData.current_config_values || {}) };
   for (const req of setupData.credential_requirements || []) {
     if (!credentialDrafts.value[req.key]) credentialDrafts.value[req.key] = { name: req.label || req.key, value: '' };
@@ -144,16 +165,18 @@ async function refresh() {
 }
 
 async function refreshRuntime() {
-  const [statusData, workflowData, latestData, recentData] = await Promise.all([
+  const [statusData, workflowData, latestData, recentData, scheduleData] = await Promise.all([
     applianceApi.getStatus(),
     applianceApi.getWorkflowStatus(),
     applianceApi.getLatestExecution(),
     applianceApi.getRecentExecutions(10),
+    applianceApi.getSchedule(),
   ]);
   status.value = statusData;
   workflowStatus.value = workflowData;
   latest.value = latestData;
   recent.value = recentData.executions || [];
+  schedule.value = scheduleData;
 }
 
 async function load() {
@@ -248,6 +271,7 @@ async function completeSetup() {
   saving.value = true;
   error.value = '';
   try {
+    if (!await saveSchedule(true)) return;
     await applianceApi.completeSetup(token);
     notice.value = 'Setup completed';
     await refresh();
@@ -255,6 +279,36 @@ async function completeSetup() {
     error.value = err.message || 'Setup could not be completed';
   } finally {
     saving.value = false;
+  }
+}
+
+async function saveSchedule(quiet = false) {
+  if (scheduleError.value) return false;
+  scheduleSaving.value = true;
+  error.value = '';
+  try {
+    const saved = await applianceApi.saveSchedule(token, {
+      expected_revision: schedule.value?.revision || 0,
+      enabled: Boolean(scheduleDraft.value.enabled),
+      local_time: scheduleDraft.value.local_time,
+      timezone: String(scheduleDraft.value.timezone || '').trim(),
+    });
+    schedule.value = saved;
+    scheduleDraft.value = {
+      enabled: Boolean(saved.enabled),
+      local_time: saved.local_time,
+      timezone: saved.timezone,
+    };
+    if (!quiet) notice.value = 'Schedule saved';
+    return true;
+  } catch (err) {
+    error.value = err.message || 'Schedule could not be saved';
+    if (err.category === 'revision_conflict') {
+      schedule.value = await applianceApi.getSchedule().catch(() => schedule.value);
+    }
+    return false;
+  } finally {
+    scheduleSaving.value = false;
   }
 }
 
@@ -479,8 +533,42 @@ onBeforeUnmount(stopPolling);
             </article>
           </section>
 
+          <form class="setup-section" aria-labelledby="schedule-title" @submit.prevent="saveSchedule()">
+            <div>
+              <h3 id="schedule-title">Daily report schedule</h3>
+              <p class="field-help">Run this managed report once each day at the local time below. It remains off until enabled.</p>
+            </div>
+            <label class="toggle-row">
+              <input v-model="scheduleDraft.enabled" type="checkbox" />
+              <span>Enable scheduled report</span>
+            </label>
+            <div class="schedule-fields">
+              <label>
+                Local daily time
+                <input v-model="scheduleDraft.local_time" class="form-input" type="time" aria-describedby="schedule-time-help" />
+              </label>
+              <label>
+                Timezone
+                <input v-model="scheduleDraft.timezone" class="form-input" type="text" list="appliance-timezones" autocomplete="off" aria-describedby="schedule-time-help" />
+                <datalist id="appliance-timezones">
+                  <option value="Asia/Bangkok" />
+                  <option value="Asia/Ho_Chi_Minh" />
+                  <option value="Asia/Singapore" />
+                  <option value="Europe/London" />
+                  <option value="America/New_York" />
+                  <option value="UTC" />
+                </datalist>
+              </label>
+            </div>
+            <p id="schedule-time-help" class="field-help">Timezone uses a city-based name so daylight-saving changes are handled correctly.</p>
+            <p v-if="scheduleError" class="field-error" role="alert">{{ scheduleError }}</p>
+            <button class="btn btn-secondary" type="submit" :disabled="scheduleSaving || Boolean(scheduleError)">
+              {{ scheduleSaving ? 'Saving schedule...' : 'Save schedule' }}
+            </button>
+          </form>
+
           <div class="panel-actions">
-            <button class="btn btn-primary" type="button" :disabled="saving || !canComplete || Object.keys(configErrors).length > 0" @click="completeSetup">
+            <button class="btn btn-primary" type="button" :disabled="saving || scheduleSaving || !canComplete || Boolean(scheduleError) || Object.keys(configErrors).length > 0" @click="completeSetup">
               Complete setup
             </button>
             <span v-if="setup?.missing?.length" class="field-help">{{ setup.missing.join(', ') }}</span>
@@ -511,6 +599,18 @@ onBeforeUnmount(stopPolling);
               <strong>{{ workflowStatus?.state || status?.state }}</strong>
             </div>
           </div>
+
+          <section class="execution-summary" aria-labelledby="schedule-status-title">
+            <h3 id="schedule-status-title">Daily schedule</h3>
+            <div class="summary-grid schedule-summary">
+              <div><span>Schedule</span><strong>{{ schedule?.enabled ? 'Enabled' : 'Disabled' }}</strong></div>
+              <div><span>Timezone</span><strong>{{ schedule?.timezone || 'UTC' }}</strong></div>
+              <div><span>Next run</span><strong>{{ schedule?.enabled ? formatDate(schedule?.next_run_at) : 'Not scheduled' }}</strong></div>
+              <div><span>Last scheduled result</span><strong>{{ schedule?.last_result?.status || (schedule?.last_scheduled_for ? schedule?.state : 'Not run yet') }}</strong></div>
+              <div><span>Manual run</span><strong>{{ manualRunState }}</strong></div>
+              <div v-if="schedule?.state === 'NEEDS_ATTENTION'"><span>Schedule state</span><strong>{{ schedule?.error_category || 'Needs attention' }}</strong></div>
+            </div>
+          </section>
 
           <form class="run-panel" @submit.prevent="runNow">
             <label for="run-input">Run input</label>

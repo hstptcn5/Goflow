@@ -83,6 +83,15 @@ type TickResult struct {
 	Deduplicated bool
 }
 
+type WakeRequest struct {
+	Reply chan<- WakeResult
+}
+
+type WakeResult struct {
+	Result TickResult
+	Err    error
+}
+
 func NewService(options Options) (*Service, error) {
 	if options.Store == nil || options.Triggerer == nil {
 		return nil, fmt.Errorf("scheduler store and triggerer are required")
@@ -189,6 +198,13 @@ func (s *Service) Tick(ctx context.Context) (TickResult, error) {
 }
 
 func (s *Service) Run(ctx context.Context, interval time.Duration) {
+	s.RunWithWake(ctx, interval, nil)
+}
+
+// RunWithWake keeps the production ticker behavior while allowing an internal
+// test harness to request and await a deterministic tick. No HTTP, CLI,
+// environment, manifest, or persisted control surface is introduced.
+func (s *Service) RunWithWake(ctx context.Context, interval time.Duration, wake <-chan WakeRequest) {
 	if interval <= 0 {
 		interval = DefaultTickInterval
 	}
@@ -201,6 +217,14 @@ func (s *Service) Run(ctx context.Context, interval time.Duration) {
 			return
 		case <-ticker.C:
 			s.tickAndLog(ctx)
+		case request := <-wake:
+			result, err := s.Tick(ctx)
+			if request.Reply != nil {
+				select {
+				case request.Reply <- WakeResult{Result: result, Err: err}:
+				case <-ctx.Done():
+				}
+			}
 		}
 	}
 }

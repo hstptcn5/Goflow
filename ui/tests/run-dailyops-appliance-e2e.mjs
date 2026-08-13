@@ -42,7 +42,7 @@ let exitCode = 1;
 let harness = null;
 try {
   harness = await startHarness();
-  exitCode = await runPlaywright('setup', harness.baseURL);
+  exitCode = await runPlaywright('setup', harness.baseURL, harness.controlURL);
   if (exitCode !== 0) throw new Error('DailyOps setup Playwright phase failed');
   await killTree(harness.child);
 
@@ -52,7 +52,7 @@ try {
   harness = await startHarness();
   assertSourceCalls(sourceServer, { count: 5, dailyops: 3, html: 1, missing: 1 });
   assertTelegramCalls(telegramServer, { getMe: 4, getChat: 3, sendMessage: 1 });
-  exitCode = await runPlaywright('persist', harness.baseURL);
+  exitCode = await runPlaywright('persist', harness.baseURL, harness.controlURL);
   if (exitCode !== 0) throw new Error('DailyOps persistence Playwright phase failed');
   assertSourceCalls(sourceServer, { count: 6, dailyops: 4, html: 1, missing: 1 });
   assertTelegramCalls(telegramServer, { getMe: 4, getChat: 3, sendMessage: 2 });
@@ -72,12 +72,26 @@ try {
 process.exit(exitCode);
 
 async function startSourceServer() {
-  const state = { count: 0, methods: [], paths: [], unexpected: [] };
-  const server = createHTTPServer((req, res) => {
+  const state = { count: 0, methods: [], paths: [], unexpected: [], holdDailyops: false, releaseDailyops: null };
+  const server = createHTTPServer(async (req, res) => {
+    const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;
+    if (req.method === 'POST' && pathname === '/__control/hold') {
+      state.holdDailyops = true;
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    if (req.method === 'POST' && pathname === '/__control/release') {
+      state.holdDailyops = false;
+      state.releaseDailyops?.();
+      state.releaseDailyops = null;
+      res.writeHead(204);
+      res.end();
+      return;
+    }
     state.count += 1;
     state.methods.push(req.method);
     state.paths.push(req.url);
-    const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;
     if (req.method !== 'GET' || !['/dailyops.json', '/html', '/missing'].includes(pathname)) {
       state.unexpected.push({ method: req.method, path: req.url || '' });
       res.writeHead(404);
@@ -94,18 +108,21 @@ async function startSourceServer() {
       res.end(JSON.stringify({ report_date: '2026-08-09', timezone: 'Asia/Bangkok' }));
       return;
     }
-    setTimeout(() => {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        report_date: '2026-08-09',
-        timezone: 'Asia/Bangkok',
-        revenue: 48250.75,
-        order_count: 314,
-        cancelled_refunded_count: 7,
-        low_stock_summary: '3 SKUs below threshold',
-        comparison_summary: 'Revenue up 12.4% vs prior day',
-      }));
-    }, 250);
+    if (state.holdDailyops) {
+      await new Promise((resolveRelease) => {
+        state.releaseDailyops = resolveRelease;
+      });
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      report_date: '2026-08-09',
+      timezone: 'Asia/Bangkok',
+      revenue: 48250.75,
+      order_count: 314,
+      cancelled_refunded_count: 7,
+      low_stock_summary: '3 SKUs below threshold',
+      comparison_summary: 'Revenue up 12.4% vs prior day',
+    }));
   });
   const listened = await listen(server);
   return { ...listened, state };
@@ -193,17 +210,19 @@ async function startHarness() {
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const baseURLPromise = waitForHarnessURL(child);
+  const harnessURLsPromise = waitForHarnessURLs(child);
   child.stderr.on('data', (chunk) => recordLog(chunk));
-  const baseURL = await baseURLPromise;
+  const { baseURL, controlURL } = await harnessURLsPromise;
   await waitForAppliance(child, baseURL);
-  return { child, baseURL };
+  return { child, baseURL, controlURL };
 }
 
-function waitForHarnessURL(child) {
+function waitForHarnessURLs(child) {
   return new Promise((resolveURL, rejectURL) => {
     let buffer = '';
     let settled = false;
+    let baseURL = '';
+    let controlURL = '';
     const timeout = setTimeout(() => {
       if (!settled) {
         settled = true;
@@ -213,11 +232,12 @@ function waitForHarnessURL(child) {
     child.stdout.on('data', (chunk) => {
       const text = recordLog(chunk);
       buffer += text;
-      const match = buffer.match(/URL:\s+(http:\/\/127\.0\.0\.1:\d+)\//);
-      if (match && !settled) {
+      baseURL ||= buffer.match(/URL:\s+(http:\/\/127\.0\.0\.1:\d+)\//)?.[1] || '';
+      controlURL ||= buffer.match(/CONTROL:\s+(http:\/\/127\.0\.0\.1:\d+)/)?.[1] || '';
+      if (baseURL && controlURL && !settled) {
         settled = true;
         clearTimeout(timeout);
-        resolveURL(match[1]);
+        resolveURL({ baseURL, controlURL });
       }
     });
     child.once('exit', (code, signal) => {
@@ -230,7 +250,7 @@ function waitForHarnessURL(child) {
   });
 }
 
-function runPlaywright(phaseName, baseURL) {
+function runPlaywright(phaseName, baseURL, controlURL) {
   return new Promise((resolveRun) => {
     const command = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : playwrightBin;
     const args = process.platform === 'win32'
@@ -246,6 +266,8 @@ function runPlaywright(phaseName, baseURL) {
         GOFLOW_DAILYOPS_SOURCE_URL: sourceURL,
         GOFLOW_DAILYOPS_CHAT_ID: chatID,
         GOFLOW_DAILYOPS_TOKEN_PARTS: tokenParts,
+        GOFLOW_DAILYOPS_SCHEDULE_CONTROL_URL: controlURL,
+        GOFLOW_DAILYOPS_SOURCE_CONTROL_URL: sourceServer.url,
       },
       stdio: 'inherit',
     });
@@ -304,7 +326,7 @@ async function scanForForbiddenRuntimeData() {
   const extractedDir = join(artifactDir, 'extracted');
   await extractZip(bundlePath, extractedDir);
   const scanRoots = [packDir, extractedDir, join(uiRoot, 'test-results')].filter(existsSync);
-  const forbidden = [tokenSecret, sourceURL, telegramBaseURL, dataDir, tempDir].filter(Boolean);
+  const forbidden = [tokenSecret, sourceURL, telegramBaseURL, dataDir, tempDir, harness?.controlURL].filter(Boolean);
   const hits = [];
   for (const rootPath of scanRoots) {
     for (const filePath of walk(rootPath)) {

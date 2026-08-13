@@ -133,12 +133,42 @@ Final CI: GitHub Actions run `31710784254` completed successfully on exact head
 frontend, Playwright, Pack/DailyOps contracts, multi-platform builds, and the
 native Windows DailyOps pilot appliance E2E.
 
+## Checkpoint C: Scheduler Appliance UX And DailyOps
+
+Status: IN_PROGRESS
+
+Implemented:
+
+- Add a host-guarded appliance schedule GET/PUT resource with strict daily
+  time/IANA timezone validation and optimistic revision conflicts.
+- Keep the schedule disabled by default; embed IANA timezone data for portable
+  Windows use.
+- Add accessible DailyOps setup controls and dashboard status for enabled
+  state, timezone, next run, last scheduled result, and manual-run state.
+- Reopen setup when Pack configuration changes while preserving encrypted
+  credential bindings and the independently persisted schedule.
+- Add an internal-only controlled clock/wake seam to the DailyOps test harness;
+  no production CLI/env/manifest/API/persisted control was added.
+- Extend the real Pack Run/backend/built-UI E2E to prove one scheduled delivery,
+  a simultaneous manual `already_running` result, restart without replay, and
+  the next scheduled delivery after restart.
+- Keep DailyOps Pack version `0.2.0` because its manifest/workflow contract did
+  not change; the runtime/UI schedule capability requires no Pack migration.
+
+Verification so far:
+
+- Scoped and full Go tests: PASS.
+- `go vet ./...` and `go build ./...`: PASS.
+- UI unit tests: 58/58 PASS; production UI build: PASS.
+- Real DailyOps schedule/concurrency/restart E2E: PASS.
+- Full local/clean-checkout/security gates and GitHub Actions: pending.
+
 ## Remaining Checkpoints
 
 | Checkpoint | State |
 | --- | --- |
 | B: Scheduler backend MVP | DONE |
-| C: Scheduler appliance UX and DailyOps | NOT_STARTED |
+| C: Scheduler appliance UX and DailyOps | IN_PROGRESS |
 | D: Versioned Pack setup migration | NOT_STARTED |
 | E: Diagnostics, retention, local metrics | NOT_STARTED |
 | F: Windows experience and offline update | NOT_STARTED |

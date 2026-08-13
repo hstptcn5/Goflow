@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"goflow/internal/engine"
 	"goflow/internal/pack"
 	"goflow/internal/packsetup"
+	"goflow/internal/scheduler"
 	"goflow/internal/storage"
 
 	"github.com/go-chi/chi/v5"
@@ -43,6 +45,12 @@ type ApplianceContext struct {
 	Bindings               []pack.Binding
 	TelegramAPIBaseURL     string
 	ConnectionTestClient   *http.Client
+	ScheduleStore          *storage.WorkflowScheduleStore
+	ScheduleClock          applianceClock
+}
+
+type applianceClock interface {
+	Now() time.Time
 }
 
 func mountApplianceRoutes(
@@ -69,6 +77,7 @@ func mountApplianceRoutes(
 		r.Get("/workflow/status", applianceWorkflowStatusHandler(appliance, wfStore, execStore, credStore))
 		r.Get("/executions/latest", applianceLatestExecutionHandler(appliance, execStore))
 		r.Get("/executions", applianceRecentExecutionsHandler(appliance, execStore))
+		r.Get("/schedule", applianceScheduleHandler(appliance, execStore))
 		r.Group(func(r chi.Router) {
 			r.Use(applianceMutationMiddleware(appliance))
 			r.Post("/setup/config", applianceSaveConfigHandler(appliance))
@@ -79,6 +88,7 @@ func mountApplianceRoutes(
 			r.Post("/setup/complete", applianceCompleteHandler(appliance, wfStore, credStore))
 			r.Post("/setup/reopen", applianceReopenHandler(appliance))
 			r.Post("/workflow/run", applianceRunWorkflowHandler(appliance, credStore, triggerService))
+			r.Put("/schedule", applianceSaveScheduleHandler(appliance, execStore))
 		})
 	})
 }
@@ -105,6 +115,180 @@ func applianceStatusHandler(appliance *ApplianceContext, wfStore *storage.Workfl
 			"can_complete":   len(missing) == 0,
 		})
 	}
+}
+
+type applianceScheduleView struct {
+	Configured       bool                       `json:"configured"`
+	Revision         int64                      `json:"revision"`
+	Enabled          bool                       `json:"enabled"`
+	Kind             string                     `json:"kind"`
+	LocalTime        string                     `json:"local_time"`
+	Timezone         string                     `json:"timezone"`
+	State            string                     `json:"state"`
+	ErrorCategory    string                     `json:"error_category,omitempty"`
+	LastScheduledFor *time.Time                 `json:"last_scheduled_for,omitempty"`
+	NextRunAt        *time.Time                 `json:"next_run_at,omitempty"`
+	LastResult       *applianceExecutionSummary `json:"last_result,omitempty"`
+}
+
+func applianceScheduleHandler(appliance *ApplianceContext, execStore *storage.ExecutionStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		view, status, err := applianceScheduleViewFor(appliance, execStore)
+		if err != nil {
+			http.Error(w, "schedule status is not available", status)
+			return
+		}
+		renderJSON(w, http.StatusOK, view)
+	}
+}
+
+func applianceSaveScheduleHandler(appliance *ApplianceContext, execStore *storage.ExecutionStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ExpectedRevision int64  `json:"expected_revision"`
+			Enabled          bool   `json:"enabled"`
+			LocalTime        string `json:"local_time"`
+			Timezone         string `json:"timezone"`
+		}
+		if err := decodeApplianceJSON(w, r, &req); err != nil {
+			return
+		}
+		if appliance.ScheduleStore == nil {
+			http.Error(w, "schedule service is not available", http.StatusServiceUnavailable)
+			return
+		}
+		now := applianceScheduleNow(appliance)
+		schedule := &storage.WorkflowSchedule{
+			WorkflowID:      appliance.WorkflowID,
+			PackID:          appliance.PackID,
+			SchemaVersion:   storage.WorkflowScheduleSchemaVersion,
+			Enabled:         req.Enabled,
+			Kind:            storage.ScheduleKindDaily,
+			LocalTime:       req.LocalTime,
+			Timezone:        req.Timezone,
+			MissedRunPolicy: storage.ScheduleMissedRunSkip,
+			State:           storage.ScheduleStateDisabled,
+		}
+		existing, err := appliance.ScheduleStore.GetByWorkflow(appliance.WorkflowID)
+		switch {
+		case err == nil:
+			if existing.PackID != appliance.PackID || req.ExpectedRevision != existing.Revision {
+				writeScheduleConflict(w)
+				return
+			}
+			schedule.LastScheduledFor = existing.LastScheduledFor
+			schedule.LastExecutionID = existing.LastExecutionID
+		case errors.Is(err, storage.ErrWorkflowScheduleNotFound):
+			if req.ExpectedRevision != 0 {
+				writeScheduleConflict(w)
+				return
+			}
+		case errors.Is(err, storage.ErrInvalidWorkflowSchedule):
+			renderJSON(w, http.StatusConflict, map[string]interface{}{
+				"category": storage.ScheduleErrorInvalid,
+				"error":    "The saved schedule needs attention before it can be changed.",
+			})
+			return
+		default:
+			http.Error(w, "schedule could not be loaded", http.StatusInternalServerError)
+			return
+		}
+		if req.Enabled {
+			schedule.State = storage.ScheduleStateOK
+			after := now
+			if schedule.LastScheduledFor != nil && schedule.LastScheduledFor.After(after) {
+				after = *schedule.LastScheduledFor
+			}
+			next, err := scheduler.NextDailyAfter(schedule.LocalTime, schedule.Timezone, after)
+			if err != nil {
+				renderJSON(w, http.StatusBadRequest, map[string]interface{}{
+					"category": storage.ScheduleErrorInvalid,
+					"error":    "Use a valid daily time and IANA timezone.",
+				})
+				return
+			}
+			schedule.NextRunAt = &next
+		}
+		if err := appliance.ScheduleStore.Configure(schedule, req.ExpectedRevision, now); err != nil {
+			if errors.Is(err, storage.ErrWorkflowScheduleConflict) {
+				writeScheduleConflict(w)
+				return
+			}
+			if errors.Is(err, storage.ErrInvalidWorkflowSchedule) {
+				renderJSON(w, http.StatusBadRequest, map[string]interface{}{
+					"category": storage.ScheduleErrorInvalid,
+					"error":    "Use a valid daily time and IANA timezone.",
+				})
+				return
+			}
+			http.Error(w, "schedule could not be saved", http.StatusInternalServerError)
+			return
+		}
+		view, status, err := applianceScheduleViewFor(appliance, execStore)
+		if err != nil {
+			http.Error(w, "schedule was saved but status is not available", status)
+			return
+		}
+		renderJSON(w, http.StatusOK, view)
+	}
+}
+
+func writeScheduleConflict(w http.ResponseWriter) {
+	renderJSON(w, http.StatusConflict, map[string]interface{}{
+		"category": "revision_conflict",
+		"error":    "The schedule changed in another session. Refresh and try again.",
+	})
+}
+
+func applianceScheduleViewFor(appliance *ApplianceContext, execStore *storage.ExecutionStore) (applianceScheduleView, int, error) {
+	view := applianceScheduleView{
+		Revision:  0,
+		Enabled:   false,
+		Kind:      storage.ScheduleKindDaily,
+		LocalTime: "09:00",
+		Timezone:  "UTC",
+		State:     storage.ScheduleStateDisabled,
+	}
+	if appliance.ScheduleStore == nil {
+		return view, http.StatusServiceUnavailable, errors.New("schedule store unavailable")
+	}
+	schedule, err := appliance.ScheduleStore.GetByWorkflow(appliance.WorkflowID)
+	if errors.Is(err, storage.ErrWorkflowScheduleNotFound) {
+		return view, http.StatusOK, nil
+	}
+	if errors.Is(err, storage.ErrInvalidWorkflowSchedule) {
+		view.Configured = true
+		view.State = storage.ScheduleStateNeedsAttention
+		view.ErrorCategory = storage.ScheduleErrorInvalid
+		return view, http.StatusOK, nil
+	}
+	if err != nil {
+		return view, http.StatusInternalServerError, err
+	}
+	view.Configured = true
+	view.Revision = schedule.Revision
+	view.Enabled = schedule.Enabled
+	view.Kind = schedule.Kind
+	view.LocalTime = schedule.LocalTime
+	view.Timezone = schedule.Timezone
+	view.State = schedule.State
+	view.ErrorCategory = schedule.ErrorCategory
+	view.LastScheduledFor = schedule.LastScheduledFor
+	view.NextRunAt = schedule.NextRunAt
+	if schedule.LastExecutionID != "" && execStore != nil {
+		if execution, err := execStore.GetByID(schedule.LastExecutionID); err == nil && execution.WorkflowID == appliance.WorkflowID {
+			summary := applianceExecutionSummaryFromExecution(*execution)
+			view.LastResult = &summary
+		}
+	}
+	return view, http.StatusOK, nil
+}
+
+func applianceScheduleNow(appliance *ApplianceContext) time.Time {
+	if appliance.ScheduleClock != nil {
+		return appliance.ScheduleClock.Now().UTC()
+	}
+	return time.Now().UTC()
 }
 
 func applianceDiagnosticsHandler(appliance *ApplianceContext, wfStore *storage.WorkflowStore, execStore *storage.ExecutionStore, credStore *storage.CredentialStore) http.HandlerFunc {
@@ -161,10 +345,22 @@ func applianceSaveConfigHandler(appliance *ApplianceContext) http.HandlerFunc {
 		if req.Values == nil {
 			req.Values = map[string]interface{}{}
 		}
+		var previous map[string]interface{}
+		if loaded, err := packsetup.LoadConfig(appliance.DataDir, applianceManifest(appliance)); err == nil {
+			previous = loaded.Config.Values
+		}
 		cfg, err := packsetup.SaveConfig(appliance.DataDir, applianceManifest(appliance), req.Values)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		if previous != nil && !reflect.DeepEqual(previous, cfg.Values) {
+			if state, err := packsetup.LoadState(appliance.DataDir, applianceManifest(appliance)); err == nil && state.Completed {
+				if _, err := packsetup.SaveState(appliance.DataDir, applianceManifest(appliance), false, time.Now()); err != nil {
+					http.Error(w, "configuration was saved but setup could not be reopened", http.StatusInternalServerError)
+					return
+				}
+			}
 		}
 		renderJSON(w, http.StatusOK, map[string]interface{}{"values": cfg.Values})
 	}
@@ -761,24 +957,28 @@ func applianceRecentExecutions(execStore *storage.ExecutionStore, workflowID str
 	}
 	result := make([]applianceExecutionSummary, 0, len(list))
 	for _, exec := range list {
-		dto := executionInspectorDTOFromExecution(exec)
-		errorCategory, errorMessage := appliancePublicExecutionError(dto.Status, dto.ErrorMessage)
-		result = append(result, applianceExecutionSummary{
-			ID:               dto.ID,
-			WorkflowID:       dto.WorkflowID,
-			Status:           dto.Status,
-			DurationMs:       dto.DurationMs,
-			StartedAt:        dto.StartedAt,
-			FinishedAt:       dto.FinishedAt,
-			TriggerSource:    dto.TriggerSource,
-			TriggerPrincipal: engine.RedactSensitiveString(dto.TriggerPrincipal),
-			RequestID:        engine.RedactSensitiveString(dto.RequestID),
-			Input:            dto.Input,
-			ErrorMessage:     errorMessage,
-			ErrorCategory:    errorCategory,
-		})
+		result = append(result, applianceExecutionSummaryFromExecution(exec))
 	}
 	return result, nil
+}
+
+func applianceExecutionSummaryFromExecution(exec storage.Execution) applianceExecutionSummary {
+	dto := executionInspectorDTOFromExecution(exec)
+	errorCategory, errorMessage := appliancePublicExecutionError(dto.Status, dto.ErrorMessage)
+	return applianceExecutionSummary{
+		ID:               dto.ID,
+		WorkflowID:       dto.WorkflowID,
+		Status:           dto.Status,
+		DurationMs:       dto.DurationMs,
+		StartedAt:        dto.StartedAt,
+		FinishedAt:       dto.FinishedAt,
+		TriggerSource:    dto.TriggerSource,
+		TriggerPrincipal: engine.RedactSensitiveString(dto.TriggerPrincipal),
+		RequestID:        engine.RedactSensitiveString(dto.RequestID),
+		Input:            dto.Input,
+		ErrorMessage:     errorMessage,
+		ErrorCategory:    errorCategory,
+	}
 }
 
 func applianceCredentialResolver(credStore *storage.CredentialStore) packsetup.CredentialResolver {

@@ -737,6 +737,25 @@ summary:focus-visible {
   font-size: var(--font-size-sm);
 }
 
+.schedule-fields {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(240px, 1fr);
+  gap: var(--space-3);
+}
+
+.schedule-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.schedule-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .status-strip,
 .summary-grid {
   display: grid;
@@ -845,6 +864,7 @@ summary:focus-visible {
   .credential-row,
   .status-strip,
   .summary-grid,
+  .schedule-fields,
   .appliance-execution-row {
     grid-template-columns: 1fr;
   }

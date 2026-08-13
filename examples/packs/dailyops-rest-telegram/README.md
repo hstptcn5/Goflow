@@ -76,6 +76,12 @@ Use a local mock source endpoint and the appliance UI. Create a Telegram credent
 
 Open the printed URL, test the mock source URL, assign and test a Telegram credential and chat, complete setup, and run once. DailyOps allows one active execution; a second Run request receives `already_running` and does not send another report.
 
+The appliance setup also offers one optional daily schedule. It is off by
+default. Choose a local time and an IANA timezone such as `Asia/Bangkok`, then
+enable it before completing setup. Missed periods are skipped rather than sent
+in a catch-up burst. The dashboard shows the next run and last scheduled result.
+Manual and scheduled runs share the same one-active-execution policy.
+
 ## Pilot Checklist
 
 - Confirm the source adapter emits exactly the normalized contract.

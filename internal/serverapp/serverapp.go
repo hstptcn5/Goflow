@@ -26,12 +26,14 @@ import (
 )
 
 type Options struct {
-	Config    *config.Config
-	UIFS      fs.FS
-	Listener  net.Listener
-	Logger    *log.Logger
-	Appliance *api.ApplianceContext
-	Registry  *nodes.PluginRegistry
+	Config        *config.Config
+	UIFS          fs.FS
+	Listener      net.Listener
+	Logger        *log.Logger
+	Appliance     *api.ApplianceContext
+	Registry      *nodes.PluginRegistry
+	ScheduleClock scheduler.Clock
+	ScheduleWake  <-chan scheduler.WakeRequest
 }
 
 type App struct {
@@ -133,10 +135,17 @@ func Start(ctx context.Context, opts Options) (*App, error) {
 	cleanupCtx, cleanupCancel := context.WithCancel(ctx)
 	var managedScheduler *scheduler.Service
 	if opts.Appliance != nil && opts.Appliance.Enabled {
+		scheduleClock := opts.ScheduleClock
+		if scheduleClock == nil {
+			scheduleClock = scheduler.SystemClock{}
+		}
+		scheduleStore := storage.NewWorkflowScheduleStore(db)
+		opts.Appliance.ScheduleStore = scheduleStore
+		opts.Appliance.ScheduleClock = scheduleClock
 		managedScheduler, err = scheduler.NewService(scheduler.Options{
-			Store:      storage.NewWorkflowScheduleStore(db),
+			Store:      scheduleStore,
 			Triggerer:  triggerService,
-			Clock:      scheduler.SystemClock{},
+			Clock:      scheduleClock,
 			Readiness:  func() (bool, string) { return api.ApplianceScheduleReadiness(opts.Appliance, credStore) },
 			Logger:     logger,
 			PackID:     opts.Appliance.PackID,
@@ -192,7 +201,7 @@ func Start(ctx context.Context, opts Options) (*App, error) {
 	startCleanupLoop(cleanupCtx, &app.goroutines, execStore, cfg, logger)
 	startCronScanner(cronCtx, &app.goroutines, cronScheduler, wfStore, triggerService, logger)
 	if managedScheduler != nil {
-		startManagedScheduler(scheduleCtx, &app.goroutines, managedScheduler, logger)
+		startManagedScheduler(scheduleCtx, &app.goroutines, managedScheduler, opts.ScheduleWake, logger)
 	}
 	go app.serve(ctx)
 
@@ -239,14 +248,14 @@ func (app *App) Shutdown(ctx context.Context) error {
 	return err
 }
 
-func startManagedScheduler(ctx context.Context, wg *sync.WaitGroup, service *scheduler.Service, logger *log.Logger) {
+func startManagedScheduler(ctx context.Context, wg *sync.WaitGroup, service *scheduler.Service, wake <-chan scheduler.WakeRequest, logger *log.Logger) {
 	if service == nil {
 		return
 	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		service.Run(ctx, scheduler.DefaultTickInterval)
+		service.RunWithWake(ctx, scheduler.DefaultTickInterval, wake)
 		logger.Println("[Scheduler] Managed scheduler stopped gracefully")
 	}()
 }
