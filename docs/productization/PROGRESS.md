@@ -33,7 +33,7 @@ Baseline verification:
 
 ## Checkpoint A: Baseline, Architecture, Scheduler Contract
 
-Status: IN_PROGRESS
+Status: DONE
 
 Branch: `feature/goflow-productization-scheduler`
 
@@ -59,7 +59,14 @@ Files:
 Checkpoint design commit:
 `81349053070f3b6718386103dd48d2a8c2fc7c0f`.
 
-CI evidence: pending final pushed head.
+CI evidence:
+
+- Exact verified head: `9dbb23fc933300bf43c3101b267985ecbd028633`.
+- GitHub Actions run: `31707818103`.
+- Conclusion: SUCCESS.
+- Passed jobs include backend tests/race/vet/vulnerability, frontend test/build,
+  Pack contracts and deterministic scan, appliance Playwright/DailyOps/runner,
+  five platform builds, and native Windows DailyOps artifact verification.
 
 Checkpoint verification:
 
