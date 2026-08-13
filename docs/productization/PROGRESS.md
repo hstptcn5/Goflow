@@ -487,6 +487,29 @@ Status: COMPLETE; `VENDOR_DECISION_REQUIRED`
   Phase 5 therefore continues with the generic reference adapter and loopback
   normalized source only; no vendor credential or production API call was used.
 
+Phase 4 closure head `051ef109f4719714fe71d938e8bfc29854f5a82e`
+passed GitHub Actions run `31733846695`. Draft PR #18 remains open, stacked on
+the Phase 3 trust branch, unmerged, and not ready.
+
+## Phase 5: Productization Beta Candidate
+
+Status: Checkpoint K in progress
+
+Branch: `feature/goflow-productization-beta`
+
+Stack base: exact Phase 4 closure head
+`051ef109f4719714fe71d938e8bfc29854f5a82e`.
+
+### Checkpoint K: DailyOps Beta Journey
+
+Status: IN_PROGRESS
+
+- The beta acceptance matrix binds the nontechnical Windows journey to exact
+  artifact, setup, execution, restart, upgrade, diagnostics, operations, and
+  clean-checkout evidence.
+- Manual pilot, vendor access, production signing, and release are external
+  gates and cannot be inferred from automated loopback acceptance.
+
 ## Remaining Checkpoints
 
 | Checkpoint | State |
@@ -500,6 +523,6 @@ Status: COMPLETE; `VENDOR_DECISION_REQUIRED`
 | H: Authenticity/signing foundation | DONE |
 | I: Adapter architecture | DONE |
 | J: Vendor selection dossier | DONE_DECISION_REQUIRED |
-| K: DailyOps Beta journey | NOT_STARTED |
+| K: DailyOps Beta journey | IN_PROGRESS |
 | L: Final acceptance suite | NOT_STARTED |
 | M: Pilot operations package | NOT_STARTED |

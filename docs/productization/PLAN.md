@@ -122,3 +122,21 @@ the next phase starts.
 | Secrets | vault credential applied to request | cross-origin redirect, output/log/error leak | captured requests and canary scans |
 | Side effects | normalized output reaches downstream | every adapter failure blocks destination | real engine fixture |
 | Compatibility | DailyOps generic REST remains valid | native Pack/plugin execution remains disabled | regression and registry tests |
+
+## Phase 5 Beta Acceptance Matrix
+
+| Journey area | Required evidence | Failure evidence |
+| --- | --- | --- |
+| Artifact acquisition | exact head, stable unsigned-beta name, SHA-256 and expiry in CI | no Release/latest/signing claim |
+| First launch | extracted `goflow.exe` starts without terminal arguments; health/UI/bootstrap pass | tamper and wrong layout reject before runtime state |
+| Setup | source contract test; Telegram bot/chat test sends no message; manual-only and daily schedule paths | invalid source/chat/credential remains incomplete with a concrete next action |
+| Execution | one manual report and one scheduled report contain loopback source values | simultaneous run is 409 and creates no duplicate execution/message |
+| Persistence | stable workflow/config/credential/schedule/history across clean restart | no unsolicited source/Telegram call during restart |
+| Upgrade | verified candidate, retained external data and rollback; revalidation behavior visible | tampered/unhealthy/running/reparse candidates reject or roll back before data loss |
+| Diagnostics | bounded redacted export and local-only counters | token, chat ID, raw payload, mock URL, username/hostname/path absent |
+| Operations | stop/restart/backup/rotation/uninstall/reinstall and feedback instructions | no production-ready, signed, vendor-compatible or customer-validated claim |
+| Clean checkout | final exact head in a fresh LF checkout passes critical Go/UI/Pack/E2E gates | no dependency on current worktree output or committed generated artifacts |
+
+Manual pilot consent, usefulness, willingness-to-pay, production signing, vendor
+approval/access, and release remain external gates. They must be reported as
+pending rather than inferred from automated acceptance.
