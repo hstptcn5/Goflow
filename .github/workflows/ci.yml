@@ -11,6 +11,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GOFLOW_CI_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   backend:
     name: Backend tests
@@ -18,6 +21,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GOFLOW_CI_COMMIT }}
+
+      - name: Verify exact checkout
+        run: test "$(git rev-parse HEAD)" = "$GOFLOW_CI_COMMIT"
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -57,6 +65,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GOFLOW_CI_COMMIT }}
+
+      - name: Verify exact checkout
+        run: test "$(git rev-parse HEAD)" = "$GOFLOW_CI_COMMIT"
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -86,6 +99,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GOFLOW_CI_COMMIT }}
+
+      - name: Verify exact checkout
+        run: test "$(git rev-parse HEAD)" = "$GOFLOW_CI_COMMIT"
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -128,6 +146,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GOFLOW_CI_COMMIT }}
+
+      - name: Verify exact checkout
+        run: test "$(git rev-parse HEAD)" = "$GOFLOW_CI_COMMIT"
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -197,6 +220,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GOFLOW_CI_COMMIT }}
+
+      - name: Verify exact checkout
+        run: test "$(git rev-parse HEAD)" = "$GOFLOW_CI_COMMIT"
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -246,7 +274,14 @@ jobs:
       - name: Checkout exact workflow commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.GOFLOW_CI_COMMIT }}
+
+      - name: Verify exact checkout
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -ne $env:GOFLOW_CI_COMMIT) {
+            throw 'workflow checkout does not match the pull request head'
+          }
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -290,7 +325,7 @@ jobs:
         run: >-
           ./scripts/build-windows-pilot.ps1
           -OutputDirectory "${{ runner.temp }}/windows-pilot-artifact"
-          -Commit "${{ github.sha }}"
+          -Commit "${{ env.GOFLOW_CI_COMMIT }}"
 
       - name: Upload unsigned Windows pilot artifact
         uses: actions/upload-artifact@v4
@@ -335,6 +370,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GOFLOW_CI_COMMIT }}
+
+      - name: Verify exact checkout
+        run: test "$(git rev-parse HEAD)" = "$GOFLOW_CI_COMMIT"
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -373,7 +413,7 @@ jobs:
         run: |
           {
             echo "UNSIGNED-DEVELOPMENT-ALPHA"
-            echo "commit=${GITHUB_SHA}"
+            echo "commit=${GOFLOW_CI_COMMIT}"
             echo "target=${{ matrix.goos }}-${{ matrix.goarch }}"
             date -u +"built_at=%Y-%m-%dT%H:%M:%SZ"
           } > dist/UNSIGNED-DEVELOPMENT-ALPHA.txt
