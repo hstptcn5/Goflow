@@ -88,3 +88,16 @@ func toJSON(t *testing.T, value interface{}) string {
 	}
 	return string(data)
 }
+
+func TestNormalizedHTTPSourceDefinitionRequiresContract(t *testing.T) {
+	definition := NewNormalizedHTTPSourceExecutor().GetDefinition()
+	for _, param := range definition.Params {
+		if param.Name == "response_contract" {
+			if !param.Required {
+				t.Fatal("response_contract must be required in node metadata")
+			}
+			return
+		}
+	}
+	t.Fatal("response_contract definition is missing")
+}

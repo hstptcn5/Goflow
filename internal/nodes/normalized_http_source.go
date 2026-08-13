@@ -105,7 +105,7 @@ func (executor *NormalizedHTTPSourceExecutor) GetDefinition() NodeDefinition {
 			{Name: "next_cursor_field", Label: "Next cursor field", Type: "text", Default: "next_cursor", Required: false},
 			{Name: "max_pages", Label: "Maximum pages", Type: "integer", Default: 5, Required: true},
 			{Name: "max_items", Label: "Maximum items", Type: "integer", Default: 1000, Required: true},
-			{Name: "response_contract", Label: "Normalized response contract", Type: "json", Required: false},
+			{Name: "response_contract", Label: "Normalized response contract", Type: "json", Required: true},
 		},
 	}
 }
