@@ -70,7 +70,13 @@ func TestBundleSignatureRejectsMetadataAndPayloadTamper(t *testing.T) {
 		{name: "unknown algorithm", mutate: mutateSignatureJSON(t, func(s *Signature) { s.Algorithm = "future" }), want: "unsupported"},
 		{name: "future schema", mutate: mutateSignatureJSON(t, func(s *Signature) { s.SchemaVersion = 2 }), want: "unsupported"},
 		{name: "version mismatch", mutate: mutateSignatureJSON(t, func(s *Signature) { s.PackVersion = "9.9.9" }), want: "identity"},
-		{name: "target mismatch", mutate: mutateSignatureJSON(t, func(s *Signature) { s.Target = "linux-amd64" }), want: "identity"},
+		{name: "target mismatch", mutate: mutateSignatureJSON(t, func(s *Signature) {
+			if s.Target == "windows-amd64" {
+				s.Target = "linux-amd64"
+			} else {
+				s.Target = "windows-amd64"
+			}
+		}), want: "identity"},
 		{name: "capability mismatch", mutate: mutateSignatureJSON(t, func(s *Signature) { s.RequiredCapabilities = nil }), want: "identity"},
 		{name: "malformed signature", mutate: func([]byte) []byte { return []byte(`{"schema_version":`) }, want: "strict JSON"},
 		{name: "unknown field", mutate: func(data []byte) []byte {
