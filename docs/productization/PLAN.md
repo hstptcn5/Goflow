@@ -1,6 +1,6 @@
 # Goflow Productization Plan
 
-Status: Phases 1-4 complete; Phase 5 final acceptance in progress
+Status: Phases 1-5 complete; external manual gates remain pending
 
 This plan turns the ecosystem alpha into a local-first Productization Beta
 Candidate through five stacked draft pull requests. It does not authorize a
