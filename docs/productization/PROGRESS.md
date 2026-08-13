@@ -87,7 +87,7 @@ Manual/external gates: none for Checkpoint A.
 
 ## Checkpoint B: Scheduler Backend MVP
 
-Status: IN_PROGRESS
+Status: DONE
 
 Branch and draft PR remain the Phase 1 branch and PR #15.
 
@@ -113,7 +113,7 @@ Primary files:
 - `internal/api/appliance.go`
 - `internal/serverapp/serverapp.go`
 
-Verification in progress:
+Verification:
 
 - Scoped storage/scheduler/application/API/serverapp/Pack Run tests: PASS.
 - `go test -count=1 ./...`: PASS.
@@ -123,16 +123,21 @@ Verification in progress:
   required gate. Explicit attempts failed because CGO is disabled by default and
   no `gcc` C compiler is installed when CGO is enabled.
 
-Checkpoint implementation commit:
-`cf056d6` (`feat(scheduler): add deterministic appliance backend`).
+Checkpoint implementation commits:
+`cf056d6` (`feat(scheduler): add deterministic appliance backend`) and
+`1ae18b4b1318ccc8ab5e10bb7fdb27ce99c53225`
+(`docs(productization): record scheduler backend evidence`).
 
-Final CI: pending pushed tracker head.
+Final CI: GitHub Actions run `31710784254` completed successfully on exact head
+`1ae18b4b1318ccc8ab5e10bb7fdb27ce99c53225`, including backend race/vet/tests,
+frontend, Playwright, Pack/DailyOps contracts, multi-platform builds, and the
+native Windows DailyOps pilot appliance E2E.
 
 ## Remaining Checkpoints
 
 | Checkpoint | State |
 | --- | --- |
-| B: Scheduler backend MVP | IN_PROGRESS |
+| B: Scheduler backend MVP | DONE |
 | C: Scheduler appliance UX and DailyOps | NOT_STARTED |
 | D: Versioned Pack setup migration | NOT_STARTED |
 | E: Diagnostics, retention, local metrics | NOT_STARTED |
