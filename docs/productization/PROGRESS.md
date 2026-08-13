@@ -135,7 +135,7 @@ native Windows DailyOps pilot appliance E2E.
 
 ## Checkpoint C: Scheduler Appliance UX And DailyOps
 
-Status: IN_PROGRESS
+Status: DONE
 
 Implemented:
 
@@ -155,20 +155,40 @@ Implemented:
 - Keep DailyOps Pack version `0.2.0` because its manifest/workflow contract did
   not change; the runtime/UI schedule capability requires no Pack migration.
 
-Verification so far:
+Verification:
 
 - Scoped and full Go tests: PASS.
 - `go vet ./...` and `go build ./...`: PASS.
 - UI unit tests: 58/58 PASS; production UI build: PASS.
 - Real DailyOps schedule/concurrency/restart E2E: PASS.
-- Full local/clean-checkout/security gates and GitHub Actions: pending.
+- Scoped/full Playwright and runner smoke: PASS.
+- Pack validate/offline test, deterministic build, ZIP/extracted verification,
+  forbidden runtime-state scan, and text canary/path scan: PASS.
+- `govulncheck ./...`: 0 reachable vulnerabilities; npm audit: 0
+  vulnerabilities.
+- Clean checkout backend/vet/build/vulnerability, frontend 58/58/build/audit,
+  and real DailyOps schedule E2E: PASS.
+
+Implementation and CI:
+
+- Main implementation: `93d32a390d235f3a96690c136c4ba2a674c99dbd`.
+- Linux restart cleanup hardening: `488010bd1451079834ee1ec5ce2b17bf7ca64aef`
+  and `c8491d161b288c527b9862cf8fb1192445f3d1dc`.
+- GitHub Actions run `31714389016`: SUCCESS on exact head
+  `c8491d161b288c527b9862cf8fb1192445f3d1dc`, including backend race/vet/
+  govulncheck, frontend, Linux Playwright DailyOps restart, pack determinism,
+  all platform builds, and native Windows DailyOps setup/persistence E2E.
+- Draft PR #15 remains open, draft, stacked on
+  `feature/goflow-pilot-ux-hardening`, and unmerged.
+
+Manual/external gates: none for Phase 1.
 
 ## Remaining Checkpoints
 
 | Checkpoint | State |
 | --- | --- |
 | B: Scheduler backend MVP | DONE |
-| C: Scheduler appliance UX and DailyOps | IN_PROGRESS |
+| C: Scheduler appliance UX and DailyOps | DONE |
 | D: Versioned Pack setup migration | NOT_STARTED |
 | E: Diagnostics, retention, local metrics | NOT_STARTED |
 | F: Windows experience and offline update | NOT_STARTED |
