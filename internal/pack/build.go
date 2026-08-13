@@ -508,6 +508,9 @@ func VerifyBundleArchive(path string, limits buildLimits) error {
 		if item.Path == "" {
 			return fmt.Errorf("PACK_INFO inventory contains empty path")
 		}
+		if item.Path == SignatureFileName {
+			return fmt.Errorf("%s must not be listed in PACK_INFO inventory", SignatureFileName)
+		}
 		if _, ok := inventory[item.Path]; ok {
 			return fmt.Errorf("PACK_INFO inventory contains duplicate path %q", item.Path)
 		}
@@ -515,6 +518,9 @@ func VerifyBundleArchive(path string, limits buildLimits) error {
 	}
 	for _, file := range reader.File {
 		if file.Name == "PACK_INFO.json" {
+			continue
+		}
+		if file.Name == SignatureFileName {
 			continue
 		}
 		item, ok := inventory[file.Name]
@@ -635,6 +641,9 @@ func VerifyExtractedBundle(root string) (*PackInfo, error) {
 		if item.Path == "PACK_INFO.json" {
 			return nil, fmt.Errorf("PACK_INFO.json must not be listed in PACK_INFO inventory")
 		}
+		if item.Path == SignatureFileName {
+			return nil, fmt.Errorf("%s must not be listed in PACK_INFO inventory", SignatureFileName)
+		}
 		seen[item.Path] = true
 		if err := validateArchivePath(item.Path, info.Target); err != nil {
 			return nil, fmt.Errorf("PACK_INFO inventory path %q: %w", item.Path, err)
@@ -731,7 +740,7 @@ func verifyNoUnexpectedExtractedFiles(root string, inventory map[string]bool, li
 			return err
 		}
 		slashPath := filepath.ToSlash(rel)
-		if slashPath == "PACK_INFO.json" {
+		if slashPath == "PACK_INFO.json" || slashPath == SignatureFileName {
 			return nil
 		}
 		if !inventory[slashPath] {

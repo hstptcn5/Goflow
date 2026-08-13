@@ -3,7 +3,11 @@ package cli
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"flag"
 	"io"
 	"os"
@@ -309,6 +313,62 @@ func TestPackBuildReturnsInvalidInput(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "--output is required") {
 		t.Fatalf("expected output error, got %q", stderr.String())
+	}
+}
+
+func TestPackSignAndVerifySignatureCLIWithoutKeyLeak(t *testing.T) {
+	dir := writePackFixture(t, `{
+		"schema_version":1,"id":"example.signed","name":"Signed","version":"0.1.0",
+		"entry_workflow":"workflows/main.json","required_credentials":[],
+		"supported_platforms":["`+pack.CurrentPlatform()+`"]
+	}`, `{"name":"Signed","nodes":[{"id":"trigger","type":"webhookTrigger","params":{}}],"edges":[]}`)
+	runtimePath := filepath.Join(t.TempDir(), "goflow-runtime")
+	if err := os.WriteFile(runtimePath, []byte("runtime"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	unsigned := filepath.Join(t.TempDir(), "example.signed-0.1.0-"+pack.CurrentPlatform()+".zip")
+	result, err := pack.Build(pack.BuildOptions{PackDir: dir, OutputDir: filepath.Dir(unsigned), RuntimePath: runtimePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateDER, _ := x509.MarshalPKCS8PrivateKey(private)
+	publicDER, _ := x509.MarshalPKIXPublicKey(public)
+	privatePEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateDER})
+	publicPath := filepath.Join(t.TempDir(), "publisher-public.pem")
+	if err := os.WriteFile(publicPath, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	signed := filepath.Join(t.TempDir(), "signed.zip")
+	var stdout, stderr bytes.Buffer
+	runner := Runner{Stdout: &stdout, Stderr: &stderr, Stdin: bytes.NewReader(privatePEM)}
+	if code := runner.Run([]string{"pack", "sign", result.ArchivePath, "--output", signed, "--key-id", "publisher.test", "--private-key", "-"}); code != ExitOK {
+		t.Fatalf("sign failed: code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := runner.Run([]string{"pack", "verify", signed, "--output", "json"}); code != ExitOK || !strings.Contains(stdout.String(), `"authenticity": "SIGNED_UNVERIFIED"`) {
+		t.Fatalf("integrity verify did not distinguish untrusted signature: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := runner.Run([]string{"pack", "verify-signature", signed, "--key-id", "publisher.test", "--public-key", publicPath, "--output", "json"}); code != ExitOK {
+		t.Fatalf("verify failed: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"authenticity": "VERIFIED"`) {
+		t.Fatalf("missing verified result: %s", stdout.String())
+	}
+	archiveData, err := os.ReadFile(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, output := range [][]byte{stdout.Bytes(), stderr.Bytes(), archiveData} {
+		if bytes.Contains(output, bytes.TrimSpace(privatePEM)) {
+			t.Fatal("private key leaked")
+		}
 	}
 }
 

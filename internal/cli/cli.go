@@ -97,6 +97,8 @@ Usage:
   goflow pack inspect <pack-directory|bundle.zip|extracted-directory> [--output table|json]
   goflow pack test <pack-directory> [--output table|json]
   goflow pack verify <bundle.zip|extracted-directory> [--output table|json]
+  goflow pack sign <bundle.zip> --output <signed.zip> --key-id <id> --private-key <path|->
+  goflow pack verify-signature <bundle.zip> --key-id <id> --public-key <path> [--output table|json]
   goflow pack build <pack-directory> --output <output-directory> [--target goos-goarch] [--force]
   goflow pack run <pack-directory> [--data-dir directory] [--port port] [--no-open]
   goflow execution get <execution-id> [--output table|json]
@@ -320,6 +322,10 @@ func (r Runner) pack(args []string) int {
 		return r.packTest(args[1:])
 	case "verify":
 		return r.packVerify(args[1:])
+	case "sign":
+		return r.packSign(args[1:])
+	case "verify-signature":
+		return r.packVerifySignature(args[1:])
 	case "build":
 		return r.packBuild(args[1:])
 	case "run":
@@ -435,7 +441,7 @@ func (r Runner) packVerify(args []string) int {
 		return ExitInvalidInput
 	}
 	return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {
-		fmt.Fprintf(r.Stdout, "Pack verification: %s\nKind: %s\nPack: %s\nVersion: %s\nTarget: %s\n", result.Status, result.Kind, result.ID, result.Version, result.Target)
+		fmt.Fprintf(r.Stdout, "Pack verification: %s\nKind: %s\nPack: %s\nVersion: %s\nTarget: %s\nAuthenticity: %s\n", result.Status, result.Kind, result.ID, result.Version, result.Target, result.Authenticity)
 	})
 }
 
@@ -530,12 +536,113 @@ type packTestResult struct {
 }
 
 type packVerifyResult struct {
-	Status  string `json:"status"`
-	Kind    string `json:"kind,omitempty"`
-	ID      string `json:"id,omitempty"`
-	Version string `json:"version,omitempty"`
-	Target  string `json:"target,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Status       string `json:"status"`
+	Kind         string `json:"kind,omitempty"`
+	ID           string `json:"id,omitempty"`
+	Version      string `json:"version,omitempty"`
+	Target       string `json:"target,omitempty"`
+	Error        string `json:"error,omitempty"`
+	Authenticity string `json:"authenticity,omitempty"`
+}
+
+func (r Runner) packSign(args []string) int {
+	fs := flag.NewFlagSet("pack sign", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	output := fs.String("output", "", "Signed output ZIP")
+	keyID := fs.String("key-id", "", "Trusted publisher key ID")
+	privateKeyPath := fs.String("private-key", "", "PEM PKCS#8 Ed25519 private key path, or - for stdin")
+	input, ok, code := parseOneRef(fs, args, "bundle ZIP", r.Stderr)
+	if !ok {
+		return code
+	}
+	if *output == "" || *keyID == "" || *privateKeyPath == "" {
+		fmt.Fprintln(r.Stderr, "--output, --key-id, and --private-key are required")
+		return ExitInvalidInput
+	}
+	keyData, err := readKeyInput(*privateKeyPath, r.Stdin)
+	if err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	if err := pack.SignBundleArchive(input, *output, *keyID, keyData); err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	fmt.Fprintf(r.Stdout, "Signed Pack bundle\nOutput: %s\nKey ID: %s\n", *output, *keyID)
+	return ExitOK
+}
+
+func (r Runner) packVerifySignature(args []string) int {
+	fs := flag.NewFlagSet("pack verify-signature", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	output := fs.String("output", "table", "Output format: table or json")
+	keyID := fs.String("key-id", "", "Trusted publisher key ID")
+	publicKeyPath := fs.String("public-key", "", "PEM PKIX Ed25519 public key path")
+	input, ok, code := parseOneRef(fs, args, "signed bundle ZIP", r.Stderr)
+	if !ok {
+		return code
+	}
+	result := packVerifyResult{Kind: "bundle_zip", Authenticity: "FAILED"}
+	if *keyID == "" || *publicKeyPath == "" || *publicKeyPath == "-" {
+		result.Error = "--key-id and a public-key file path are required"
+		return writeFailedPackResult(r, *output, result)
+	}
+	keyData, err := readKeyInput(*publicKeyPath, nil)
+	if err == nil {
+		err = pack.VerifyBundleSignature(input, *keyID, keyData)
+	}
+	if err != nil {
+		result.Error = err.Error()
+		return writeFailedPackResult(r, *output, result)
+	}
+	info, err := pack.ReadBundleArchiveInfo(input)
+	if err != nil {
+		result.Error = err.Error()
+		return writeFailedPackResult(r, *output, result)
+	}
+	result.Status, result.ID, result.Version, result.Target, result.Authenticity = "PASS", info.PackID, info.PackVersion, info.Target, "VERIFIED"
+	return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {
+		fmt.Fprintf(r.Stdout, "Pack signature: VERIFIED\nPack: %s\nVersion: %s\nTarget: %s\nKey ID: %s\n", result.ID, result.Version, result.Target, *keyID)
+	})
+}
+
+func writeFailedPackResult(r Runner, output string, result packVerifyResult) int {
+	result.Status = "FAILED"
+	if output == "json" {
+		if code := writePackCommandOutput(r.Stdout, r.Stderr, output, result, func() {}); code != ExitOK {
+			return code
+		}
+	} else {
+		fmt.Fprintln(r.Stderr, result.Error)
+	}
+	return ExitInvalidInput
+}
+
+func readKeyInput(path string, stdin io.Reader) ([]byte, error) {
+	var reader io.Reader
+	var file *os.File
+	if path == "-" {
+		if stdin == nil {
+			return nil, fmt.Errorf("stdin is not allowed for this key")
+		}
+		reader = stdin
+	} else {
+		var err error
+		file, err = os.Open(path)
+		if err != nil {
+			return nil, fmt.Errorf("open key: %w", err)
+		}
+		defer file.Close()
+		reader = file
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, pack.MaxKeyFileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read key: %w", err)
+	}
+	if len(data) > pack.MaxKeyFileBytes {
+		return nil, fmt.Errorf("key exceeds %d byte limit", pack.MaxKeyFileBytes)
+	}
+	return data, nil
 }
 
 func writePackCommandOutput(stdout, stderr io.Writer, output string, value interface{}, writeTable func()) int {
@@ -691,13 +798,21 @@ func verifyPackReference(ref string) (packVerifyResult, error) {
 		if err != nil {
 			return packVerifyResult{Kind: "bundle_zip"}, err
 		}
-		return packVerifyResult{Status: "PASS", Kind: "bundle_zip", ID: info.PackID, Version: info.PackVersion, Target: info.Target}, nil
+		state, err := pack.BundleSignatureState(ref)
+		if err != nil {
+			return packVerifyResult{Kind: "bundle_zip"}, err
+		}
+		return packVerifyResult{Status: "PASS", Kind: "bundle_zip", ID: info.PackID, Version: info.PackVersion, Target: info.Target, Authenticity: state}, nil
 	}
 	info, err := pack.VerifyExtractedBundle(ref)
 	if err != nil {
 		return packVerifyResult{Kind: "extracted_bundle"}, err
 	}
-	return packVerifyResult{Status: "PASS", Kind: "extracted_bundle", ID: info.PackID, Version: info.PackVersion, Target: info.Target}, nil
+	state, err := pack.BundleSignatureState(ref)
+	if err != nil {
+		return packVerifyResult{Kind: "extracted_bundle"}, err
+	}
+	return packVerifyResult{Status: "PASS", Kind: "extracted_bundle", ID: info.PackID, Version: info.PackVersion, Target: info.Target, Authenticity: state}, nil
 }
 
 func testPackOffline(dir string) (packTestResult, error) {

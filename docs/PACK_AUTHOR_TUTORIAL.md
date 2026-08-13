@@ -104,6 +104,21 @@ unzip ./dist/example.my-pack-0.1.0-linux-amd64.zip -d ./dist/example.my-pack
 
 `pack verify` does not run or import the pack. It verifies ZIP inventory or extracted-bundle inventory and checks hashes, expected files, and pack metadata.
 
+## Optional Offline Development Signature
+
+After obtaining a separately managed Ed25519 key pair, a publisher may sign an
+existing verified ZIP without placing the private key in the repository:
+
+```text
+goflow pack sign unsigned.zip --output signed.zip --key-id publisher.example.dev --private-key private.pem
+goflow pack verify-signature signed.zip --key-id publisher.example.dev --public-key public.pem
+```
+
+`--private-key -` reads PEM from stdin. Public keys must use an explicit file;
+the verifier never trusts a key embedded in the Pack or fetched from a network.
+This foundation does not provide publisher vetting, revocation, downgrade
+policy, production key governance, or a signed release.
+
 ## 7. Run Locally
 
 PowerShell:

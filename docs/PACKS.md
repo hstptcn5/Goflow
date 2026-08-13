@@ -544,6 +544,13 @@ Pack validation is not a trust system. A valid pack may still contain plugin fil
 
 `PACK_INFO.json` is integrity metadata, not a signature. It can detect that extracted files no longer match the bundle metadata, but it does not prove who created the bundle.
 
+An optional root `PACK_SIGNATURE.json` can bind the exact inventory to an
+explicitly trusted Ed25519 key. It is outside self-inventory and never contains
+a public or private key. `pack verify` reports its presence but does not confer
+trust. Use `pack verify-signature` with a separately obtained key ID/public key.
+The complete canonical payload, bounds, verification order, unsigned policy,
+and governance limitations are defined in [PACK_SIGNING.md](PACK_SIGNING.md).
+
 ## Development Artifacts
 
 GitHub Actions may produce unsigned alpha artifacts only from the manual `workflow_dispatch` path. Artifact names must include `UNSIGNED-DEVELOPMENT-ALPHA`, include SHA-256 checksum files and deterministic build metadata, and must not create tags, GitHub Releases, installers, signatures, or latest-version pointers.
