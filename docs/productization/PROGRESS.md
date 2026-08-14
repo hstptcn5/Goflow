@@ -563,16 +563,18 @@ Local candidate evidence:
 - Exact-head artifact policy commit
   `8b7977554566e5e8f691f0526a85511f6c566c82` makes every CI job checkout and
   assert the PR head SHA rather than GitHub's synthetic pull-request merge SHA.
-  GitHub Actions run `31739631227`: SUCCESS, including the native Windows gate.
-- The resulting `UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64` artifact
-  has outer digest
-  `sha256:95eef9fd3604d5d4d04f3583c9c518c67eeeb08558a0449fa2bde74729920e47`
-  and expiry `2026-11-11`. Direct download verification proved marker commit
-  `8b7977554566e5e8f691f0526a85511f6c566c82`, target `windows-amd64`, bundle
-  SHA-256 `91e2ab07e9b7d7716fd5d9b80a1e6fc6eebea8fea98388f69e72146813f456a1`,
-  checksum inventory SHA-256
-  `e0d3f23d29a9c3a6bd6c719d056626af4d199d6e93c12a78b7a812929c7cb314`,
-  and no forbidden runtime-state files. No installer was implemented.
+- Historical directly downloaded verification evidence, not the current or
+  final closure artifact: GitHub Actions run `31739631227` succeeded at head
+  `8b7977554566e5e8f691f0526a85511f6c566c82`. Its downloaded
+  `UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64` artifact proved the marker
+  commit and `windows-amd64` target, verified its checksum inventory, contained
+  no forbidden runtime-state files, and produced deterministic inner bundle
+  SHA-256 `91e2ab07e9b7d7716fd5d9b80a1e6fc6eebea8fea98388f69e72146813f456a1`.
+- At handoff, the current exact head, successful run, artifact name, outer
+  digest, and expiry must be confirmed from draft PR #19 and GitHub Actions
+  metadata. They are intentionally not committed here: a documentation commit
+  changes the exact head and creates a different outer artifact. No installer
+  was implemented.
 
 ### Checkpoint M: Pilot Operations Package
 
