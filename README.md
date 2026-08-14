@@ -6,115 +6,24 @@ Local-first workflow automation and portable workflow appliances in a single Go 
 [![Go 1.25.13](https://img.shields.io/badge/Go-1.25.13-00ADD8?logo=go&logoColor=white)](go.mod)
 [![Status: Productization Beta](https://img.shields.io/badge/status-Productization%20Beta-f59e0b)](docs/BETA_LIMITATIONS.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
-## What Goflow Is
 
-Goflow is a self-hosted workflow engine for trusted local and small internal automation.
-Its Go backend, Vue editor, API, scheduler, credential store, CLI, MCP bridge, and Pack
-appliance host share one runtime.
+Goflow combines four parts in one local-first platform:
 
-The normal deployment is one executable backed by SQLite. It needs no Docker, Node.js,
-PostgreSQL, Redis, or separate frontend server at runtime. Node.js is needed only to
-rebuild the embedded UI from source.
+- a workflow engine and embedded Vue studio;
+- Pack Format v1 for declarative, portable workflows;
+- a focused appliance runtime with first-run setup and persistent local state;
+- REST, CLI, and MCP entry points backed by the same execution path.
 
-Goflow is for developers, operators, AI-agent tool builders, homelabs, and small internal
-systems that value local ownership over a large hosted integration catalog.
-
-## Product Status
-
-**Current status: Productization Beta.**
-
-The merged beta has passed repository CI, deterministic Pack build checks, tamper checks,
-clean-checkout checks, native Windows appliance smoke tests, and the offline DailyOps
-end-to-end suite. The repository owner also reports manual use on multiple Windows
-devices. That is useful pilot evidence, not independent certification or proof of demand.
-
-The Windows DailyOps artifact is an **unsigned pilot beta**, not a GitHub Release.
-SmartScreen or organizational policy may block it. Actions artifacts are temporary
-handoff outputs that must be matched to their workflow commit and verified before use.
-
-There is currently no installer, production signing, release channel,
-auto-update service, hosted control plane, marketplace, or supported commercial
-vendor adapter.
-
-## Why Goflow
-
-- **One runtime:** UI, REST, CLI, MCP, triggers, and Packs use the same execution services.
-- **Local ownership:** workflows, history, setup, and encrypted credentials stay local unless a workflow sends data elsewhere.
-- **Small operational surface:** one binary and SQLite by default, with no external queue or database requirement.
-- **Controlled access:** scoped tokens and workflow allowlists let clients invoke approved workflows without database access.
-- **Portable use cases:** Pack Format v1 turns a reviewed workflow and setup contract into a verifiable appliance bundle.
-- **Inspectability:** input, output, logs, status, cancellation, and bounded diagnostics are available in the UI and APIs.
-
-See the [local benchmark methodology](docs/BENCHMARKS.md) for measured results;
-this README does not make generalized performance claims.
-
-## Two Ways To Use Goflow
-
-### Workflow automation platform
-
-Build Goflow from source, run `goflow serve`, and create workflows in the visual
-editor. This path exposes the general workflow platform: triggers, built-in
-nodes, credentials, execution history, REST, CLI, and MCP.
-
-Use this path when you want to design and operate your own local workflows.
-
-### Portable Pack appliance
-
-Run a Pack source directory with `goflow pack run`, or use a bundle built for
-the matching operating system and architecture. A Pack declares one managed
-workflow, non-secret setup fields, credential requirements, bindings, assets,
-and required host capabilities.
-
-Pack Run serves a focused setup and operations UI on loopback. Runtime state is
-kept outside the Pack source and extracted bundle. Packaged executable plugins
-are intentionally unsupported in the current Pack appliance boundary.
-
-Use this path when a reviewed workflow should behave like a small,
-task-specific local application.
-
-## DailyOps Beta
-
-[DailyOps](examples/packs/dailyops-rest-telegram/) is the reference Productization
-Beta appliance. It fetches one normalized JSON report over HTTP or HTTPS,
-formats a daily operations summary, and sends exactly one Telegram message per
-successful execution.
-
-The source contract requires:
-
-| Field | Type | Example |
-|---|---|---|
-| `report_date` | string | `2026-08-09` |
-| `timezone` | string | `Asia/Bangkok` |
-| `revenue` | number | `48250.75` |
-| `order_count` | non-negative integer | `314` |
-| `cancelled_refunded_count` | non-negative integer | `7` |
-| `low_stock_summary` | string | `3 SKUs below threshold` |
-| `comparison_summary` | string | `Revenue up 12.4% vs prior day` |
-
-DailyOps supports manual execution or one local daily schedule using an IANA
-timezone. Setup tests the source and Telegram access before activation. The
-Telegram token is stored as an encrypted credential; it is not embedded in the
-Pack, workflow, URL, or diagnostics.
-
-Concurrent duplicate runs are rejected. Setup, credential references, managed workflow
-identity, and schedule persist outside the bundle and survive restart. A migration or
-relevant setup change fails closed until setup is reviewed, tested, and completed again.
-
-DailyOps is a generic normalized-JSON-to-Telegram example. It does not claim
-compatibility with any store, point-of-sale, accounting, or commerce vendor.
-Use sanitized data and a dedicated non-production Telegram bot for a pilot.
-
-Read the [source JSON contract](docs/BETA_SOURCE_JSON_CONTRACT.md),
-[Telegram setup](docs/BETA_TELEGRAM_SETUP.md), and
-[schedule/timezone behavior](docs/BETA_SCHEDULE_TIMEZONE.md) before operating it.
+The default deployment is one Go executable with SQLite. It needs no Docker,
+Node.js runtime, external database, or separate frontend server. Workflows,
+execution history, setup state, and encrypted credentials remain local unless a
+workflow explicitly sends data elsewhere.
 
 ## Quick Start
 
-### Build and run the platform from source
+### Run the workflow platform
 
 Requirement: Go `1.25.13`.
-
-POSIX shell:
 
 ```bash
 git clone https://github.com/hstptcn5/Goflow.git
@@ -135,37 +44,57 @@ go build -o goflow.exe main.go static_embed.go
 Open [http://127.0.0.1:8080](http://127.0.0.1:8080), create a workflow, connect
 a trigger to one or more actions, save it, and run a test execution.
 
-### Run DailyOps from source
+### Validate and run a Pack
 
-Windows PowerShell:
-
-```powershell
-go build -o goflow.exe main.go static_embed.go
-.\goflow.exe pack validate examples/packs/dailyops-rest-telegram
-.\goflow.exe pack test examples/packs/dailyops-rest-telegram --output json
-.\goflow.exe pack run examples/packs/dailyops-rest-telegram
+```bash
+./goflow pack validate ./examples/packs/hello-webhook
+./goflow pack test ./examples/packs/hello-webhook
+./goflow pack run ./examples/packs/hello-webhook
 ```
 
-On POSIX systems, build `goflow` and use the same Pack subcommands with
-`./goflow`.
+On Windows, replace `./goflow` with `.\goflow.exe`.
 
-### Use the Windows portable pilot bundle
+## Two Ways To Use Goflow
 
-The unsigned Windows AMD64 bundle is produced by the repository CI workflow,
-not published as a Release. Obtain the exact-head artifact from the pilot
-coordinator, verify its commit marker and `SHA256SUMS.txt`, extract the inner
-bundle, then double-click `goflow.exe`.
+### Workflow automation platform
 
-Follow the complete [Windows pilot guide](docs/WINDOWS_PILOT_GUIDE.md). Do not
-run an artifact whose hash or expected commit does not match the handoff.
+Use the visual studio to build and inspect workflows with triggers, mappings,
+built-in nodes, credentials, execution history, and debugging tools. Operate the
+same workflows through the browser, REST API, CLI, or MCP.
+
+This mode fits developer tools, local automation, agent-controlled operations,
+webhook routing, and scheduled internal jobs.
+
+### Portable Pack appliance
+
+A Pack declares a managed workflow, non-secret setup fields, credential slots,
+bindings, assets, and required host capabilities. Pack Run serves a focused
+loopback UI for setup, manual or scheduled execution, diagnostics, and restart.
+
+Runtime state is stored outside the Pack and application directory. Managed
+workflow identity, configuration, credential references, and schedules persist
+across restarts. Host-managed migrations can require setup revalidation before
+execution resumes.
+
+## Capabilities
+
+- Visual workflow studio with mappings, execution inspection, retry, replay,
+  cancellation, and bounded diagnostics.
+- DAG execution with webhook, cron, manual, and GitHub webhook triggers.
+- Built-in HTTP, data, communication, database, infrastructure, and AI nodes.
+- REST API, WebSocket updates, CLI, MCP stdio, and MCP Streamable HTTP.
+- Scoped tokens, workflow allowlists, idempotency, audit events, and encrypted
+  credential storage.
+- Declarative Packs with setup schemas, deterministic builds, integrity checks,
+  external state, scheduling, migration, and rollback foundations.
 
 ## Pack Lifecycle
-
-Pack Format v1 uses a closed, deterministic lifecycle:
 
 ```text
 pack init -> pack validate -> pack test -> pack build -> pack verify -> pack run
 ```
+
+Representative commands:
 
 ```bash
 goflow pack init ./my-pack --id example.my-pack --name "My Pack"
@@ -176,224 +105,122 @@ goflow pack verify ./dist/example.my-pack-0.1.0-linux-amd64.zip
 goflow pack run ./my-pack --data-dir ./pack-data --no-open
 ```
 
-Pack Format v1 is declarative. Validation and build do not execute Pack-provided
-programs or packaged plugins. Offline fixtures are bounded, non-secret author inputs and are
-excluded from built bundles. Builds inventory shipped files in `PACK_INFO.json`
-and are deterministic for identical source files and target runtime.
+Pack Format v1 is declarative. Validation and build do not execute packaged
+plugins. `PACK_INFO.json` provides file integrity, not publisher authenticity.
+Optional Ed25519 verification requires an explicitly trusted external public
+key. Pack Run is loopback-only and does not support packaged plugin execution.
 
-`pack verify` checks archive or extracted-bundle integrity; checksums alone do
-not establish publisher identity. Optional Ed25519 signing commands exist as an
-offline development foundation. Verification requires an explicitly trusted
-external public key; Goflow has no production key governance or trusted
-publisher service. Pack Run is loopback-only, stores state outside the Pack and
-application directory, and does not support packaged plugin execution.
-
-See [Pack Format and lifecycle](docs/PACKS.md), the
+See [Pack Format](docs/PACKS.md), the
 [Pack author tutorial](docs/PACK_AUTHOR_TUTORIAL.md), and
-[development signing boundary](docs/PACK_SIGNING.md).
+[signing boundary](docs/PACK_SIGNING.md).
 
-## Capabilities
+## Examples
 
-- Visual graph editor with mappings, execution inspection, replay, retry, cancellation, and redacted diagnostics.
-- Manual, webhook, cron, and GitHub webhook triggers.
-- DAG execution with bounded node parallelism and execution concurrency.
-- REST API, WebSocket updates, CLI, MCP stdio, and MCP Streamable HTTP.
-- Scoped API tokens, workflow allowlists, idempotency, and audit events.
-- Import and export of workflow JSON.
-- AES-256-GCM credential storage with a separately required master key.
-- Pack setup schemas, credential slots, closed capabilities, connection tests, deterministic builds, and tamper rejection.
-- Host-managed migrations, revalidation, daily scheduling, external data, backup/restore, and local upgrade rollback.
-- A normalized HTTP source adapter with bounded pagination and projection.
+### Hello Webhook
 
-## Security And Data Model
+[`hello-webhook`](examples/packs/hello-webhook/) is a minimal Pack for learning
+the validate, test, and Pack Run flow.
 
-Goflow is designed for a trusted local user or small internal deployment, not
-for untrusted multi-tenant workflow authoring.
+### DailyOps
 
-- The default server and every Pack appliance bind to loopback.
-- A non-loopback server bind is rejected unless `GOFLOW_API_KEY` is set.
-- API credentials use the `Authorization: Bearer` header; query-string API keys
-  are not accepted.
-- Scoped tokens can limit scopes and allowed workflow IDs.
-- Saved credentials are encrypted with AES-256-GCM.
-- The SQLite database and matching `goflow.master.key` must be backed up
-  together; encrypted credentials cannot be recovered if the key is lost.
-- Pack setup keeps secrets in credential slots rather than manifests, workflow
-  parameters, URLs, fixtures, or bundle files.
-- Pack path, inventory, and hash checks reject undeclared files and tampering.
-- Bounded diagnostics redact configured sensitive data; review them before sharing.
-- The normalized HTTP adapter strips credentials on cross-origin redirects.
-- Goflow has no default remote telemetry and makes no production signing claim.
-- Workflow creation is an administrator-level capability. Scoped execution does
-  not sandbox an unsafe workflow.
+[`dailyops-rest-telegram`](examples/packs/dailyops-rest-telegram/) is the reference
+beta appliance. It validates a normalized HTTP(S) JSON report, formats one daily
+operations summary, and sends one Telegram message. It supports Run now and one
+daily schedule with an IANA timezone; it does not claim vendor compatibility.
+Use sanitized data and a dedicated non-production bot when evaluating it.
 
-The HTTP Request node can access private-network services, and the SSH node does
-not yet verify host keys. Run Goflow with only the operating-system permissions
-and network access its workflows need. Put non-local deployments behind HTTPS.
+Read the [source contract](docs/BETA_SOURCE_JSON_CONTRACT.md),
+[Telegram setup](docs/BETA_TELEGRAM_SETUP.md),
+[schedule guide](docs/BETA_SCHEDULE_TIMEZONE.md), and
+[Windows pilot guide](docs/WINDOWS_PILOT_GUIDE.md).
 
-Read [Security](docs/SECURITY.md), [Pack data backup and restore](docs/DATA_BACKUP_RESTORE.md),
-and [credential rotation](docs/CREDENTIAL_ROTATION.md).
+## Architecture And Entry Points
 
-## Architecture
-
-All external entry points converge on the same backend execution path. Pack Run
-adds a focused appliance UI and setup layer but reuses the host's workflow
-engine and persistent stores.
+The Web UI, REST clients, CLI, MCP, webhooks, schedules, and Pack appliance host
+converge on the shared TriggerService and DAG engine.
 
 ```mermaid
 flowchart LR
-    UI["Embedded Vue UI"] --> API["REST API"]
+    UI["Web UI"] --> API["REST API"]
     CLI["CLI"] --> API
-    MCP["MCP stdio / HTTP"] --> API
-    WEBHOOK["Webhooks / schedules"] --> TS["TriggerService"]
+    MCP["MCP"] --> API
+    PACK["Pack appliance"] --> TS["TriggerService"]
     API --> TS
-    APPLIANCE["Pack appliance UI"] --> SETUP["Pack setup host"]
-    SETUP --> TS
     TS --> DAG["DAG engine"]
     DAG --> DB["SQLite"]
-    DAG --> EVENTS["Events / WebSocket"]
+    DAG --> EVENTS["WebSocket events"]
     EVENTS --> UI
-    EVENTS --> APPLIANCE
+    EVENTS --> PACK
 ```
 
-For component responsibilities and execution flow, see
-[Architecture](docs/ARCHITECTURE.md).
-
-## CLI
-
-The binary includes commands for platform status, workflows, executions,
-tokens, MCP, and Packs:
+CLI examples:
 
 ```bash
 goflow status --output json
 goflow workflow list --active
-goflow workflow describe <workflow-id-or-slug>
 goflow workflow run <workflow-id-or-slug> --set source=cli --wait
-goflow workflow export <workflow-id-or-slug> --output workflow.json
-goflow workflow import workflow.json --activate
-goflow execution watch <execution-id> --timeout 60s
-goflow execution cancel <execution-id>
-goflow token create mcp-runner --scope workflow:list --scope workflow:run --workflow <workflow-id>
 goflow mcp stdio
 ```
 
-CLI and MCP are clients of the REST execution path; they do not run separate
-workflow engines. MCP workflow exposure is opt-in and requires an active,
-explicitly exposed workflow plus an appropriate scoped token.
+See [Architecture](docs/ARCHITECTURE.md), [CLI reference](docs/CLI.md), and
+[MCP overview](docs/MCP.md).
 
-See [CLI reference](docs/CLI.md), [MCP overview](docs/MCP.md), and
-[MCP HTTP setup](MCP_HTTP.md).
+## Security Boundaries
 
-## Built-In Nodes And Adapters
+- The server and Pack Run bind to loopback by default.
+- Non-loopback binding requires `GOFLOW_API_KEY` and operator-supplied HTTPS.
+- Credentials are encrypted with AES-256-GCM; back up SQLite and the matching
+  `goflow.master.key` together.
+- Scoped tokens restrict approved actions and workflow IDs, but do not sandbox
+  unsafe workflows.
+- Pack path, inventory, secret, and hash checks reject invalid or tampered
+  bundles; packaged programs are not executed by Pack Run.
+- Diagnostics are bounded and redacted, and Goflow has no default remote
+  telemetry or production signing claim.
 
-Built-in node groups include:
+Workflow authors can configure nodes with broad network and system access. Run
+Goflow with only the permissions and connectivity its workflows need. See the
+full [security model](docs/SECURITY.md).
 
-- **Triggers:** manual, webhook, cron, and GitHub webhook.
-- **Logic and data:** IF/ELSE, delay, JSON transform, JavaScript, and
-  sub-workflow.
-- **Communication:** SMTP email, Telegram, Discord, Slack, and Gmail.
-- **Services:** generic HTTP, Google Sheets, Google Drive, and Notion.
-- **Databases and infrastructure:** PostgreSQL, MySQL, MongoDB, Redis, SSH,
-  and Git.
-- **AI and extension:** OpenAI, DeepSeek, and the platform Goflow plugin node.
+## When Goflow Fits
 
-The normalized HTTP source adapter is a narrower Pack-oriented contract. It is
-GET-only, accepts absolute HTTP(S) URLs, supports bounded projection and
-pagination, limits response size and retries, and strips credentials on
-cross-origin redirects.
+Goflow is optimized for trusted local and small internal deployments where a
+compact binary, local ownership, controlled agent access, or a focused portable
+appliance matters more than a large integration marketplace or hosted team
+platform.
 
-The platform plugin node is distinct from Pack distribution: Pack appliances
-currently reject packaged plugins rather than executing untrusted bundled
-programs.
-
-See the [node guide](NODES.md) and [adapter contract](docs/ADAPTERS.md).
-
-## Goflow Vs n8n
-
-Goflow and n8n solve overlapping workflow problems with different product and
-operational tradeoffs.
-
-| Area | Goflow Productization Beta | n8n |
-|---|---|---|
-| Primary fit | Trusted local/internal automation and focused appliances | Broad team automation and integration coverage |
-| Deployment | One Go binary with embedded UI and SQLite by default | Self-hosted or managed cloud deployment options |
-| Integration breadth | Focused built-ins, generic protocols, early Pack model | Large established connector ecosystem |
-| Portable use-case UI | Pack appliance setup and operations surface | Workflow/editor-centric product surface |
-| Agent entry points | REST, CLI, MCP stdio, MCP HTTP | APIs and platform integrations |
-| Current maturity | Unsigned beta with explicit pilot limits | Mature production product |
-
-Choose n8n when connector breadth, hosted service, team features, and an
-established ecosystem are primary requirements. Evaluate Goflow when a compact
-local runtime, controlled agent access, or a focused portable appliance is the
-more important constraint.
+Choose a mature automation platform such as n8n when connector breadth, cloud
+operation, collaboration, and an established ecosystem are primary needs. See
+[Who Is Goflow For?](docs/WHO_IS_GOFLOW_FOR.md) for the capability boundary and
+alternatives.
 
 ## Documentation
 
 | Topic | Document |
 |---|---|
-| Installation and configuration | [Installation](docs/INSTALLATION.md) |
-| Productization Beta operations | [Beta operations index](docs/BETA_OPERATIONS.md) |
-| Windows portable pilot | [Windows pilot guide](docs/WINDOWS_PILOT_GUIDE.md) |
-| DailyOps source and schedule | [Source contract](docs/BETA_SOURCE_JSON_CONTRACT.md), [schedule/timezone](docs/BETA_SCHEDULE_TIMEZONE.md) |
-| Pack authoring | [Pack Format](docs/PACKS.md), [author tutorial](docs/PACK_AUTHOR_TUTORIAL.md) |
-| Pack integrity and signing | [Pack signing](docs/PACK_SIGNING.md) |
-| Pack state and recovery | [Data backup/restore](docs/DATA_BACKUP_RESTORE.md), [credential rotation](docs/CREDENTIAL_ROTATION.md) |
-| CLI | [CLI reference](docs/CLI.md) |
-| MCP | [MCP overview](docs/MCP.md), [HTTP setup](MCP_HTTP.md) |
+| Installation | [Installation and configuration](docs/INSTALLATION.md) |
+| Packs | [Pack Format](docs/PACKS.md), [author tutorial](docs/PACK_AUTHOR_TUTORIAL.md) |
+| CLI and MCP | [CLI](docs/CLI.md), [MCP](docs/MCP.md) |
 | Nodes and adapters | [Node guide](NODES.md), [adapter contract](docs/ADAPTERS.md) |
-| Security | [Security model](docs/SECURITY.md) |
+| Security and recovery | [Security](docs/SECURITY.md), [backup/restore](docs/DATA_BACKUP_RESTORE.md) |
+| Beta operations | [Operations index](docs/BETA_OPERATIONS.md), [limitations](docs/BETA_LIMITATIONS.md) |
+| Windows appliance | [Windows pilot guide](docs/WINDOWS_PILOT_GUIDE.md) |
 | Architecture | [Architecture](docs/ARCHITECTURE.md) |
-| Development and tests | [Development](docs/DEVELOPMENT.md) |
-| Deferred work | [Post-beta roadmap](docs/productization/POST_BETA_ROADMAP.md) |
+| Development | [Development](docs/DEVELOPMENT.md) |
 
 ## Current Limitations
 
-- Productization Beta is unsigned pilot software, not a production release.
-- There is no installer, trusted publisher chain, release channel, background
-  update, marketplace, or automatic uninstall.
-- Pack appliances are loopback-only and designed for one trusted local user.
-- Multi-user workspaces, full RBAC, SSO, enterprise governance, high
-  availability, and hosted management are not implemented.
-- DailyOps accepts the documented normalized JSON contract only and makes no
-  vendor compatibility claim.
-- Packaged plugins and Pack-provided migration code are unsupported.
-- Optional Pack signatures are a development mechanism, not production trust.
-- Public-network operation requires operator-supplied HTTPS and careful access
-  control.
-- The SSH node lacks strict known-host verification.
-- Pilot reports do not establish customer validation, production reliability,
-  support commitments, or willingness to pay.
+- Goflow is Productization Beta software.
+- Windows pilot artifacts are unsigned.
+- There is no installer or production Release channel.
+- The supported operating boundary is trusted local or small internal use.
+- Pack Run does not execute packaged plugins.
+- There is no production marketplace, registry, or hosted control plane.
 
 See [Beta limitations](docs/BETA_LIMITATIONS.md) for the maintained boundary.
 
-## Roadmap
+## License
 
-Post-beta work is gated by evidence and separate review, not promised on a
-date-based schedule. Candidate areas include:
-
-- one vendor-specific commercial adapter only after real customer need selects
-  a vendor and authorized sandbox, API, legal, and contract evidence exists;
-- production signing and releases only after key custody, revocation,
-  provenance, and manual Windows acceptance are defined;
-- user-approved remote updates only with authenticated artifacts,
-  anti-rollback, atomic installation, health checks, and tested rollback;
-- a curated registry only after publisher governance, scanning, compatibility,
-  incident response, legal, payment, and support decisions;
-- hosted or enterprise features only after separate product evidence and threat
-  models.
-
-The authoritative deferred-work list is the
-[post-beta roadmap](docs/productization/POST_BETA_ROADMAP.md).
-
-## License And Commercial Direction
-
-The Community edition in this repository is licensed under the
-[MIT License](LICENSE). The license permits use, copying, modification, and
-distribution subject to its terms. It does not grant rights to misuse the
-Goflow name, logo, or project identity; see [Trademark](TRADEMARK.md).
-
-The repository is the usable Community edition. Future paid offerings may
-include supported vendor integrations, maintained task-specific Packs,
-setup/migration/support services, or optional team governance, but no such
-product or availability is claimed here. See
-[Commercial direction](COMMERCIAL.md) for candidate positioning.
+This repository is licensed under the [MIT License](LICENSE). Future commercial
+opportunities are described as direction, not current product availability, in
+[COMMERCIAL.md](COMMERCIAL.md).
