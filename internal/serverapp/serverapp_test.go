@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"goflow/config"
+	"goflow/internal/api"
 	"goflow/internal/nodes"
 )
 
@@ -26,6 +27,9 @@ func TestStartWithEphemeralListenerHealthAndExistingRoute(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
+	}
+	if app.schedule != nil {
+		t.Fatal("generic server unexpectedly started managed scheduler")
 	}
 	defer func() {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -42,6 +46,35 @@ func TestStartWithEphemeralListenerHealthAndExistingRoute(t *testing.T) {
 	body = httpGet(t, app.URL+"/api/v1/workflows", http.StatusOK)
 	if strings.TrimSpace(body) != "[]" {
 		t.Fatalf("existing route returned unexpected body: %s", body)
+	}
+}
+
+func TestStartApplianceOwnsManagedSchedulerLifecycle(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	listener := testListener(t)
+	app, err := Start(ctx, Options{
+		Config:   testConfig(t),
+		Listener: listener,
+		Logger:   testLogger(t),
+		Appliance: &api.ApplianceContext{
+			Enabled: true, PackID: "official.dailyops-rest-telegram",
+			PackVersion: "0.2.0", WorkflowID: "workflow-1", DataDir: t.TempDir(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if app.schedule == nil {
+		t.Fatal("appliance server did not create managed scheduler")
+	}
+	cancel()
+	select {
+	case err := <-app.Done():
+		if err != nil {
+			t.Fatalf("app shutdown failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("managed scheduler prevented graceful shutdown")
 	}
 }
 

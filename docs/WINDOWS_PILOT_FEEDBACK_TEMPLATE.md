@@ -6,10 +6,10 @@ Do not include credentials, tokens, customer data, private source URLs, database
 
 - Pilot date:
 - Windows version and architecture:
-- Goflow commit from `UNSIGNED-PILOT-ALPHA.txt`:
+- Goflow commit from `UNSIGNED-PILOT-BETA.txt`:
 - Installation and first startup successful: Yes / No
 - Time from download to first UI load:
-- Time from first UI load to first successful workflow run:
+- Time from first UI load to first successful report:
 
 ## Setup Experience
 
@@ -17,13 +17,17 @@ Do not include credentials, tokens, customer data, private source URLs, database
 - Steps that were confusing or required help:
 - SmartScreen or security-policy outcome:
 - Credential connection test outcome:
-- Workflow outcome and expected Telegram result:
+- Source test outcome and whether the JSON API endpoint distinction was clear:
+- Telegram bot and chat test outcome, including whether `/start` was needed:
+- Report outcome and expected Telegram result:
+- Running status updated without manually reloading: Yes / No
+- Repeated Run click produced only one report: Yes / No / Not tested
 - Errors observed, with secrets and local paths removed:
 
 ## Persistence
 
 - Goflow stopped cleanly: Yes / No
-- Setup and workflow state remained available after restart: Yes / No
+- Setup and report state remained available after restart: Yes / No
 - A second launch reused the running instance: Yes / No / Not tested
 - Uninstall steps understood: Yes / No
 

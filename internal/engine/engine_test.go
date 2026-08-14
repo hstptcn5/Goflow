@@ -3,6 +3,8 @@ package engine
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -102,6 +104,68 @@ func (m *echoParamsAction) Execute(ctx *nodes.ExecutionContext, node *nodes.Node
 func (m *echoParamsAction) Validate(node *nodes.Node) error { return nil }
 func (m *echoParamsAction) GetDefinition() nodes.NodeDefinition {
 	return nodes.NodeDefinition{Type: "echoParamsAction"}
+}
+
+type countedDestination struct{ calls int }
+
+func (d *countedDestination) Execute(ctx *nodes.ExecutionContext, node *nodes.Node) (interface{}, error) {
+	d.calls++
+	return map[string]interface{}{"sent": true}, nil
+}
+func (d *countedDestination) Validate(node *nodes.Node) error { return nil }
+func (d *countedDestination) GetDefinition() nodes.NodeDefinition {
+	return nodes.NodeDefinition{Type: "countedDestination", Retryable: false}
+}
+
+func TestNormalizedHTTPSourceFailureBlocksDestination(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"unexpected":"shape"}`))
+	}))
+	defer server.Close()
+
+	destination := &countedDestination{}
+	registry := nodes.NewPluginRegistry()
+	if err := registry.Register(nodes.NewNormalizedHTTPSourceExecutorWithClient(server.Client(), nil)); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register(destination); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := storage.NewDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	wfStore := storage.NewWorkflowStore(db)
+	eng := NewEngine(registry, storage.NewExecutionStore(db), storage.NewCredentialStore(db, nil), NewEventBus(), wfStore)
+	nodeList := []nodes.Node{
+		{ID: "source", Type: nodes.TypeNormalizedHTTPSource, Params: map[string]interface{}{
+			"url": server.URL, "auth_mode": "none", "pagination": "none",
+			"response_contract": map[string]interface{}{"required": map[string]interface{}{
+				"report_date": map[string]interface{}{"type": "string", "non_empty": true},
+			}},
+		}},
+		{ID: "destination", Type: "countedDestination", Params: map[string]interface{}{}},
+	}
+	edgeList := []nodes.Edge{{ID: "source-to-destination", Source: "source", Target: "destination"}}
+	nodesJSON, _ := json.Marshal(nodeList)
+	edgesJSON, _ := json.Marshal(edgeList)
+	wf := &storage.Workflow{ID: "wf-adapter-failure", Name: "Adapter failure", NodesJSON: string(nodesJSON), EdgesJSON: string(edgesJSON)}
+	if err := wfStore.Create(wf); err != nil {
+		t.Fatal(err)
+	}
+
+	execution, err := eng.ExecuteWorkflow(wf, nil)
+	if err != nil {
+		t.Fatalf("execute workflow returned protocol error: %v", err)
+	}
+	if execution.Status != "FAILED" {
+		t.Fatalf("status = %s, want FAILED", execution.Status)
+	}
+	if destination.calls != 0 {
+		t.Fatalf("destination calls = %d, want 0", destination.calls)
+	}
 }
 
 func TestExecuteWorkflowConcurrencyLimit(t *testing.T) {

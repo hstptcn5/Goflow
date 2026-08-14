@@ -47,8 +47,8 @@ go build -o goflow.exe main.go static_embed.go
 | `GOFLOW_MASTER_KEY_FILE` | `goflow.master.key` | Credential encryption master key path |
 | `GOFLOW_MAX_CONCURRENT_EXECUTIONS` | `10` | Global running workflow limit |
 | `GOFLOW_MAX_PARALLEL_NODES_PER_EXECUTION` | `4` | Per-execution node parallelism |
-| `GOFLOW_EXECUTION_RETENTION_DAYS` | `30` | Execution cleanup by age |
-| `GOFLOW_MAX_EXECUTIONS_PER_WORKFLOW` | `1000` | Execution cleanup by count |
+| `GOFLOW_EXECUTION_RETENTION_DAYS` | `30` | Execution cleanup by age; supported range 1-365, otherwise default |
+| `GOFLOW_MAX_EXECUTIONS_PER_WORKFLOW` | `1000` | Per-workflow cleanup cap; supported range 1-10000, otherwise default |
 
 ## Secure Mode
 
@@ -71,4 +71,3 @@ Authorization: Bearer <api-key-or-scoped-token>
 ```
 
 Run public deployments behind HTTPS and prefer scoped tokens for automation clients.
-

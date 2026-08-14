@@ -39,6 +39,7 @@ type Runner struct {
 	Stdin           io.Reader
 	PackRuntimePath string
 	UIFS            fs.FS
+	AppVersion      string
 }
 
 type clientOptions struct {
@@ -96,6 +97,8 @@ Usage:
   goflow pack inspect <pack-directory|bundle.zip|extracted-directory> [--output table|json]
   goflow pack test <pack-directory> [--output table|json]
   goflow pack verify <bundle.zip|extracted-directory> [--output table|json]
+  goflow pack sign <bundle.zip> --output <signed.zip> --key-id <id> --private-key <path|->
+  goflow pack verify-signature <bundle.zip> --key-id <id> --public-key <path> [--output table|json]
   goflow pack build <pack-directory> --output <output-directory> [--target goos-goarch] [--force]
   goflow pack run <pack-directory> [--data-dir directory] [--port port] [--no-open]
   goflow execution get <execution-id> [--output table|json]
@@ -319,6 +322,10 @@ func (r Runner) pack(args []string) int {
 		return r.packTest(args[1:])
 	case "verify":
 		return r.packVerify(args[1:])
+	case "sign":
+		return r.packSign(args[1:])
+	case "verify-signature":
+		return r.packVerifySignature(args[1:])
 	case "build":
 		return r.packBuild(args[1:])
 	case "run":
@@ -382,7 +389,7 @@ func (r Runner) packInspect(args []string) int {
 		return ExitInvalidInput
 	}
 	return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {
-		fmt.Fprintf(r.Stdout, "Pack: %s\nVersion: %s\nKind: %s\nIntegrity: %s\nTarget: %s\nEntry workflow: %s\nConfig fields: %d\nCredential requirements: %d\nBindings: %d\nPlugins: %d\nAssets: %d\n", result.ID, result.Version, result.Kind, result.Integrity, result.Target, result.EntryWorkflow, result.ConfigFields, result.CredentialRequirements, result.Bindings, result.Plugins, result.Assets)
+		fmt.Fprintf(r.Stdout, "Pack: %s\nVersion: %s\nKind: %s\nIntegrity: %s\nTarget: %s\nEntry workflow: %s\nConfig fields: %d\nCredential requirements: %d\nBindings: %d\nPlugins: %d\nAssets: %d\nRequired capabilities: %s\nOffline fixture: %t\n", result.ID, result.Version, result.Kind, result.Integrity, result.Target, result.EntryWorkflow, result.ConfigFields, result.CredentialRequirements, result.Bindings, result.Plugins, result.Assets, strings.Join(result.RequiredCapabilities, ","), result.OfflineTestFixture)
 	})
 }
 
@@ -399,13 +406,16 @@ func (r Runner) packTest(args []string) int {
 		result.Status = "FAILED"
 		result.Error = err.Error()
 		if *output == "json" {
-			return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {})
+			if code := writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {}); code != ExitOK {
+				return code
+			}
+			return ExitInvalidInput
 		}
 		fmt.Fprintln(r.Stderr, err)
 		return ExitInvalidInput
 	}
 	return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {
-		fmt.Fprintf(r.Stdout, "Pack test: %s\nID: %s\nValidation: %s\nSetup: %s\nManaged workflow: %s\nConnection tests: %s\n", result.Status, result.ID, result.Validation, result.Setup, result.ManagedWorkflow, result.ConnectionTests)
+		fmt.Fprintf(r.Stdout, "Pack test: %s\nID: %s\nValidation: %s\nFixture: %s\nSetup: %s\nManaged workflow: %s\nConnection tests: %s\n", result.Status, result.ID, result.Validation, result.Fixture, result.Setup, result.ManagedWorkflow, result.ConnectionTests)
 	})
 }
 
@@ -422,13 +432,16 @@ func (r Runner) packVerify(args []string) int {
 		result.Status = "FAILED"
 		result.Error = err.Error()
 		if *output == "json" {
-			return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {})
+			if code := writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {}); code != ExitOK {
+				return code
+			}
+			return ExitInvalidInput
 		}
 		fmt.Fprintln(r.Stderr, err)
 		return ExitInvalidInput
 	}
 	return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {
-		fmt.Fprintf(r.Stdout, "Pack verification: %s\nKind: %s\nPack: %s\nVersion: %s\nTarget: %s\n", result.Status, result.Kind, result.ID, result.Version, result.Target)
+		fmt.Fprintf(r.Stdout, "Pack verification: %s\nKind: %s\nPack: %s\nVersion: %s\nTarget: %s\nAuthenticity: %s\n", result.Status, result.Kind, result.ID, result.Version, result.Target, result.Authenticity)
 	})
 }
 
@@ -478,13 +491,14 @@ func (r Runner) packRun(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := packrun.Run(ctx, packrun.Options{
-		PackDir: dir,
-		DataDir: *dataDir,
-		Port:    *port,
-		NoOpen:  *noOpen,
-		UIFS:    r.UIFS,
-		Stdout:  r.Stdout,
-		Stderr:  r.Stderr,
+		PackDir:    dir,
+		DataDir:    *dataDir,
+		Port:       *port,
+		NoOpen:     *noOpen,
+		UIFS:       r.UIFS,
+		AppVersion: r.AppVersion,
+		Stdout:     r.Stdout,
+		Stderr:     r.Stderr,
 	}); err != nil {
 		fmt.Fprintln(r.Stderr, err)
 		return ExitExecutionFailed
@@ -493,18 +507,20 @@ func (r Runner) packRun(args []string) int {
 }
 
 type packInspectResult struct {
-	Kind                   string `json:"kind"`
-	ID                     string `json:"id"`
-	Name                   string `json:"name"`
-	Version                string `json:"version"`
-	Target                 string `json:"target,omitempty"`
-	EntryWorkflow          string `json:"entry_workflow"`
-	Integrity              string `json:"integrity"`
-	ConfigFields           int    `json:"config_fields"`
-	CredentialRequirements int    `json:"credential_requirements"`
-	Bindings               int    `json:"bindings"`
-	Plugins                int    `json:"plugins"`
-	Assets                 int    `json:"assets"`
+	Kind                   string   `json:"kind"`
+	ID                     string   `json:"id"`
+	Name                   string   `json:"name"`
+	Version                string   `json:"version"`
+	Target                 string   `json:"target,omitempty"`
+	EntryWorkflow          string   `json:"entry_workflow"`
+	Integrity              string   `json:"integrity"`
+	ConfigFields           int      `json:"config_fields"`
+	CredentialRequirements int      `json:"credential_requirements"`
+	Bindings               int      `json:"bindings"`
+	Plugins                int      `json:"plugins"`
+	Assets                 int      `json:"assets"`
+	RequiredCapabilities   []string `json:"required_capabilities,omitempty"`
+	OfflineTestFixture     bool     `json:"offline_test_fixture"`
 }
 
 type packTestResult struct {
@@ -513,18 +529,120 @@ type packTestResult struct {
 	Validation      string   `json:"validation,omitempty"`
 	Setup           string   `json:"setup,omitempty"`
 	ManagedWorkflow string   `json:"managed_workflow,omitempty"`
+	Fixture         string   `json:"fixture,omitempty"`
 	ConnectionTests string   `json:"connection_tests,omitempty"`
 	Skipped         []string `json:"skipped,omitempty"`
 	Error           string   `json:"error,omitempty"`
 }
 
 type packVerifyResult struct {
-	Status  string `json:"status"`
-	Kind    string `json:"kind,omitempty"`
-	ID      string `json:"id,omitempty"`
-	Version string `json:"version,omitempty"`
-	Target  string `json:"target,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Status       string `json:"status"`
+	Kind         string `json:"kind,omitempty"`
+	ID           string `json:"id,omitempty"`
+	Version      string `json:"version,omitempty"`
+	Target       string `json:"target,omitempty"`
+	Error        string `json:"error,omitempty"`
+	Authenticity string `json:"authenticity,omitempty"`
+}
+
+func (r Runner) packSign(args []string) int {
+	fs := flag.NewFlagSet("pack sign", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	output := fs.String("output", "", "Signed output ZIP")
+	keyID := fs.String("key-id", "", "Trusted publisher key ID")
+	privateKeyPath := fs.String("private-key", "", "PEM PKCS#8 Ed25519 private key path, or - for stdin")
+	input, ok, code := parseOneRef(fs, args, "bundle ZIP", r.Stderr)
+	if !ok {
+		return code
+	}
+	if *output == "" || *keyID == "" || *privateKeyPath == "" {
+		fmt.Fprintln(r.Stderr, "--output, --key-id, and --private-key are required")
+		return ExitInvalidInput
+	}
+	keyData, err := readKeyInput(*privateKeyPath, r.Stdin)
+	if err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	if err := pack.SignBundleArchive(input, *output, *keyID, keyData); err != nil {
+		fmt.Fprintln(r.Stderr, err)
+		return ExitInvalidInput
+	}
+	fmt.Fprintf(r.Stdout, "Signed Pack bundle\nOutput: %s\nKey ID: %s\n", *output, *keyID)
+	return ExitOK
+}
+
+func (r Runner) packVerifySignature(args []string) int {
+	fs := flag.NewFlagSet("pack verify-signature", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	output := fs.String("output", "table", "Output format: table or json")
+	keyID := fs.String("key-id", "", "Trusted publisher key ID")
+	publicKeyPath := fs.String("public-key", "", "PEM PKIX Ed25519 public key path")
+	input, ok, code := parseOneRef(fs, args, "signed bundle ZIP", r.Stderr)
+	if !ok {
+		return code
+	}
+	result := packVerifyResult{Kind: "bundle_zip", Authenticity: "FAILED"}
+	if *keyID == "" || *publicKeyPath == "" || *publicKeyPath == "-" {
+		result.Error = "--key-id and a public-key file path are required"
+		return writeFailedPackResult(r, *output, result)
+	}
+	keyData, err := readKeyInput(*publicKeyPath, nil)
+	if err == nil {
+		err = pack.VerifyBundleSignature(input, *keyID, keyData)
+	}
+	if err != nil {
+		result.Error = err.Error()
+		return writeFailedPackResult(r, *output, result)
+	}
+	info, err := pack.ReadBundleArchiveInfo(input)
+	if err != nil {
+		result.Error = err.Error()
+		return writeFailedPackResult(r, *output, result)
+	}
+	result.Status, result.ID, result.Version, result.Target, result.Authenticity = "PASS", info.PackID, info.PackVersion, info.Target, "VERIFIED"
+	return writePackCommandOutput(r.Stdout, r.Stderr, *output, result, func() {
+		fmt.Fprintf(r.Stdout, "Pack signature: VERIFIED\nPack: %s\nVersion: %s\nTarget: %s\nKey ID: %s\n", result.ID, result.Version, result.Target, *keyID)
+	})
+}
+
+func writeFailedPackResult(r Runner, output string, result packVerifyResult) int {
+	result.Status = "FAILED"
+	if output == "json" {
+		if code := writePackCommandOutput(r.Stdout, r.Stderr, output, result, func() {}); code != ExitOK {
+			return code
+		}
+	} else {
+		fmt.Fprintln(r.Stderr, result.Error)
+	}
+	return ExitInvalidInput
+}
+
+func readKeyInput(path string, stdin io.Reader) ([]byte, error) {
+	var reader io.Reader
+	var file *os.File
+	if path == "-" {
+		if stdin == nil {
+			return nil, fmt.Errorf("stdin is not allowed for this key")
+		}
+		reader = stdin
+	} else {
+		var err error
+		file, err = os.Open(path)
+		if err != nil {
+			return nil, fmt.Errorf("open key: %w", err)
+		}
+		defer file.Close()
+		reader = file
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, pack.MaxKeyFileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read key: %w", err)
+	}
+	if len(data) > pack.MaxKeyFileBytes {
+		return nil, fmt.Errorf("key exceeds %d byte limit", pack.MaxKeyFileBytes)
+	}
+	return data, nil
 }
 
 func writePackCommandOutput(stdout, stderr io.Writer, output string, value interface{}, writeTable func()) int {
@@ -577,15 +695,20 @@ func scaffoldPack(dir, id, name, target string, force bool) error {
 	if err := os.MkdirAll(filepath.Join(temp, "workflows"), 0700); err != nil {
 		return err
 	}
+	if err := os.MkdirAll(filepath.Join(temp, "tests"), 0700); err != nil {
+		return err
+	}
 	manifest := pack.Manifest{
-		SchemaVersion:       pack.SupportedSchema,
-		ID:                  id,
-		Name:                name,
-		Version:             "0.1.0",
-		Description:         "A portable Goflow pack.",
-		EntryWorkflow:       pack.DefaultWorkflowPath,
-		RequiredCredentials: []string{},
-		SupportedPlatforms:  []string{target},
+		SchemaVersion:        pack.SupportedSchema,
+		ID:                   id,
+		Name:                 name,
+		Version:              "0.1.0",
+		Description:          "A portable Goflow pack.",
+		EntryWorkflow:        pack.DefaultWorkflowPath,
+		RequiredCredentials:  []string{},
+		SupportedPlatforms:   []string{target},
+		RequiredCapabilities: []string{pack.CapabilityPackV1},
+		OfflineTestFixture:   "tests/offline.json",
 	}
 	workflowData := map[string]interface{}{
 		"name":        name,
@@ -602,7 +725,11 @@ func scaffoldPack(dir, id, name, target string, force bool) error {
 	if err := writeJSONFile(filepath.Join(temp, pack.DefaultWorkflowPath), workflowData); err != nil {
 		return err
 	}
-	readme := fmt.Sprintf("# %s\n\nPack ID: `%s`\n\nThis scaffold contains no credentials or secret example values.\n", name, id)
+	fixture := pack.OfflineTestFixture{SchemaVersion: pack.OfflineFixtureSchemaVersion, Config: map[string]interface{}{}}
+	if err := writeJSONFile(filepath.Join(temp, "tests", "offline.json"), fixture); err != nil {
+		return err
+	}
+	readme := fmt.Sprintf("# %s\n\nPack ID: `%s`\n\nThis scaffold contains no credentials or secret example values.\n\nAuthor flow:\n\n```text\ngoflow pack validate .\ngoflow pack test .\ngoflow pack build . --output ./dist\n```\n", name, id)
 	if err := os.WriteFile(filepath.Join(temp, "README.md"), []byte(readme), 0600); err != nil {
 		return fmt.Errorf("write README.md: %w", err)
 	}
@@ -630,14 +757,14 @@ func inspectPackReference(ref string) (packInspectResult, error) {
 		if err := pack.VerifyBundleArchiveFile(ref); err != nil {
 			integrity = "invalid: " + err.Error()
 		}
-		return packInspectResult{Kind: "bundle_zip", ID: info.PackID, Version: info.PackVersion, Target: info.Target, EntryWorkflow: info.EntryWorkflow, Integrity: integrity}, nil
+		return packInspectResult{Kind: "bundle_zip", ID: info.PackID, Version: info.PackVersion, Target: info.Target, EntryWorkflow: info.EntryWorkflow, Integrity: integrity, RequiredCapabilities: append([]string(nil), info.RequiredCapabilities...)}, nil
 	}
 	if _, err := os.Stat(filepath.Join(ref, "PACK_INFO.json")); err == nil {
 		info, err := pack.VerifyExtractedBundle(ref)
 		if err != nil {
 			return packInspectResult{}, err
 		}
-		return packInspectResult{Kind: "extracted_bundle", ID: info.PackID, Version: info.PackVersion, Target: info.Target, EntryWorkflow: info.EntryWorkflow, Integrity: "valid"}, nil
+		return packInspectResult{Kind: "extracted_bundle", ID: info.PackID, Version: info.PackVersion, Target: info.Target, EntryWorkflow: info.EntryWorkflow, Integrity: "valid", RequiredCapabilities: append([]string(nil), info.RequiredCapabilities...)}, nil
 	}
 	loaded, err := pack.Load(ref)
 	if err != nil {
@@ -657,6 +784,8 @@ func inspectPackReference(ref string) (packInspectResult, error) {
 		Bindings:               len(m.Bindings),
 		Plugins:                len(m.Plugins),
 		Assets:                 len(m.Assets),
+		RequiredCapabilities:   append([]string(nil), m.RequiredCapabilities...),
+		OfflineTestFixture:     m.OfflineTestFixture != "",
 	}, nil
 }
 
@@ -669,13 +798,21 @@ func verifyPackReference(ref string) (packVerifyResult, error) {
 		if err != nil {
 			return packVerifyResult{Kind: "bundle_zip"}, err
 		}
-		return packVerifyResult{Status: "PASS", Kind: "bundle_zip", ID: info.PackID, Version: info.PackVersion, Target: info.Target}, nil
+		state, err := pack.BundleSignatureState(ref)
+		if err != nil {
+			return packVerifyResult{Kind: "bundle_zip"}, err
+		}
+		return packVerifyResult{Status: "PASS", Kind: "bundle_zip", ID: info.PackID, Version: info.PackVersion, Target: info.Target, Authenticity: state}, nil
 	}
 	info, err := pack.VerifyExtractedBundle(ref)
 	if err != nil {
 		return packVerifyResult{Kind: "extracted_bundle"}, err
 	}
-	return packVerifyResult{Status: "PASS", Kind: "extracted_bundle", ID: info.PackID, Version: info.PackVersion, Target: info.Target}, nil
+	state, err := pack.BundleSignatureState(ref)
+	if err != nil {
+		return packVerifyResult{Kind: "extracted_bundle"}, err
+	}
+	return packVerifyResult{Status: "PASS", Kind: "extracted_bundle", ID: info.PackID, Version: info.PackVersion, Target: info.Target, Authenticity: state}, nil
 }
 
 func testPackOffline(dir string) (packTestResult, error) {
@@ -691,6 +828,18 @@ func testPackOffline(dir string) (packTestResult, error) {
 	}
 	defer func() { _ = os.RemoveAll(dataDir) }()
 	configValues := syntheticConfigValues(loaded.Manifest.ConfigSchema)
+	fixture, err := pack.LoadOfflineTestFixture(loaded)
+	if err != nil {
+		return result, err
+	}
+	if fixture != nil {
+		for key, value := range fixture.Config {
+			configValues[key] = value
+		}
+		result.Fixture = "PASS"
+	} else {
+		result.Fixture = "SYNTHETIC"
+	}
 	if _, err := packsetup.SaveConfig(dataDir, loaded.Manifest, configValues); err != nil {
 		return result, err
 	}

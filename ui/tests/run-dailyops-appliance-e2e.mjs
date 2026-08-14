@@ -33,6 +33,7 @@ mkdirSync(dataDir, { recursive: true });
 mkdirSync(artifactDir, { recursive: true });
 mkdirSync(join(root, '.gocache'), { recursive: true });
 
+const harnessBinary = configuredHarnessBinary || await buildHarness();
 const sourceServer = await startSourceServer();
 const telegramServer = await startTelegramServer();
 const sourceURL = `${sourceServer.url}/dailyops.json`;
@@ -42,23 +43,28 @@ let exitCode = 1;
 let harness = null;
 try {
   harness = await startHarness();
-  exitCode = await runPlaywright('setup', harness.baseURL);
+  exitCode = await runPlaywright('setup', harness.baseURL, harness.controlURL);
   if (exitCode !== 0) throw new Error('DailyOps setup Playwright phase failed');
   await killTree(harness.child);
 
-  assertSourceCalls(sourceServer, { count: 1, method: 'GET', path: '/dailyops.json' });
-  assertTelegramCalls(telegramServer, { getMe: 1, sendMessage: 1 });
+  assertSourceCalls(sourceServer, { count: 6, dailyops: 4, html: 1, missing: 1 });
+  assertTelegramCalls(telegramServer, { getMe: 4, getChat: 3, sendMessage: 2 });
 
   harness = await startHarness();
-  assertSourceCalls(sourceServer, { count: 1, method: 'GET', path: '/dailyops.json' });
-  assertTelegramCalls(telegramServer, { getMe: 1, sendMessage: 1 });
-  exitCode = await runPlaywright('persist', harness.baseURL);
+  assertSourceCalls(sourceServer, { count: 6, dailyops: 4, html: 1, missing: 1 });
+  assertTelegramCalls(telegramServer, { getMe: 4, getChat: 3, sendMessage: 2 });
+  exitCode = await runPlaywright('persist', harness.baseURL, harness.controlURL);
   if (exitCode !== 0) throw new Error('DailyOps persistence Playwright phase failed');
-  assertSourceCalls(sourceServer, { count: 2, method: 'GET', path: '/dailyops.json' });
-  assertTelegramCalls(telegramServer, { getMe: 1, sendMessage: 2 });
+  assertSourceCalls(sourceServer, { count: 7, dailyops: 5, html: 1, missing: 1 });
+  assertTelegramCalls(telegramServer, { getMe: 4, getChat: 3, sendMessage: 3 });
 
   await scanForForbiddenRuntimeData();
   ensureLogsDoNotExposeSecret();
+  console.log('DAILYOPS_BETA_JOURNEY PASS');
+  console.log('source_total=7 dailyops=5 html=1 missing=1 unexpected=0');
+  console.log('telegram_getMe=4 getChat=3 sendMessage=3 unexpected=0');
+  console.log('reports=manual-1 scheduled-2 duplicate_rejected=409 restart_unsolicited=0');
+  console.log('diagnostics=downloaded-redacted');
   exitCode = 0;
 } catch (err) {
   console.error(String(err.message || err));
@@ -72,16 +78,46 @@ try {
 process.exit(exitCode);
 
 async function startSourceServer() {
-  const state = { count: 0, methods: [], paths: [], unexpected: [] };
-  const server = createHTTPServer((req, res) => {
+  const state = { count: 0, methods: [], paths: [], unexpected: [], holdDailyops: false, releaseDailyops: null };
+  const server = createHTTPServer(async (req, res) => {
+    const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;
+    if (req.method === 'POST' && pathname === '/__control/hold') {
+      state.holdDailyops = true;
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    if (req.method === 'POST' && pathname === '/__control/release') {
+      state.holdDailyops = false;
+      state.releaseDailyops?.();
+      state.releaseDailyops = null;
+      res.writeHead(204);
+      res.end();
+      return;
+    }
     state.count += 1;
     state.methods.push(req.method);
     state.paths.push(req.url);
-    if (req.method !== 'GET' || req.url !== '/dailyops.json') {
+    if (req.method !== 'GET' || !['/dailyops.json', '/html', '/missing'].includes(pathname)) {
       state.unexpected.push({ method: req.method, path: req.url || '' });
       res.writeHead(404);
       res.end('not found');
       return;
+    }
+    if (pathname === '/html') {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<html><body>private dashboard</body></html>');
+      return;
+    }
+    if (pathname === '/missing') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ report_date: '2026-08-09', timezone: 'Asia/Bangkok' }));
+      return;
+    }
+    if (state.holdDailyops) {
+      await new Promise((resolveRelease) => {
+        state.releaseDailyops = resolveRelease;
+      });
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
@@ -99,20 +135,31 @@ async function startSourceServer() {
 }
 
 async function startTelegramServer() {
-  const state = { getMe: 0, sendMessage: 0, unexpected: [] };
+  const state = { getMe: 0, getChat: 0, sendMessage: 0, unexpected: [] };
   const server = createHTTPServer(async (req, res) => {
     const expectedPrefix = `/bot${tokenPrefix}:${tokenSecret}/`;
-    if (!req.url?.startsWith(expectedPrefix)) {
-      state.unexpected.push({ method: req.method, path: redactTokenPath(req.url || '') });
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: false, description: 'unexpected test request' }));
-      return;
-    }
-    const method = req.url.slice(expectedPrefix.length);
+    const requestURL = new URL(req.url || '/', 'http://127.0.0.1');
+    const method = req.url?.startsWith(expectedPrefix) ? requestURL.pathname.slice(expectedPrefix.length) : requestURL.pathname.split('/').pop();
     if (req.method === 'GET' && method === 'getMe') {
       state.getMe += 1;
+      if (!req.url?.startsWith(expectedPrefix)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, description: 'invalid token' }));
+        return;
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, result: { id: 42, is_bot: true, username: 'dailyops_e2e_bot' } }));
+      return;
+    }
+    if (req.method === 'GET' && method === 'getChat' && req.url?.startsWith(expectedPrefix)) {
+      state.getChat += 1;
+      if (requestURL.searchParams.get('chat_id') !== chatID) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, description: 'chat not found' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, result: { id: chatID, type: 'channel' } }));
       return;
     }
     if (req.method === 'POST' && method === 'sendMessage') {
@@ -158,9 +205,7 @@ async function startHarness() {
     '--telegram-base-url', telegramBaseURL,
     '--port', '0',
   ];
-  const child = spawn(configuredHarnessBinary || 'go', configuredHarnessBinary
-    ? harnessArgs
-    : ['run', './internal/testharness/dailyopsappliance', ...harnessArgs], {
+  const child = spawn(harnessBinary, harnessArgs, {
     cwd: root,
     env: {
       ...process.env,
@@ -169,17 +214,25 @@ async function startHarness() {
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const baseURLPromise = waitForHarnessURL(child);
+  const harnessURLsPromise = waitForHarnessURLs(child);
   child.stderr.on('data', (chunk) => recordLog(chunk));
-  const baseURL = await baseURLPromise;
+  const { baseURL, controlURL } = await harnessURLsPromise;
   await waitForAppliance(child, baseURL);
-  return { child, baseURL };
+  return { child, baseURL, controlURL };
 }
 
-function waitForHarnessURL(child) {
+async function buildHarness() {
+  const binary = join(tempDir, process.platform === 'win32' ? 'dailyops-appliance-harness.exe' : 'dailyops-appliance-harness');
+  await runCommand('go', ['build', '-trimpath', '-o', binary, './internal/testharness/dailyopsappliance'], root);
+  return binary;
+}
+
+function waitForHarnessURLs(child) {
   return new Promise((resolveURL, rejectURL) => {
     let buffer = '';
     let settled = false;
+    let baseURL = '';
+    let controlURL = '';
     const timeout = setTimeout(() => {
       if (!settled) {
         settled = true;
@@ -189,11 +242,12 @@ function waitForHarnessURL(child) {
     child.stdout.on('data', (chunk) => {
       const text = recordLog(chunk);
       buffer += text;
-      const match = buffer.match(/URL:\s+(http:\/\/127\.0\.0\.1:\d+)\//);
-      if (match && !settled) {
+      baseURL ||= buffer.match(/URL:\s+(http:\/\/127\.0\.0\.1:\d+)\//)?.[1] || '';
+      controlURL ||= buffer.match(/CONTROL:\s+(http:\/\/127\.0\.0\.1:\d+)/)?.[1] || '';
+      if (baseURL && controlURL && !settled) {
         settled = true;
         clearTimeout(timeout);
-        resolveURL(match[1]);
+        resolveURL({ baseURL, controlURL });
       }
     });
     child.once('exit', (code, signal) => {
@@ -206,7 +260,7 @@ function waitForHarnessURL(child) {
   });
 }
 
-function runPlaywright(phaseName, baseURL) {
+function runPlaywright(phaseName, baseURL, controlURL) {
   return new Promise((resolveRun) => {
     const command = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : playwrightBin;
     const args = process.platform === 'win32'
@@ -222,6 +276,8 @@ function runPlaywright(phaseName, baseURL) {
         GOFLOW_DAILYOPS_SOURCE_URL: sourceURL,
         GOFLOW_DAILYOPS_CHAT_ID: chatID,
         GOFLOW_DAILYOPS_TOKEN_PARTS: tokenParts,
+        GOFLOW_DAILYOPS_SCHEDULE_CONTROL_URL: controlURL,
+        GOFLOW_DAILYOPS_SOURCE_CONTROL_URL: sourceServer.url,
       },
       stdio: 'inherit',
     });
@@ -251,8 +307,8 @@ function assertTelegramCalls(serverState, expected) {
   if (serverState.state.unexpected.length) {
     throw new Error(`Unexpected Telegram mock calls: ${JSON.stringify(serverState.state.unexpected)}`);
   }
-  if (serverState.state.getMe !== expected.getMe || serverState.state.sendMessage !== expected.sendMessage) {
-    throw new Error(`Telegram mock call counts mismatch: getMe=${serverState.state.getMe}, sendMessage=${serverState.state.sendMessage}`);
+  if (serverState.state.getMe !== expected.getMe || serverState.state.getChat !== expected.getChat || serverState.state.sendMessage !== expected.sendMessage) {
+    throw new Error(`Telegram mock call counts mismatch: getMe=${serverState.state.getMe}, getChat=${serverState.state.getChat}, sendMessage=${serverState.state.sendMessage}`);
   }
 }
 
@@ -264,8 +320,14 @@ function assertSourceCalls(serverState, expected) {
   if (state.count !== expected.count) {
     throw new Error(`Source mock call count mismatch: count=${state.count}, methods=${state.methods.join(',')}, paths=${state.paths.join(',')}`);
   }
-  if (state.methods.some((method) => method !== expected.method) || state.paths.some((path) => path !== expected.path)) {
-    throw new Error(`Source mock request mismatch: methods=${state.methods.join(',')}, paths=${state.paths.join(',')}`);
+  if (state.methods.some((method) => method !== 'GET')) throw new Error(`Source mock request method mismatch: ${state.methods.join(',')}`);
+  const counts = state.paths.reduce((result, rawPath) => {
+    const pathname = new URL(rawPath, 'http://127.0.0.1').pathname;
+    result[pathname] = (result[pathname] || 0) + 1;
+    return result;
+  }, {});
+  if (counts['/dailyops.json'] !== expected.dailyops || counts['/html'] !== expected.html || counts['/missing'] !== expected.missing) {
+    throw new Error(`Source mock path counts mismatch: ${JSON.stringify(counts)}`);
   }
 }
 
@@ -274,7 +336,7 @@ async function scanForForbiddenRuntimeData() {
   const extractedDir = join(artifactDir, 'extracted');
   await extractZip(bundlePath, extractedDir);
   const scanRoots = [packDir, extractedDir, join(uiRoot, 'test-results')].filter(existsSync);
-  const forbidden = [tokenSecret, sourceURL, telegramBaseURL, dataDir, tempDir].filter(Boolean);
+  const forbidden = [tokenSecret, sourceURL, telegramBaseURL, dataDir, tempDir, harness?.controlURL].filter(Boolean);
   const hits = [];
   for (const rootPath of scanRoots) {
     for (const filePath of walk(rootPath)) {
@@ -365,10 +427,6 @@ function ensureLogsDoNotExposeSecret() {
   if (capturedLogs.join('').includes(tokenSecret)) {
     throw new Error('Harness logs exposed the fake Telegram token');
   }
-}
-
-function redactTokenPath(path) {
-  return path.replace(new RegExp(`/bot${tokenPrefix}:[^/]+/`, 'g'), `/bot${tokenPrefix}:[REDACTED]/`);
 }
 
 function readBody(req) {

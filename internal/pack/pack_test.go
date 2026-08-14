@@ -106,6 +106,169 @@ func TestLoadAcceptsValidSemVerExamples(t *testing.T) {
 	}
 }
 
+func TestLoadValidatesRuntimeCompatibilityDeclarations(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(*Manifest)
+		want string
+	}{
+		{name: "legacy omission", edit: func(m *Manifest) { m.RequiredCapabilities = nil }},
+		{name: "known capabilities", edit: func(m *Manifest) {
+			m.RequiredCapabilities = []string{CapabilityPackV1, CapabilityDailyScheduleV1, CapabilityHostMigrationV1, CapabilityHTTPAdapterV1}
+		}},
+		{name: "unknown capability", edit: func(m *Manifest) { m.RequiredCapabilities = []string{"goflow.future.magic.v1"} }, want: "required_capabilities[0]"},
+		{name: "duplicate capability", edit: func(m *Manifest) { m.RequiredCapabilities = []string{CapabilityPackV1, CapabilityPackV1} }, want: "duplicates"},
+		{name: "malformed capability", edit: func(m *Manifest) { m.RequiredCapabilities = []string{"Goflow.Bad"} }, want: "bounded lowercase"},
+		{name: "unknown platform", edit: func(m *Manifest) { m.SupportedPlatforms = []string{"plan9-amd64"} }, want: "supported_platforms[0]"},
+		{name: "duplicate platform", edit: func(m *Manifest) { m.SupportedPlatforms = []string{"windows-amd64", "windows-amd64"} }, want: "duplicates"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeValidPack(t, tt.edit)
+			_, err := Load(dir)
+			if tt.want == "" && err != nil {
+				t.Fatalf("Load failed: %v", err)
+			}
+			if tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)) {
+				t.Fatalf("expected %q, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestLoadRequiresDeclaredCapabilitiesForNewSetupContracts(t *testing.T) {
+	dir := writeValidPack(t, func(m *Manifest) {
+		m.RequiredCapabilities = []string{CapabilityPackV1}
+		m.Bindings = []Binding{{Source: "config.value", Target: BindingTarget{NodeID: "trigger", Param: "path"}}}
+	})
+	assertLoadError(t, dir, CapabilitySetupBindingsV1)
+
+	dir = writeValidPack(t, func(m *Manifest) {
+		m.RequiredCapabilities = []string{CapabilityPackV1}
+		m.ConfigSchema = []ConfigField{{Key: "endpoint", Label: "Endpoint", Type: "url", TestKind: "http_json_contract"}}
+	})
+	assertLoadError(t, dir, CapabilityConnectionV1)
+}
+
+func TestLoadRequiresDeclaredCapabilityForNormalizedHTTPSource(t *testing.T) {
+	workflowJSON := `{
+		"name":"Normalized source",
+		"nodes":[{"id":"source","type":"normalizedHttpSource","params":{
+			"url":"https://example.test/data","auth_mode":"none","pagination":"cursor",
+			"cursor_query_param":"cursor","items_field":"items","next_cursor_field":"next_cursor",
+			"max_pages":2,"max_items":10,
+			"response_contract":{"required":{"id":{"type":"integer"}}}
+		}}],
+		"edges":[]
+	}`
+
+	t.Run("declared", func(t *testing.T) {
+		dir := writeValidPack(t, func(m *Manifest) {
+			m.RequiredCapabilities = []string{CapabilityPackV1, CapabilityHTTPAdapterV1}
+		})
+		writeFile(t, filepath.Join(dir, DefaultWorkflowPath), workflowJSON)
+		if _, err := Load(dir); err != nil {
+			t.Fatalf("Load failed: %v", err)
+		}
+	})
+
+	t.Run("missing from explicit declaration", func(t *testing.T) {
+		dir := writeValidPack(t, func(m *Manifest) {
+			m.RequiredCapabilities = []string{CapabilityPackV1}
+		})
+		writeFile(t, filepath.Join(dir, DefaultWorkflowPath), workflowJSON)
+		assertLoadError(t, dir, CapabilityHTTPAdapterV1)
+	})
+
+	t.Run("legacy omission", func(t *testing.T) {
+		dir := writeValidPack(t)
+		writeFile(t, filepath.Join(dir, DefaultWorkflowPath), workflowJSON)
+		if _, err := Load(dir); err != nil {
+			t.Fatalf("legacy Load failed: %v", err)
+		}
+	})
+}
+
+func TestLoadRejectsPackManagedScheduleAndMigrationHooks(t *testing.T) {
+	for _, tt := range []struct{ field, value, want string }{
+		{field: "schedule", value: `{"cron":"* * * * *"}`, want: "schedules are host-managed"},
+		{field: "schedules", value: `[]`, want: "schedules are host-managed"},
+		{field: "migration", value: `{"command":"run"}`, want: "migrations are host-managed"},
+		{field: "migrations", value: `[]`, want: "migrations are host-managed"},
+	} {
+		t.Run(tt.field, func(t *testing.T) {
+			var manifest map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(validManifestJSON()), &manifest); err != nil {
+				t.Fatal(err)
+			}
+			manifest[tt.field] = json.RawMessage(tt.value)
+			data, err := json.Marshal(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir := writePackWithManifest(t, string(data))
+			assertLoadError(t, dir, tt.want)
+		})
+	}
+}
+
+func TestLoadOfflineFixtureValidation(t *testing.T) {
+	newPack := func(t *testing.T, fixture string) string {
+		dir := writeValidPack(t, func(m *Manifest) {
+			m.OfflineTestFixture = "tests/offline.json"
+			m.ConfigSchema = []ConfigField{{Key: "label", Label: "Label", Type: "string"}}
+		})
+		if err := os.MkdirAll(filepath.Join(dir, "tests"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(dir, "tests", "offline.json"), fixture)
+		return dir
+	}
+
+	valid := newPack(t, `{"schema_version":1,"config":{"label":"fixture-value"}}`)
+	loaded, err := Load(valid)
+	if err != nil {
+		t.Fatalf("Load valid fixture: %v", err)
+	}
+	fixture, err := LoadOfflineTestFixture(loaded)
+	if err != nil || fixture.Config["label"] != "fixture-value" {
+		t.Fatalf("unexpected fixture: %#v, %v", fixture, err)
+	}
+
+	for _, tt := range []struct{ name, data, want string }{
+		{name: "future schema", data: `{"schema_version":2,"config":{}}`, want: "schema_version"},
+		{name: "unknown field", data: `{"schema_version":1,"config":{},"command":"run"}`, want: "unknown field"},
+		{name: "unknown config", data: `{"schema_version":1,"config":{"missing":"x"}}`, want: "unknown config key"},
+		{name: "secret canary", data: `{"schema_version":1,"config":{"label":"sk-test-secret-canary"}}`, want: "secret material"},
+		{name: "trailing value", data: `{"schema_version":1,"config":{}} {}`, want: "one JSON object"},
+	} {
+		t.Run(tt.name, func(t *testing.T) { assertLoadError(t, newPack(t, tt.data), tt.want) })
+	}
+
+	dir := writeValidPack(t, func(m *Manifest) { m.OfflineTestFixture = "../outside.json" })
+	assertLoadError(t, dir, "path traversal")
+}
+
+func TestLoadOfflineFixtureRejectsSymlinkAndOversize(t *testing.T) {
+	t.Run("symlink", func(t *testing.T) {
+		outside := filepath.Join(t.TempDir(), "offline.json")
+		writeFile(t, outside, `{"schema_version":1,"config":{}}`)
+		dir := writeValidPack(t, func(m *Manifest) { m.OfflineTestFixture = "tests/offline.json" })
+		if err := os.MkdirAll(filepath.Join(dir, "tests"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, filepath.Join(dir, "tests", "offline.json")); err != nil {
+			t.Skipf("symlink not supported: %v", err)
+		}
+		assertLoadError(t, dir, "must not contain symlinks")
+	})
+	t.Run("oversize", func(t *testing.T) {
+		dir := writeValidPack(t, func(m *Manifest) { m.OfflineTestFixture = "offline.json" })
+		writeFile(t, filepath.Join(dir, "offline.json"), strings.Repeat(" ", MaxOfflineFixtureBytes+1))
+		assertLoadError(t, dir, "byte limit")
+	})
+}
+
 func TestLoadRejectsMissingRequiredCredentials(t *testing.T) {
 	dir := writePackWithManifest(t, `{
 		"schema_version":1,
@@ -561,6 +724,36 @@ func TestLoadRejectsInvalidConfigFieldTypesAndDefaults(t *testing.T) {
 			assertLoadError(t, dir, tt.want)
 		})
 	}
+}
+
+func TestLoadConfigSourceTestRequiresCompatibleURLAndContract(t *testing.T) {
+	t.Run("test kind is closed and type compatible", func(t *testing.T) {
+		dir := writeValidPack(t, func(m *Manifest) {
+			m.ConfigSchema = []ConfigField{{Key: "source", Label: "Source", Type: "string", TestKind: "http_json_contract", DisplayOnly: true}}
+		})
+		assertLoadError(t, dir, "compatible only with url")
+	})
+
+	t.Run("bound HTTP source requires contract", func(t *testing.T) {
+		dir := writeValidPack(t, func(m *Manifest) {
+			m.ConfigSchema = []ConfigField{{Key: "source_url", Label: "Source URL", Type: "url", Required: true, TestKind: "http_json_contract"}}
+			m.Bindings = []Binding{{Source: "config.source_url", Target: BindingTarget{NodeID: "fetch", Param: "url"}}}
+		})
+		writeFile(t, filepath.Join(dir, DefaultWorkflowPath), setupWorkflowJSON())
+		assertLoadError(t, dir, "response_contract")
+	})
+
+	t.Run("valid reusable contract", func(t *testing.T) {
+		dir := writeValidPack(t, func(m *Manifest) {
+			m.ConfigSchema = []ConfigField{{Key: "source_url", Label: "Source URL", Type: "url", Required: true, TestKind: "http_json_contract"}}
+			m.Bindings = []Binding{{Source: "config.source_url", Target: BindingTarget{NodeID: "fetch", Param: "url"}}}
+		})
+		workflow := strings.Replace(setupWorkflowJSON(), `"headers":"{}"`, `"headers":"{}","response_contract":{"required":{"value":{"type":"number"}}}`, 1)
+		writeFile(t, filepath.Join(dir, DefaultWorkflowPath), workflow)
+		if _, err := Load(dir); err != nil {
+			t.Fatalf("expected valid source test contract, got %v", err)
+		}
+	})
 }
 
 func TestLoadRejectsInvalidCredentialRequirement(t *testing.T) {

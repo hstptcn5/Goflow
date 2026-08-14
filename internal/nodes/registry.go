@@ -28,6 +28,7 @@ func NewBuiltinRegistryWithTelegramExecutor(telegramExecutor NodeExecutor) *Plug
 	_ = registry.Register(NewWebhookTriggerExecutor())
 	_ = registry.Register(NewCronTriggerExecutor())
 	_ = registry.Register(NewHTTPRequestExecutor())
+	_ = registry.Register(NewNormalizedHTTPSourceExecutor())
 	_ = registry.Register(telegramExecutor)
 	_ = registry.Register(NewJSONTransformExecutor())
 	_ = registry.Register(NewConditionIFExecutor())

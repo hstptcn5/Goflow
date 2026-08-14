@@ -9,13 +9,29 @@ function jsonHeaders(token) {
 
 async function readError(res, fallback) {
   const text = await res.text();
-  return text.trim() || fallback;
+  const trimmed = text.trim();
+  if (!trimmed) return { message: fallback, category: 'internal_error', payload: null };
+  try {
+    const payload = JSON.parse(trimmed);
+    return {
+      message: payload.message || payload.error || fallback,
+      category: payload.category || 'internal_error',
+      payload,
+    };
+  } catch {
+    return { message: fallback, category: 'internal_error', payload: null };
+  }
 }
 
 async function request(path, options = {}) {
   const res = await fetch(`${APPLIANCE_BASE}${path}`, options);
   if (!res.ok) {
-    throw new Error(await readError(res, `Appliance request failed with ${res.status}`));
+    const details = await readError(res, `Appliance request failed with ${res.status}`);
+    const error = new Error(details.message);
+    error.category = details.category;
+    error.status = res.status;
+    error.payload = details.payload;
+    throw error;
   }
   return res.json();
 }
@@ -24,7 +40,10 @@ export const applianceApi = {
   async bootstrap() {
     const res = await fetch(`${APPLIANCE_BASE}/bootstrap`);
     if (res.status === 404) return null;
-    if (!res.ok) throw new Error(await readError(res, 'Failed to load appliance bootstrap'));
+    if (!res.ok) {
+      const details = await readError(res, 'Failed to load appliance bootstrap');
+      throw new Error(details.message);
+    }
     return res.json();
   },
 
@@ -52,11 +71,23 @@ export const applianceApi = {
     return request('/diagnostics');
   },
 
+  getSchedule() {
+    return request('/schedule');
+  },
+
   saveConfig(token, values) {
     return request('/setup/config', {
       method: 'POST',
       headers: jsonHeaders(token),
       body: JSON.stringify({ values }),
+    });
+  },
+
+  testSource(token, key) {
+    return request('/setup/source/test', {
+      method: 'POST',
+      headers: jsonHeaders(token),
+      body: JSON.stringify({ key }),
     });
   },
 
@@ -97,6 +128,14 @@ export const applianceApi = {
       method: 'POST',
       headers: jsonHeaders(token),
       body: JSON.stringify({ input }),
+    });
+  },
+
+  saveSchedule(token, schedule) {
+    return request('/schedule', {
+      method: 'PUT',
+      headers: jsonHeaders(token),
+      body: JSON.stringify(schedule),
     });
   },
 };

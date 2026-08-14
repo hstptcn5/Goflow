@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "config": {
+    "source_url": "https://example.test/dailyops.json",
+    "chat_id": "@dailyops_fixture"
+  }
+}

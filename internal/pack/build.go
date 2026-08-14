@@ -47,13 +47,14 @@ type BuildResult struct {
 }
 
 type PackInfo struct {
-	SchemaVersion int            `json:"schema_version"`
-	PackID        string         `json:"pack_id"`
-	PackVersion   string         `json:"pack_version"`
-	Target        string         `json:"target"`
-	RuntimeEntry  string         `json:"runtime_entry"`
-	EntryWorkflow string         `json:"entry_workflow"`
-	Files         []PackInfoFile `json:"files"`
+	SchemaVersion        int            `json:"schema_version"`
+	PackID               string         `json:"pack_id"`
+	PackVersion          string         `json:"pack_version"`
+	Target               string         `json:"target"`
+	RuntimeEntry         string         `json:"runtime_entry"`
+	EntryWorkflow        string         `json:"entry_workflow"`
+	Files                []PackInfoFile `json:"files"`
+	RequiredCapabilities []string       `json:"required_capabilities,omitempty"`
 }
 
 type PackInfoFile struct {
@@ -183,13 +184,14 @@ func Build(opts BuildOptions) (*BuildResult, error) {
 		return nil, err
 	}
 	packInfo := PackInfo{
-		SchemaVersion: SupportedSchema,
-		PackID:        loaded.Manifest.ID,
-		PackVersion:   loaded.Manifest.Version,
-		Target:        opts.Target,
-		RuntimeEntry:  runtimeEntry(opts.Target),
-		EntryWorkflow: "pack/" + loaded.Manifest.EntryWorkflow,
-		Files:         inventory,
+		SchemaVersion:        SupportedSchema,
+		PackID:               loaded.Manifest.ID,
+		PackVersion:          loaded.Manifest.Version,
+		Target:               opts.Target,
+		RuntimeEntry:         runtimeEntry(opts.Target),
+		EntryWorkflow:        "pack/" + loaded.Manifest.EntryWorkflow,
+		Files:                inventory,
+		RequiredCapabilities: append([]string(nil), loaded.Manifest.RequiredCapabilities...),
 	}
 	packInfoData, err := json.MarshalIndent(packInfo, "", "  ")
 	if err != nil {
@@ -250,9 +252,13 @@ func runtimeEntry(target string) string {
 }
 
 func buildArchiveFileList(loaded *Pack, runtimePath, runtimeEntry string) ([]archiveFile, error) {
+	runtimeManifest, err := runtimeManifestData(loaded.ManifestPath)
+	if err != nil {
+		return nil, err
+	}
 	files := []archiveFile{
 		{archivePath: runtimeEntry, sourcePath: runtimePath, mode: 0755},
-		{archivePath: "pack/pack.json", sourcePath: loaded.ManifestPath, payloadCount: true, mode: 0600},
+		{archivePath: "pack/pack.json", generated: runtimeManifest, payloadCount: true, mode: 0600},
 		{archivePath: "pack/" + loaded.Manifest.EntryWorkflow, sourcePath: loaded.EntryWorkflowPath, payloadCount: true, mode: 0600},
 		{archivePath: "README.txt", generated: []byte(readmeText(runtimeEntry)), mode: 0600},
 	}
@@ -271,6 +277,23 @@ func buildArchiveFileList(loaded *Pack, runtimePath, runtimeEntry string) ([]arc
 		files = append(files, archiveFile{archivePath: "pack/" + logical, sourcePath: sourcePath, payloadCount: true, mode: 0600})
 	}
 	return files, nil
+}
+
+func runtimeManifestData(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("manifest: read runtime copy: %w", err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("manifest: prepare runtime copy: %w", err)
+	}
+	delete(raw, "offline_test_fixture")
+	runtimeData, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("manifest: encode runtime copy: %w", err)
+	}
+	return append(runtimeData, '\n'), nil
 }
 
 func pluginArchiveMode(path string) os.FileMode {
@@ -485,6 +508,9 @@ func VerifyBundleArchive(path string, limits buildLimits) error {
 		if item.Path == "" {
 			return fmt.Errorf("PACK_INFO inventory contains empty path")
 		}
+		if item.Path == SignatureFileName {
+			return fmt.Errorf("%s must not be listed in PACK_INFO inventory", SignatureFileName)
+		}
 		if _, ok := inventory[item.Path]; ok {
 			return fmt.Errorf("PACK_INFO inventory contains duplicate path %q", item.Path)
 		}
@@ -492,6 +518,9 @@ func VerifyBundleArchive(path string, limits buildLimits) error {
 	}
 	for _, file := range reader.File {
 		if file.Name == "PACK_INFO.json" {
+			continue
+		}
+		if file.Name == SignatureFileName {
 			continue
 		}
 		item, ok := inventory[file.Name]
@@ -581,6 +610,9 @@ func VerifyExtractedBundle(root string) (*PackInfo, error) {
 	if info.PackVersion != manifest.Version {
 		return nil, fmt.Errorf("PACK_INFO pack_version %q does not match pack.json version %q", info.PackVersion, manifest.Version)
 	}
+	if !equalStringSlices(info.RequiredCapabilities, manifest.RequiredCapabilities) {
+		return nil, fmt.Errorf("PACK_INFO required_capabilities do not match pack.json")
+	}
 	expectedEntryWorkflow := "pack/" + manifest.EntryWorkflow
 	if info.EntryWorkflow != expectedEntryWorkflow {
 		return nil, fmt.Errorf("PACK_INFO entry_workflow %q does not match pack.json entry_workflow %q", info.EntryWorkflow, expectedEntryWorkflow)
@@ -608,6 +640,9 @@ func VerifyExtractedBundle(root string) (*PackInfo, error) {
 		}
 		if item.Path == "PACK_INFO.json" {
 			return nil, fmt.Errorf("PACK_INFO.json must not be listed in PACK_INFO inventory")
+		}
+		if item.Path == SignatureFileName {
+			return nil, fmt.Errorf("%s must not be listed in PACK_INFO inventory", SignatureFileName)
 		}
 		seen[item.Path] = true
 		if err := validateArchivePath(item.Path, info.Target); err != nil {
@@ -649,6 +684,18 @@ func VerifyExtractedBundle(root string) (*PackInfo, error) {
 		return nil, err
 	}
 	return &info, nil
+}
+
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func expectedRuntimeEntry(target string) (string, error) {
@@ -693,7 +740,7 @@ func verifyNoUnexpectedExtractedFiles(root string, inventory map[string]bool, li
 			return err
 		}
 		slashPath := filepath.ToSlash(rel)
-		if slashPath == "PACK_INFO.json" {
+		if slashPath == "PACK_INFO.json" || slashPath == SignatureFileName {
 			return nil
 		}
 		if !inventory[slashPath] {

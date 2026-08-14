@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "app": {
+    "name": "Goflow",
+    "version": "0.5.0-test",
+    "platform": "<platform>"
+  },
+  "pack": {
+    "id": "official.dailyops-rest-telegram",
+    "version": "0.3.0"
+  },
+  "setup": {
+    "state": "READY",
+    "category": "ready"
+  },
+  "schedule": {
+    "configured": false,
+    "enabled": false,
+    "state": "DISABLED"
+  },
+  "recent_executions": [
+    {
+      "status": "FAILED",
+      "duration_ms": 1250,
+      "error_category": "source_invalid"
+    }
+  ],
+  "integrity": {
+    "state": "verified"
+  },
+  "privacy": {
+    "local_only": true,
+    "credential_ids_hidden": true,
+    "secrets_hidden": true
+  }
+}

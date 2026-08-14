@@ -54,3 +54,17 @@ func TestLoadStateRejectsPackMismatchAndOversizedFile(t *testing.T) {
 		t.Fatalf("expected oversized error, got %v", err)
 	}
 }
+
+func TestCompletedStateRequiresCurrentPackVersion(t *testing.T) {
+	dir := t.TempDir()
+	v1 := pack.Manifest{ID: "example.state", Version: "0.1.0"}
+	if _, err := SaveState(dir, v1, true, time.Now()); err != nil {
+		t.Fatalf("save v1 state: %v", err)
+	}
+	if _, err := LoadState(dir, pack.Manifest{ID: v1.ID, Version: "0.2.0"}); err == nil || !strings.Contains(err.Error(), "requires revalidation") {
+		t.Fatalf("expected pack upgrade revalidation, got %v", err)
+	}
+	if _, err := LoadState(dir, v1); err != nil {
+		t.Fatalf("same-version restart should remain complete: %v", err)
+	}
+}

@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,7 +108,7 @@ func validateStoredValues(manifest pack.Manifest, values map[string]interface{})
 			stale[key] = value
 			continue
 		}
-		normalized, err := validateValue(field, value)
+		normalized, err := pack.ValidateConfigValue(field, value)
 		if err != nil {
 			return nil, nil, fmt.Errorf("pack setup: config %q: %w", key, err)
 		}
@@ -127,137 +125,12 @@ func validateStoredValues(manifest pack.Manifest, values map[string]interface{})
 	return validated, stale, nil
 }
 
-func validateValue(field pack.ConfigField, value interface{}) (interface{}, error) {
-	if value == nil {
-		if field.Required {
-			return nil, fmt.Errorf("value is required")
-		}
-		return nil, nil
-	}
-	switch field.Type {
-	case "string":
-		text, ok := value.(string)
-		if !ok {
-			return nil, fmt.Errorf("must be a string")
-		}
-		if err := validateStringLength(field, text); err != nil {
-			return nil, err
-		}
-		return text, nil
-	case "url":
-		text, ok := value.(string)
-		if !ok {
-			return nil, fmt.Errorf("must be a string")
-		}
-		if err := validateStringLength(field, text); err != nil {
-			return nil, err
-		}
-		if err := validateHTTPURL(text); err != nil {
-			return nil, err
-		}
-		return text, nil
-	case "integer":
-		n, err := numberAsInt(value)
-		if err != nil {
-			return nil, err
-		}
-		if field.Min != nil && n < *field.Min {
-			return nil, fmt.Errorf("must be >= %d", *field.Min)
-		}
-		if field.Max != nil && n > *field.Max {
-			return nil, fmt.Errorf("must be <= %d", *field.Max)
-		}
-		return n, nil
-	case "boolean":
-		boolean, ok := value.(bool)
-		if !ok {
-			return nil, fmt.Errorf("must be a boolean")
-		}
-		return boolean, nil
-	case "select":
-		key, err := scalarKey(value)
-		if err != nil {
-			return nil, err
-		}
-		for _, option := range field.Options {
-			if optionKey, err := scalarKey(option); err == nil && optionKey == key {
-				return value, nil
-			}
-		}
-		return nil, fmt.Errorf("must match one configured option")
-	default:
-		return nil, fmt.Errorf("unsupported config type %q", field.Type)
-	}
-}
-
-func validateStringLength(field pack.ConfigField, value string) error {
-	if field.MinLength != nil && len(value) < *field.MinLength {
-		return fmt.Errorf("must be at least %d characters", *field.MinLength)
-	}
-	if field.MaxLength != nil && len(value) > *field.MaxLength {
-		return fmt.Errorf("must be at most %d characters", *field.MaxLength)
-	}
-	return nil
-}
-
-func validateHTTPURL(value string) error {
-	parsed, err := url.Parse(value)
-	if err != nil {
-		return fmt.Errorf("must be an absolute http or https URL: %w", err)
-	}
-	if !parsed.IsAbs() || parsed.Host == "" {
-		return fmt.Errorf("must be an absolute http or https URL")
-	}
-	switch strings.ToLower(parsed.Scheme) {
-	case "http", "https":
-		return nil
-	default:
-		return fmt.Errorf("must be an absolute http or https URL")
-	}
-}
-
-func numberAsInt(value interface{}) (int, error) {
-	switch typed := value.(type) {
-	case int:
-		return typed, nil
-	case float64:
-		if math.Trunc(typed) != typed || typed > math.MaxInt || typed < math.MinInt {
-			return 0, fmt.Errorf("must be an integer")
-		}
-		return int(typed), nil
-	case json.Number:
-		n, err := typed.Int64()
-		if err != nil || n > math.MaxInt || n < math.MinInt {
-			return 0, fmt.Errorf("must be an integer")
-		}
-		return int(n), nil
-	default:
-		return 0, fmt.Errorf("must be an integer")
-	}
-}
-
-func scalarKey(value interface{}) (string, error) {
-	switch typed := value.(type) {
-	case string:
-		return "string:" + typed, nil
-	case bool:
-		return fmt.Sprintf("bool:%t", typed), nil
-	case int:
-		return fmt.Sprintf("number:%d", typed), nil
-	case float64:
-		if math.Trunc(typed) != typed {
-			return "", fmt.Errorf("must be a scalar option")
-		}
-		return fmt.Sprintf("number:%0.f", typed), nil
-	default:
-		return "", fmt.Errorf("must be a scalar option")
-	}
-}
-
 func safeStaleValue(value interface{}) bool {
 	switch typed := value.(type) {
 	case nil, bool, float64, string:
 		return !looksSecretLike(typed)
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, json.Number:
+		return true
 	case []interface{}:
 		for _, item := range typed {
 			if !safeStaleValue(item) {

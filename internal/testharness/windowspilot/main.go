@@ -116,6 +116,7 @@ type mockCallState struct {
 	sourceCount int
 	sourceCalls []string
 	getMe       int
+	getChat     int
 	sendMessage int
 	unexpected  []string
 }
@@ -275,7 +276,7 @@ func run(appDir string) error {
 	if err := runWorkflowAndWait(firstRunInfo); err != nil {
 		return err
 	}
-	if err := assertMockCalls(callState, 1, 1, 1); err != nil {
+	if err := assertMockCalls(callState, 3, 2, 2, 1); err != nil {
 		return err
 	}
 	if err := stopCleanly(firstRun, 20*time.Second); err != nil {
@@ -298,7 +299,7 @@ func run(appDir string) error {
 	if err := verifyCompletedSetup(persistedInfo.origin); err != nil {
 		return err
 	}
-	if err := assertMockCalls(callState, 1, 1, 1); err != nil {
+	if err := assertMockCalls(callState, 3, 2, 2, 1); err != nil {
 		return fmt.Errorf("extracted runtime restart caused an unsolicited network call: %w", err)
 	}
 	if err := stopCleanly(persistedRuntime, 20*time.Second); err != nil {
@@ -321,13 +322,13 @@ func run(appDir string) error {
 	if err := verifyCompletedSetup(secondRunInfo.origin); err != nil {
 		return err
 	}
-	if err := assertMockCalls(callState, 1, 1, 1); err != nil {
+	if err := assertMockCalls(callState, 3, 2, 2, 1); err != nil {
 		return fmt.Errorf("restart caused an unsolicited network call: %w", err)
 	}
 	if err := runWorkflowAndWait(secondRunInfo); err != nil {
 		return err
 	}
-	if err := assertMockCalls(callState, 2, 1, 2); err != nil {
+	if err := assertMockCalls(callState, 4, 2, 2, 2); err != nil {
 		return err
 	}
 	if err := stopCleanly(secondRun, 20*time.Second); err != nil {
@@ -353,7 +354,8 @@ func run(appDir string) error {
 	fmt.Println("single_instance=reused-existing")
 	fmt.Println("restart=ready-and-run-without-reconfiguration")
 	fmt.Println("extracted_runtime_restart=ready-stable-workflow")
-	fmt.Println("source_requests=2 getMe=1 sendMessage=2")
+	fmt.Println("source_requests=4 getMe=2 getChat=2 sendMessage=2")
+	fmt.Println("duplicate_run=409-already-running one-execution-per-request-pair")
 	fmt.Println("setup=complete credential=assigned")
 	fmt.Println("managed_state=one-workflow-one-credential")
 	fmt.Println("state_location=external-local-app-data")
@@ -490,10 +492,8 @@ func inspectAppliance(client *http.Client, origin string, requireUI bool) (*appl
 func savePilotConfig(info *applianceInfo) error {
 	payload := map[string]interface{}{
 		"values": map[string]interface{}{
-			"source_url":          configSourceURL,
-			"chat_id":             "@dailyops_pilot",
-			"report_title":        "DailyOps Pilot Report",
-			"low_stock_threshold": 5,
+			"source_url": configSourceURL,
+			"chat_id":    "@dailyops_pilot",
 		},
 	}
 	body, err := json.Marshal(payload)
@@ -532,13 +532,16 @@ func verifyPersistedConfig(origin string) error {
 func completeNativeSetup(info *applianceInfo, sourceURL, telegramToken string) error {
 	if err := postJSON(info, "/api/appliance/setup/config", map[string]interface{}{
 		"values": map[string]interface{}{
-			"source_url":          sourceURL + "/dailyops.json",
-			"chat_id":             nativeChatID,
-			"report_title":        "DailyOps Daily Report",
-			"low_stock_threshold": 5,
+			"source_url": sourceURL + "/dailyops.json",
+			"chat_id":    nativeChatID,
 		},
 	}, http.StatusOK, nil); err != nil {
 		return fmt.Errorf("save native setup config: %w", err)
+	}
+	if err := postJSON(info, "/api/appliance/setup/source/test", map[string]interface{}{
+		"key": "source_url",
+	}, http.StatusOK, nil); err != nil {
+		return fmt.Errorf("test native source contract: %w", err)
 	}
 	if err := postJSON(info, "/api/appliance/setup/credentials/create", map[string]interface{}{
 		"key":   "telegram",
@@ -595,6 +598,11 @@ func runWorkflowAndWait(info *applianceInfo) error {
 	}
 	if started.ExecutionID == "" {
 		return fmt.Errorf("run response omitted execution identity")
+	}
+	if err := postJSON(info, "/api/appliance/workflow/run", map[string]interface{}{
+		"input": map[string]interface{}{},
+	}, http.StatusConflict, nil); err != nil {
+		return fmt.Errorf("duplicate managed workflow run was not rejected: %w", err)
 	}
 	client := &http.Client{Timeout: 5 * time.Second}
 	deadline := time.Now().Add(30 * time.Second)
@@ -671,6 +679,7 @@ func newSourceServer(state *mockCallState) *httptest.Server {
 			return
 		}
 		response.Header().Set("Content-Type", "application/json")
+		time.Sleep(250 * time.Millisecond)
 		_ = json.NewEncoder(response).Encode(map[string]interface{}{
 			"report_date":              "2026-08-09",
 			"timezone":                 "Asia/Bangkok",
@@ -700,6 +709,19 @@ func newTelegramServer(state *mockCallState, token string) *httptest.Server {
 			writeTelegramResponse(response, http.StatusOK, map[string]interface{}{
 				"ok":     true,
 				"result": map[string]interface{}{"id": 42, "is_bot": true, "username": "native_smoke_bot"},
+			})
+		case request.Method == http.MethodGet && method == "getChat":
+			if request.URL.Query().Get("chat_id") != nativeChatID {
+				recordUnexpected(state, "Telegram getChat used an unexpected chat")
+				writeTelegramResponse(response, http.StatusBadRequest, map[string]interface{}{"ok": false})
+				return
+			}
+			state.mu.Lock()
+			state.getChat++
+			state.mu.Unlock()
+			writeTelegramResponse(response, http.StatusOK, map[string]interface{}{
+				"ok":     true,
+				"result": map[string]interface{}{"id": nativeChatID, "type": "channel"},
 			})
 		case request.Method == http.MethodPost && method == "sendMessage":
 			var payload struct {
@@ -746,14 +768,14 @@ func recordUnexpected(state *mockCallState, message string) {
 	state.unexpected = append(state.unexpected, message)
 }
 
-func assertMockCalls(state *mockCallState, source, getMe, sendMessage int) error {
+func assertMockCalls(state *mockCallState, source, getMe, getChat, sendMessage int) error {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	if len(state.unexpected) > 0 {
 		return fmt.Errorf("native mock observed unexpected requests")
 	}
-	if state.sourceCount != source || state.getMe != getMe || state.sendMessage != sendMessage {
-		return fmt.Errorf("native mock call counts mismatch: source=%d getMe=%d sendMessage=%d", state.sourceCount, state.getMe, state.sendMessage)
+	if state.sourceCount != source || state.getMe != getMe || state.getChat != getChat || state.sendMessage != sendMessage {
+		return fmt.Errorf("native mock call counts mismatch: source=%d getMe=%d getChat=%d sendMessage=%d", state.sourceCount, state.getMe, state.getChat, state.sendMessage)
 	}
 	for _, call := range state.sourceCalls {
 		if call != "GET /dailyops.json" {

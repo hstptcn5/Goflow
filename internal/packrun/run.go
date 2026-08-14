@@ -28,6 +28,7 @@ import (
 	"goflow/internal/nodes"
 	"goflow/internal/pack"
 	"goflow/internal/packsetup"
+	"goflow/internal/scheduler"
 	"goflow/internal/serverapp"
 	"goflow/internal/storage"
 	"goflow/internal/workflow"
@@ -37,18 +38,22 @@ import (
 )
 
 type Options struct {
-	PackDir string
-	DataDir string
-	Port    int
-	NoOpen  bool
-	UIFS    fs.FS
-	Stdout  io.Writer
-	Stderr  io.Writer
-	Opener  func(string) error
+	PackDir        string
+	DataDir        string
+	Port           int
+	NoOpen         bool
+	UIFS           fs.FS
+	Stdout         io.Writer
+	Stderr         io.Writer
+	Opener         func(string) error
+	AppVersion     string
+	IntegrityState string
 
 	Registry             *nodes.PluginRegistry
 	TelegramAPIBaseURL   string
 	ConnectionTestClient *http.Client
+	ScheduleClock        scheduler.Clock
+	ScheduleWake         <-chan scheduler.WakeRequest
 }
 
 type State struct {
@@ -81,6 +86,7 @@ func RunExtractedBundle(ctx context.Context, bundleDir string, opts Options) err
 		return fmt.Errorf("pack run: extracted bundle verification failed: %w", err)
 	}
 	opts.PackDir = filepath.Join(bundleDir, "pack")
+	opts.IntegrityState = "verified"
 	return Run(ctx, opts)
 }
 
@@ -104,6 +110,12 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	if len(loaded.Manifest.Plugins) > 0 {
 		return fmt.Errorf("pack run: packaged plugin execution is not supported in Pack Run MVP")
+	}
+	if strings.TrimSpace(opts.AppVersion) == "" {
+		opts.AppVersion = "development"
+	}
+	if strings.TrimSpace(opts.IntegrityState) == "" {
+		opts.IntegrityState = "source_validated"
 	}
 	dataDir, err := resolveDataDir(opts.DataDir, loaded.Manifest.ID)
 	if err != nil {
@@ -146,19 +158,23 @@ func Run(ctx context.Context, opts Options) error {
 		MaxConcurrentExecutions:   10,
 		MaxParallelNodesPerRun:    4,
 		WebhookRateLimitPerMinute: 60,
-		ExecutionRetentionDays:    30,
-		MaxExecutionsPerWorkflow:  1000,
+		ExecutionRetentionDays:    storage.DefaultExecutionRetentionDays,
+		MaxExecutionsPerWorkflow:  storage.DefaultExecutionsPerWorkflow,
 		MCPAllowedOrigins:         []string{"http://127.0.0.1"},
 		MCPMaxInflightPerClient:   2,
 		MCPRateLimitPerMinute:     30,
 	}
 	app, err := serverapp.Start(ctx, serverapp.Options{
-		Config:   serverCfg,
-		UIFS:     opts.UIFS,
-		Listener: listener,
-		Registry: opts.Registry,
+		Config:        serverCfg,
+		UIFS:          opts.UIFS,
+		Listener:      listener,
+		Registry:      opts.Registry,
+		ScheduleClock: opts.ScheduleClock,
+		ScheduleWake:  opts.ScheduleWake,
 		Appliance: &api.ApplianceContext{
 			Enabled:                true,
+			AppVersion:             opts.AppVersion,
+			IntegrityState:         opts.IntegrityState,
 			Origin:                 origin,
 			SessionToken:           sessionToken,
 			PackID:                 loaded.Manifest.ID,
@@ -226,6 +242,30 @@ func prepare(ctx context.Context, loaded *pack.Pack, dataDir string) (*Prepared,
 	workflowDef.ID = workflowID
 	workflowDef.Description = managedDescription(loaded.Manifest.Description, workflowDef.Description)
 	credentialStore := storage.NewCredentialStore(db, nil)
+	if previous, err := readPackState(dataDir); err == nil {
+		if previous.PackID != loaded.Manifest.ID || previous.WorkflowID != workflowID {
+			return nil, fmt.Errorf("pack run: persisted pack identity mismatch")
+		}
+		migration, err := packsetup.ApplyMigrations(
+			dataDir,
+			loaded.Manifest,
+			previous.PackVersion,
+			packsetup.DefaultMigrationRegistry(),
+			packsetup.MigrationOptions{Now: time.Now()},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("pack run: setup migration failed: %w", err)
+		}
+		if migration.Changed || previous.PackVersion != loaded.Manifest.Version {
+			if err := storage.NewWorkflowScheduleStore(db).MarkRevalidationRequired(
+				workflowID, loaded.Manifest.ID, time.Now(),
+			); err != nil {
+				return nil, fmt.Errorf("pack run: suspend schedule for revalidation: %w", err)
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
 	desired, _, setupErr := packsetup.ReconstructManagedWorkflow(workflowDef, loaded.Manifest, dataDir, packRunCredentialResolver(credentialStore))
 	managed := &storage.Workflow{
 		ID:                desired.ID,
@@ -622,6 +662,22 @@ func printCredentialRequirements(w io.Writer, credentials []string) {
 
 func writePackState(dataDir string, state State) error {
 	return writeJSONAtomic(filepath.Join(dataDir, "pack-state.json"), state)
+}
+
+func readPackState(dataDir string) (State, error) {
+	var state State
+	data, err := os.ReadFile(filepath.Join(dataDir, "pack-state.json"))
+	if err != nil {
+		return state, err
+	}
+	if err := json.Unmarshal(data, &state); err != nil {
+		return state, fmt.Errorf("pack run: pack-state.json is invalid")
+	}
+	if strings.TrimSpace(state.PackID) == "" || !pack.IsValidSemVer(state.PackVersion) ||
+		strings.TrimSpace(state.WorkflowID) == "" {
+		return state, fmt.Errorf("pack run: pack-state.json identity is invalid")
+	}
+	return state, nil
 }
 
 func writeRunState(dataDir string, state RunState) error {

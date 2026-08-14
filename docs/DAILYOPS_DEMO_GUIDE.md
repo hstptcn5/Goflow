@@ -10,12 +10,13 @@ The source URL should return JSON with these fields:
 
 ```json
 {
-  "date": "2026-08-09",
-  "sales_total": 1234.56,
-  "orders": 42,
-  "low_stock": [
-    { "sku": "SKU-1", "name": "Sample item", "quantity": 2 }
-  ]
+  "report_date": "2026-08-09",
+  "timezone": "Asia/Bangkok",
+  "revenue": 48250.75,
+  "order_count": 314,
+  "cancelled_refunded_count": 7,
+  "low_stock_summary": "3 SKUs below threshold",
+  "comparison_summary": "Revenue up 12.4% vs prior day"
 }
 ```
 
@@ -25,9 +26,7 @@ Use non-production data for pilot setup.
 
 - `source_url`: absolute `http` or `https` URL returning the JSON contract.
 - `chat_id`: destination chat ID for the Telegram bot.
-- `report_title`: optional display title.
-- `low_stock_threshold`: optional threshold used in report text.
-- `telegram`: `TELEGRAM_BOT` credential with `telegram_get_me` connection test.
+- `telegram`: encrypted `TELEGRAM_BOT` credential. Test Telegram verifies both the token and configured chat without sending a message.
 
 ## Demo Flow
 
@@ -49,8 +48,10 @@ Use non-production data for pilot setup.
    goflow pack run examples/packs/dailyops-rest-telegram --no-open
    ```
 
-4. Complete setup with sample data and a non-production Telegram bot token.
-5. Run the workflow from the dashboard.
+4. Enter the JSON API endpoint, not a website homepage, and require **Test source** to report `Valid`.
+5. Enter the chat ID, send `/start` to the bot when using a direct chat, and require **Test Telegram** to report `Valid`.
+6. Complete setup with sample data and a non-production Telegram bot token.
+7. Run the workflow from the dashboard. The button remains disabled while the single allowed execution is active and status updates without reloading.
 
 ## Limits
 

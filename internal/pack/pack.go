@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"goflow/internal/jsoncontract"
 	"goflow/internal/nodes"
 	"goflow/internal/workflow"
 )
@@ -31,6 +32,18 @@ const (
 	MaxSetupOptionLength       = 120
 	MaxSetupScalarStringLength = 1000
 	MaxSetupIntegerAbsValue    = 1_000_000_000
+	MaxRequiredCapabilities    = 32
+	MaxCapabilityLength        = 96
+	MaxOfflineFixtureBytes     = 64 << 10
+)
+
+const (
+	CapabilityPackV1          = "goflow.pack.v1"
+	CapabilitySetupBindingsV1 = "goflow.setup.bindings.v1"
+	CapabilityConnectionV1    = "goflow.setup.connection-tests.v1"
+	CapabilityDailyScheduleV1 = "goflow.schedule.daily.v1"
+	CapabilityHostMigrationV1 = "goflow.migration.host-managed.v1"
+	CapabilityHTTPAdapterV1   = "goflow.adapter.normalized-http.v1"
 )
 
 type Manifest struct {
@@ -47,13 +60,16 @@ type Manifest struct {
 	ConfigSchema           []ConfigField           `json:"config_schema,omitempty"`
 	CredentialRequirements []CredentialRequirement `json:"credential_requirements,omitempty"`
 	Bindings               []Binding               `json:"bindings,omitempty"`
+	RequiredCapabilities   []string                `json:"required_capabilities,omitempty"`
+	OfflineTestFixture     string                  `json:"offline_test_fixture,omitempty"`
 }
 
 type Pack struct {
-	Root              string
-	Manifest          Manifest
-	ManifestPath      string
-	EntryWorkflowPath string
+	Root               string
+	Manifest           Manifest
+	ManifestPath       string
+	EntryWorkflowPath  string
+	OfflineFixturePath string
 }
 
 type ConfigField struct {
@@ -62,6 +78,7 @@ type ConfigField struct {
 	Description string        `json:"description,omitempty"`
 	Type        string        `json:"type"`
 	Required    bool          `json:"required"`
+	TestKind    string        `json:"test_kind,omitempty"`
 	Default     interface{}   `json:"default,omitempty"`
 	Options     []interface{} `json:"options,omitempty"`
 	Min         *int          `json:"min,omitempty"`
@@ -135,6 +152,16 @@ func Load(dir string) (*Pack, error) {
 			return nil, fmt.Errorf("path: assets entry %q: %w", assetPath, err)
 		}
 	}
+	var offlineFixturePath string
+	if manifest.OfflineTestFixture != "" {
+		offlineFixturePath, err = resolveOfflineFixture(root, manifest.OfflineTestFixture)
+		if err != nil {
+			return nil, fmt.Errorf("manifest: offline_test_fixture: %w", err)
+		}
+		if _, err := readOfflineTestFixture(offlineFixturePath, manifest); err != nil {
+			return nil, err
+		}
+	}
 
 	workflowDef, err := workflow.ReadFileLimit(entryPath, MaxWorkflowBytes)
 	if err != nil {
@@ -151,11 +178,34 @@ func Load(dir string) (*Pack, error) {
 	}
 
 	return &Pack{
-		Root:              root,
-		Manifest:          manifest,
-		ManifestPath:      manifestPath,
-		EntryWorkflowPath: entryPath,
+		Root:               root,
+		Manifest:           manifest,
+		ManifestPath:       manifestPath,
+		EntryWorkflowPath:  entryPath,
+		OfflineFixturePath: offlineFixturePath,
 	}, nil
+}
+
+func resolveOfflineFixture(root, slashPath string) (string, error) {
+	osPath, err := portablePathToOS(slashPath)
+	if err != nil {
+		return "", err
+	}
+	candidate := root
+	for _, segment := range strings.Split(osPath, string(filepath.Separator)) {
+		candidate = filepath.Join(candidate, segment)
+		info, err := os.Lstat(candidate)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return "", fmt.Errorf("path does not exist")
+			}
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("fixture path must not contain symlinks")
+		}
+	}
+	return resolveExistingRegularInside(root, slashPath)
 }
 
 func resolveManifestPath(root string) (string, error) {
@@ -249,6 +299,30 @@ func validateRequiredFields(data []byte) error {
 			}
 		}
 	}
+	if value, ok := raw["required_capabilities"]; ok {
+		if isJSONNull(value) {
+			return fmt.Errorf("manifest: required_capabilities must not be null")
+		}
+		if err := requireStringArray(value, "required_capabilities", false); err != nil {
+			return err
+		}
+	}
+	if value, ok := raw["offline_test_fixture"]; ok {
+		var path string
+		if isJSONNull(value) || json.Unmarshal(value, &path) != nil || strings.TrimSpace(path) == "" {
+			return fmt.Errorf("manifest: offline_test_fixture must be a non-empty string")
+		}
+	}
+	for _, field := range []string{"schedule", "schedules"} {
+		if _, ok := raw[field]; ok {
+			return fmt.Errorf("manifest: %s is not supported; appliance schedules are host-managed", field)
+		}
+	}
+	for _, field := range []string{"migration", "migrations"} {
+		if _, ok := raw[field]; ok {
+			return fmt.Errorf("manifest: %s is not supported; setup migrations are host-managed", field)
+		}
+	}
 	if setupMetadataSize(raw) > MaxSetupMetadataBytes {
 		return fmt.Errorf("manifest: setup metadata exceeds %d byte limit", MaxSetupMetadataBytes)
 	}
@@ -331,7 +405,19 @@ func validateSetupMetadata(manifest Manifest, nodesJSON string) error {
 	if err != nil {
 		return fmt.Errorf("manifest: bindings: %w", err)
 	}
+	if manifest.RequiredCapabilities != nil {
+		declared := make(map[string]bool, len(manifest.RequiredCapabilities))
+		for _, capability := range manifest.RequiredCapabilities {
+			declared[capability] = true
+		}
+		for _, node := range nodeIndex {
+			if node.Type == nodes.TypeNormalizedHTTPSource && !declared[CapabilityHTTPAdapterV1] {
+				return fmt.Errorf("manifest: required_capabilities must include %q when normalizedHttpSource is used", CapabilityHTTPAdapterV1)
+			}
+		}
+	}
 	boundSources := map[string]bool{}
+	testableSources := map[string]bool{}
 	bindingKeys := map[string]bool{}
 	targetKeys := map[string]bool{}
 	for i, binding := range manifest.Bindings {
@@ -370,10 +456,22 @@ func validateSetupMetadata(manifest Manifest, nodesJSON string) error {
 		}
 		targetKeys[targetKey] = true
 		boundSources[binding.Source] = true
+		if sourceKind == "config" && configKeys[sourceKey].TestKind == "http_json_contract" {
+			targetNode := nodeIndex[binding.Target.NodeID]
+			if targetNode.Type == nodes.TypeHTTPRequest && binding.Target.Param == "url" {
+				if _, err := jsoncontract.Parse(targetNode.Params["response_contract"]); err != nil {
+					return fmt.Errorf("manifest: bindings[%d] source test requires a valid HTTP response_contract: %w", i, err)
+				}
+				testableSources[binding.Source] = true
+			}
+		}
 	}
 	for _, field := range configKeys {
 		if field.Required && !field.DisplayOnly && !boundSources["config."+field.Key] {
 			return fmt.Errorf("manifest: config_schema key %q is required but has no binding or display_only marker", field.Key)
+		}
+		if field.TestKind != "" && !testableSources["config."+field.Key] {
+			return fmt.Errorf("manifest: config_schema key %q declares %q but is not bound to an HTTP url with response_contract", field.Key, field.TestKind)
 		}
 	}
 	for _, req := range credentialKeys {
@@ -408,6 +506,14 @@ func validateConfigField(index int, field ConfigField) error {
 	case "string", "url", "integer", "boolean", "select":
 	default:
 		return fmt.Errorf("%s.type must be one of string, url, integer, boolean, or select", prefix)
+	}
+	if field.TestKind != "" {
+		if field.TestKind != "http_json_contract" {
+			return fmt.Errorf("%s.test_kind must be allowlisted", prefix)
+		}
+		if field.Type != "url" {
+			return fmt.Errorf("%s.test_kind %q is compatible only with url fields", prefix, field.TestKind)
+		}
 	}
 	if field.Type != "select" && len(field.Options) > 0 {
 		return fmt.Errorf("%s.options is allowed only for select fields", prefix)
@@ -755,7 +861,94 @@ func validateManifest(manifest Manifest) error {
 			return fmt.Errorf("manifest: required_credentials must not contain credential values")
 		}
 	}
+	if err := validatePlatforms(manifest.SupportedPlatforms); err != nil {
+		return err
+	}
+	if err := validateCapabilities(manifest); err != nil {
+		return err
+	}
 	return nil
+}
+
+var supportedCapabilities = map[string]struct{}{
+	CapabilityPackV1:          {},
+	CapabilitySetupBindingsV1: {},
+	CapabilityConnectionV1:    {},
+	CapabilityDailyScheduleV1: {},
+	CapabilityHostMigrationV1: {},
+	CapabilityHTTPAdapterV1:   {},
+}
+
+var supportedPlatforms = map[string]struct{}{
+	"windows-amd64": {},
+	"linux-amd64":   {},
+	"linux-arm64":   {},
+	"darwin-amd64":  {},
+	"darwin-arm64":  {},
+}
+
+func validatePlatforms(platforms []string) error {
+	seen := map[string]bool{}
+	for i, platform := range platforms {
+		if _, ok := supportedPlatforms[platform]; !ok {
+			return fmt.Errorf("manifest: supported_platforms[%d] %q is not supported", i, platform)
+		}
+		if seen[platform] {
+			return fmt.Errorf("manifest: supported_platforms[%d] duplicates %q", i, platform)
+		}
+		seen[platform] = true
+	}
+	return nil
+}
+
+func validateCapabilities(manifest Manifest) error {
+	if len(manifest.RequiredCapabilities) > MaxRequiredCapabilities {
+		return fmt.Errorf("manifest: required_capabilities exceeds %d item limit", MaxRequiredCapabilities)
+	}
+	seen := map[string]bool{}
+	for i, capability := range manifest.RequiredCapabilities {
+		if len(capability) > MaxCapabilityLength || !isValidCapability(capability) {
+			return fmt.Errorf("manifest: required_capabilities[%d] must be a bounded lowercase capability identifier", i)
+		}
+		if _, ok := supportedCapabilities[capability]; !ok {
+			return fmt.Errorf("manifest: required_capabilities[%d] %q is not supported by this runtime", i, capability)
+		}
+		if seen[capability] {
+			return fmt.Errorf("manifest: required_capabilities[%d] duplicates %q", i, capability)
+		}
+		seen[capability] = true
+	}
+	// A nil declaration is a legacy Pack Format v1 manifest. Preserve it as-is.
+	if manifest.RequiredCapabilities == nil {
+		return nil
+	}
+	if len(manifest.Bindings) > 0 && !seen[CapabilitySetupBindingsV1] {
+		return fmt.Errorf("manifest: required_capabilities must include %q when bindings are declared", CapabilitySetupBindingsV1)
+	}
+	for _, field := range manifest.ConfigSchema {
+		if field.TestKind != "" && !seen[CapabilityConnectionV1] {
+			return fmt.Errorf("manifest: required_capabilities must include %q when connection tests are declared", CapabilityConnectionV1)
+		}
+	}
+	for _, requirement := range manifest.CredentialRequirements {
+		if requirement.TestKind != "" && !seen[CapabilityConnectionV1] {
+			return fmt.Errorf("manifest: required_capabilities must include %q when connection tests are declared", CapabilityConnectionV1)
+		}
+	}
+	return nil
+}
+
+func isValidCapability(value string) bool {
+	if value == "" || strings.HasPrefix(value, ".") || strings.HasSuffix(value, ".") || strings.Contains(value, "..") {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func isValidID(id string) bool {
@@ -810,6 +1003,12 @@ func isValidSemVer(version string) bool {
 		return false
 	}
 	return true
+}
+
+// IsValidSemVer exposes the Pack format's single SemVer validator to other
+// internal lifecycle components.
+func IsValidSemVer(version string) bool {
+	return isValidSemVer(version)
 }
 
 func validDotIdentifiers(value string, rejectNumericLeadingZero bool) bool {

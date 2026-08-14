@@ -51,10 +51,47 @@ Known fields:
 | `config_schema` | No | Optional setup metadata for non-secret pack configuration. |
 | `credential_requirements` | No | Optional structured credential slots without values. |
 | `bindings` | No | Optional declarative mappings from setup values to existing workflow node parameters. |
+| `required_capabilities` | No | Closed list of runtime behaviors required by the Pack. Omission preserves legacy Pack Format v1 compatibility. Unknown, duplicate, malformed, or unavailable capabilities fail closed. |
+| `offline_test_fixture` | No | Portable path to bounded strict JSON used only by `pack test`. The file is excluded from runtime bundles. |
 
 Unknown fields are accepted for forward compatibility, but known fields are validated strictly. Manifest fields that look like secret-bearing fields, such as `secrets`, `password`, `token`, or `api_key`, are rejected when they contain values.
 
+`schedule`, `schedules`, `migration`, and `migrations` are reserved and rejected
+with explicit errors. Appliance schedules and setup migrations are host-managed;
+a Pack cannot supply cron, commands, scripts, or migration code.
+
 Required fields must be present in `pack.json`; zero values caused by missing fields are not accepted. `required_credentials` and `supported_platforms` must be arrays and cannot be `null`.
+
+### Runtime compatibility
+
+The current capability allowlist is closed:
+
+- `goflow.pack.v1`
+- `goflow.setup.bindings.v1`
+- `goflow.setup.connection-tests.v1`
+- `goflow.schedule.daily.v1`
+- `goflow.migration.host-managed.v1`
+- `goflow.adapter.normalized-http.v1`
+
+New Packs should declare every capability they use. A non-nil declaration that
+uses bindings or connection tests must include the corresponding capability.
+Using `normalizedHttpSource` also requires
+`goflow.adapter.normalized-http.v1`; its bounded request and output contract is
+documented in [ADAPTERS.md](ADAPTERS.md).
+Legacy v1 Packs that omit the field remain valid. Supported targets are the
+explicit Windows, Linux, and macOS AMD64/ARM64 targets built by Goflow; unknown
+or duplicate target declarations fail validation. Runtime version ranges are
+not inferred because capabilities are the compatibility boundary.
+
+### Offline author fixture
+
+The optional fixture has `schema_version: 1` and a `config` object. It must be a
+bounded regular file contained by the Pack root. Unknown fields/keys, symlinks,
+path escapes, future schemas, secret-like values, and config values that violate
+`config_schema` fail closed. `pack test` overlays it on deterministic non-secret
+defaults and still uses only fake logical credential IDs. It never performs
+connection tests or network access. The builder strips the fixture reference
+from the runtime manifest and does not ship the fixture.
 
 ## Optional Setup Metadata
 
@@ -77,6 +114,7 @@ Each item includes:
 - `description`: optional bounded text.
 - `type`: one of the supported field types.
 - `required`: boolean.
+- `test_kind`: optional closed-allowlist server-side validation for the current value. `http_json_contract` is supported only for `url` fields bound to an HTTP Request `url` parameter whose node declares `response_contract`.
 - `default`: optional non-secret default with the correct JSON type.
 - `options`: required for `select`, unique bounded scalar values.
 - `min` and `max`: optional integer limits.
@@ -210,6 +248,28 @@ Telegram execution uses the execution context for cancellation and bounds/redact
 Pack Run may start Goflow with an explicit in-memory appliance context. In that mode only, `/api/appliance/*` endpoints expose bootstrap, setup, workflow status, run-now, execution summaries, and diagnostics for the single managed workflow. Generic `goflow serve` does not mount these routes.
 
 State-changing appliance endpoints require a loopback Host match, exact Origin match, JSON content type, strict body limits, and the per-process appliance session token from bootstrap. Credential connection tests are explicit POST operations and are rate/concurrency limited.
+
+Source tests are also explicit, rate-limited, and serialized. `http_json_contract` performs a bounded `GET` with a maximum 10-second timeout, accepts only `http`/`https` and HTTP 2xx, parses JSON, and validates the workflow node's reusable response contract. It never returns the response body or a URL query to the appliance UI. Setup completion repeats required source and credential tests against persisted current values, so a result for an older URL or chat cannot complete setup.
+
+### HTTP JSON Response Contracts
+
+An HTTP Request node may declare an optional generic `response_contract`. When present, runtime execution requires HTTP 2xx, valid JSON, and all declared fields before any downstream node can run. Unknown response fields remain allowed for forward compatibility.
+
+```json
+{
+  "response_contract": {
+    "required": {
+      "report_date": { "type": "string", "non_empty": true },
+      "revenue": { "type": "number" },
+      "order_count": { "type": "integer", "minimum": 0 }
+    }
+  }
+}
+```
+
+Supported rule types are `string`, `number`, `integer`, and `boolean`. `non_empty` applies only to strings; `minimum` applies only to numbers and integers. Pack validation rejects a config source test unless its binding reaches an HTTP `url` with a valid contract. Runtime failures use bounded public categories such as `source_timeout`, `source_unreachable`, `source_http_error`, `source_non_json`, `source_invalid_json`, `source_contract_invalid`, and `source_response_too_large`; response bodies are not included.
+
+For `TELEGRAM_BOT`, `telegram_get_me` verifies both bot identity with `getMe` and the configured bound `chat_id` with `getChat`. It sends no test message. Public failures distinguish `telegram_unauthorized` from `telegram_chat_inaccessible` and never return the token, credential ID, or Telegram response body.
 
 Runtime and diagnostics responses expose pack identity, logical setup readiness, workflow state, and bounded execution summaries only. They do not expose decrypted credentials, credential IDs, database contents, master keys, full logs, arbitrary files, environment variables, hostnames, usernames, or absolute source/build paths.
 
@@ -396,7 +456,7 @@ goflow pack build <directory> --output <output-directory>
 goflow pack verify <bundle.zip|extracted-directory> --output table
 ```
 
-`pack init` creates a deterministic safe scaffold and refuses non-empty target directories unless `--force` is supplied. `pack inspect` reports pack identity, target support, setup counts, controlled file counts, plugin/asset counts, and integrity status without printing workflow parameter values. `pack test` is offline: it validates setup metadata, applies synthetic non-secret config and fake credential IDs in temporary state, prepares the managed workflow idempotently, and reports connection tests as skipped when they require an external service. `pack verify` reuses bundle verification and does not run or import the pack.
+`pack init` creates a deterministic safe scaffold with `tests/offline.json` and refuses non-empty target directories unless `--force` is supplied. `pack inspect` reports pack identity, target/capability support, setup counts, controlled file counts, plugin/asset counts, fixture presence, and integrity status without printing workflow or fixture values. `pack test` is offline: it validates setup metadata, applies fixture or synthetic non-secret config and fake credential IDs in temporary state, prepares the managed workflow idempotently, and reports external connection tests as skipped. `pack verify` reuses bundle verification and does not run or import the pack.
 
 See [PACK_AUTHOR_TUTORIAL.md](PACK_AUTHOR_TUTORIAL.md) for a PowerShell and POSIX walkthrough.
 
@@ -444,7 +504,35 @@ Runtime setup state is stored outside the source pack and extracted bundle:
 
 Both setup files are written atomically with restricted file permissions where supported. Parent setup directories are created with restricted permissions where supported.
 
-The pack workflow is a managed workflow. Its workflow ID is deterministic from the pack ID, so repeated runs update the same record instead of creating duplicates. A version or workflow-content update preserves the database, credentials, and execution history.
+The pack workflow is a managed workflow. Its workflow ID is deterministic from the pack ID, so repeated runs update the same record instead of creating duplicates. A same-version restart preserves completed setup and the active bound workflow. A pack version change preserves the stable workflow ID, database, credential records, slot assignments, config, and execution history, but fails setup closed to incomplete until current source and destination checks are run again. This conservative migration prevents a behavior-changing pack from inheriting stale acceptance evidence without requiring the user to re-enter the encrypted credential.
+
+### Versioned setup migration
+
+Pack setup migration is host-managed. A Pack cannot declare executable
+migration code, commands, scripts, plugins, or download locations. Goflow uses
+a closed registry keyed by Pack ID and exact source version:
+
+- steps run in an ordered forward-only chain and never downgrade automatically;
+- known config transforms operate on bounded non-secret JSON values;
+- credential slots are retained as IDs and expected types only; migration never
+  resolves, copies, or decrypts a credential value;
+- a pre-mutation snapshot with a sorted SHA-256 inventory is written under the
+  Pack data directory, outside the application/bundle directory;
+- transformed values are validated against the destination manifest in memory,
+  then setup files are atomically replaced; a failed multi-file operation
+  compensates by restoring every original file from memory;
+- completion becomes incomplete before the appliance starts serving, and an
+  enabled schedule retains its configuration but enters
+  `NEEDS_ATTENTION/revalidation_required`;
+- repeated startup recognizes the recorded migration and does not reapply it;
+- unknown changes preserve safe data but require explicit user review;
+- corrupt or future migration/config/credential/state schemas fail closed.
+
+Migration categories are `revalidation` (values retained), `config` (a
+registered non-secret transform ran), and `user_review` (no complete registered
+chain exists). They are user-attention states, not claims that validation
+succeeded. The latest Pack workflow definition replaces the inactive managed
+workflow content while the stable workflow ID and execution history remain.
 
 `required_credentials` remains metadata only. Pack Run prints credential requirements and opens the credentials page when requirements exist, but it does not embed secrets, create placeholder credentials, or treat matching names as proof that requirements are satisfied.
 
@@ -459,6 +547,13 @@ Pack validation and build are static. They do not execute plugins, start the ser
 Pack validation is not a trust system. A valid pack may still contain plugin files or workflow behavior that operators should review before any future install or run command uses it.
 
 `PACK_INFO.json` is integrity metadata, not a signature. It can detect that extracted files no longer match the bundle metadata, but it does not prove who created the bundle.
+
+An optional root `PACK_SIGNATURE.json` can bind the exact inventory to an
+explicitly trusted Ed25519 key. It is outside self-inventory and never contains
+a public or private key. `pack verify` reports its presence but does not confer
+trust. Use `pack verify-signature` with a separately obtained key ID/public key.
+The complete canonical payload, bounds, verification order, unsigned policy,
+and governance limitations are defined in [PACK_SIGNING.md](PACK_SIGNING.md).
 
 ## Development Artifacts
 

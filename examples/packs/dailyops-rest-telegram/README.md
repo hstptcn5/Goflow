@@ -10,9 +10,15 @@ Automated tests use mock HTTP and Telegram servers. Real Telegram credentials ar
 
 - `source_url`: absolute HTTP(S) URL returning the normalized JSON contract.
 - `chat_id`: Telegram chat, group, or channel identifier. This is not a token.
-- `report_title`: non-secret title shown in setup.
-- `low_stock_threshold`: optional planning threshold for future adapters.
 - `telegram`: encrypted Telegram bot token credential slot.
+
+`report_title` and `low_stock_threshold` were removed in pack `0.2.0` because the workflow did not apply them. Existing safe config values and the assigned credential are retained during upgrade, but setup must be revalidated once for the new behavior contract.
+
+Pack `0.3.0` adds the host-managed lifecycle contract. Upgrades from `0.1.0`
+drop only those two obsolete non-secret fields; upgrades from `0.2.0` retain
+the current config and credential ID reference. Both paths create a setup
+snapshot and require explicit source/destination revalidation before the
+workflow or daily schedule resumes.
 
 No bot token, authorization header, database, key file, or credential value belongs in `pack.json`, workflow JSON, this README, or built bundles.
 
@@ -40,7 +46,11 @@ Field meanings:
 - `order_count`: number of created/paid orders in the period.
 - `cancelled_refunded_count`: combined cancelled or refunded order count.
 - `low_stock_summary`: already-normalized concise inventory summary.
-- `comparison_summary`: optional prior-period comparison text.
+- `comparison_summary`: prior-period comparison text.
+
+Use **Test source** before completing setup. The URL must identify this JSON API response, not a store website or sign-in page. Goflow accepts unknown extra fields, but rejects HTML, malformed JSON, non-2xx responses, oversized responses, missing required fields, and wrong field types during setup and every run.
+
+Use **Test Telegram** after entering the chat ID. It calls Telegram `getMe` and `getChat` without sending a message. For a direct bot chat, send `/start` to the bot first. For groups or channels, add the bot with the permissions required to post.
 
 Vendor-specific adapters for systems such as POS, ecommerce, or ERP platforms require a separate pilot and validation pass.
 
@@ -70,7 +80,13 @@ Use a local mock source endpoint and the appliance UI. Create a Telegram credent
 ./goflow pack run ./examples/packs/dailyops-rest-telegram --data-dir ./tmp-dailyops-data --no-open
 ```
 
-Open the printed URL, fill the mock source URL, assign a Telegram credential, complete setup, and run once.
+Open the printed URL, test the mock source URL, assign and test a Telegram credential and chat, complete setup, and run once. DailyOps allows one active execution; a second Run request receives `already_running` and does not send another report.
+
+The appliance setup also offers one optional daily schedule. It is off by
+default. Choose a local time and an IANA timezone such as `Asia/Bangkok`, then
+enable it before completing setup. Missed periods are skipped rather than sent
+in a catch-up burst. The dashboard shows the next run and last scheduled result.
+Manual and scheduled runs share the same one-active-execution policy.
 
 ## Pilot Checklist
 

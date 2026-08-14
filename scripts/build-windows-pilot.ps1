@@ -12,10 +12,10 @@ Set-StrictMode -Version Latest
 
 $ArtifactDirectoryName = 'Goflow-DailyOps-Windows-amd64'
 $BundleFileName = 'Goflow-DailyOps-Windows-amd64.zip'
-$MarkerFileName = 'UNSIGNED-PILOT-ALPHA.txt'
+$MarkerFileName = 'UNSIGNED-PILOT-BETA.txt'
 $ChecksumFileName = 'SHA256SUMS.txt'
 $PackID = 'official.dailyops-rest-telegram'
-$PackVersion = '0.1.0'
+$PackVersion = '0.3.0'
 
 function Invoke-Checked {
     param(
@@ -186,16 +186,22 @@ try {
     Expand-Archive -LiteralPath $ArchiveOne[0].FullName -DestinationPath $Extracted
     Invoke-Checked -Command $RuntimePath -Arguments @('pack', 'verify', $Extracted, '--output', 'json') | Out-Null
     Invoke-Checked -Command go -Arguments @('run', './internal/testharness/windowspilot', '--app-dir', $Extracted)
+    & (Join-Path $RepoRoot 'scripts\test-windows-portable-update.ps1') `
+        -ApplicationSource $Extracted `
+        -CandidateBundle $ArchiveOne[0].FullName `
+        -Updater (Join-Path $RepoRoot 'scripts\update-windows-portable.ps1')
 
     $PortableDirectory = Join-Path $OutputDirectory $ArtifactDirectoryName
     New-Item -ItemType Directory -Path $PortableDirectory | Out-Null
     Copy-Item -Path (Join-Path $Extracted '*') -Destination $PortableDirectory -Recurse
     $PublishedBundle = Join-Path $OutputDirectory $BundleFileName
     Copy-Item -LiteralPath $ArchiveOne[0].FullName -Destination $PublishedBundle
+    Copy-Item -LiteralPath (Join-Path $RepoRoot 'scripts\update-windows-portable.ps1') -Destination (Join-Path $OutputDirectory 'Update-Goflow.ps1')
+    Copy-Item -LiteralPath (Join-Path $RepoRoot 'docs\WINDOWS_PILOT_GUIDE.md') -Destination (Join-Path $OutputDirectory 'WINDOWS_PILOT_GUIDE.md')
 
     $MarkerPath = Join-Path $OutputDirectory $MarkerFileName
     @(
-        'UNSIGNED-PILOT-ALPHA'
+        'UNSIGNED-PILOT-BETA'
         "commit=$Commit"
         'target=windows-amd64'
         "pack_id=$PackID"
@@ -204,7 +210,7 @@ try {
         "built_at=$([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))"
     ) | Set-Content -LiteralPath $MarkerPath -Encoding ascii
 
-    Test-ForbiddenFiles -Root $PortableDirectory
+    Test-ForbiddenFiles -Root $OutputDirectory
     $exactPaths = @(@(
         $RepoRoot,
         $TempRoot,
@@ -212,7 +218,7 @@ try {
         $env:RUNNER_WORKSPACE,
         $env:RUNNER_TEMP
     ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    Test-ForbiddenContent -Roots @($PortableDirectory, $PublishedBundle) -ExactValues $exactPaths
+    Test-ForbiddenContent -Roots @($OutputDirectory) -ExactValues $exactPaths
 
     $ChecksumPath = Join-Path $OutputDirectory $ChecksumFileName
     $checksumEntries = @(
@@ -229,7 +235,7 @@ try {
 
     $ArtifactDigest = (Get-FileHash -Algorithm SHA256 -LiteralPath $ChecksumPath).Hash.ToLowerInvariant()
     Write-Output 'WINDOWS_PILOT_ARTIFACT PASS'
-    Write-Output "artifact_name=UNSIGNED-PILOT-ALPHA-goflow-dailyops-windows-amd64"
+    Write-Output "artifact_name=UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64"
     Write-Output "bundle_file=$BundleFileName"
     Write-Output "bundle_sha256=$BundleDigest"
     Write-Output "checksums_sha256=$ArtifactDigest"

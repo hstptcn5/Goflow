@@ -106,6 +106,56 @@ func TestDailyOpsReferencePackTelegramFailureDoesNotDuplicateSend(t *testing.T) 
 	}
 }
 
+func TestDailyOpsReferencePackInvalidSourceContractPreventsTelegram(t *testing.T) {
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"report_date":"2026-08-09","timezone":"Asia/Bangkok"}`))
+	}))
+	defer source.Close()
+
+	telegramRequests := 0
+	telegram := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		telegramRequests++
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer telegram.Close()
+
+	exec := executeDailyOpsPack(t, source.URL, telegram.URL, telegram.Client())
+	if exec.Status != "FAILED" || !strings.Contains(exec.ErrorMessage, "source_contract_invalid") {
+		t.Fatalf("expected categorized contract failure, got status=%s error=%s", exec.Status, exec.ErrorMessage)
+	}
+	if telegramRequests != 0 {
+		t.Fatalf("invalid source contract reached Telegram %d times", telegramRequests)
+	}
+}
+
+func TestDailyOpsReferencePackDeclaresHonestSetupAndRejectConcurrency(t *testing.T) {
+	loaded, err := pack.Load(dailyOpsPackDir)
+	if err != nil {
+		t.Fatalf("load pack: %v", err)
+	}
+	if loaded.Manifest.Version != "0.3.0" {
+		t.Fatalf("expected lifecycle-aware pack version 0.3.0, got %s", loaded.Manifest.Version)
+	}
+	keys := map[string]bool{}
+	for _, field := range loaded.Manifest.ConfigSchema {
+		keys[field.Key] = true
+	}
+	if keys["report_title"] || keys["low_stock_threshold"] {
+		t.Fatalf("setup exposes fields that do not affect the workflow: %#v", keys)
+	}
+	if !keys["source_url"] || !keys["chat_id"] {
+		t.Fatalf("required effective fields are missing: %#v", keys)
+	}
+	wf, err := workflow.ReadFileLimit(loaded.EntryWorkflowPath, pack.MaxWorkflowBytes)
+	if err != nil {
+		t.Fatalf("read workflow: %v", err)
+	}
+	if wf.MaxConcurrentRuns != 1 || wf.ConcurrencyPolicy != "reject" {
+		t.Fatalf("DailyOps must reject duplicate active runs, got max=%d policy=%q", wf.MaxConcurrentRuns, wf.ConcurrencyPolicy)
+	}
+}
+
 func TestDailyOpsReferencePackBuildsDeterministicallyAndVerifies(t *testing.T) {
 	loaded, err := pack.Load(dailyOpsPackDir)
 	if err != nil {
@@ -159,10 +209,8 @@ func executeDailyOpsPack(t *testing.T, sourceURL, telegramURL string, telegramCl
 	}
 	dataDir := t.TempDir()
 	cfg, err := packsetup.SaveConfig(dataDir, loaded.Manifest, map[string]interface{}{
-		"source_url":          sourceURL,
-		"chat_id":             "@dailyops_demo",
-		"report_title":        "DailyOps Daily Report",
-		"low_stock_threshold": 5,
+		"source_url": sourceURL,
+		"chat_id":    "@dailyops_demo",
 	})
 	if err != nil {
 		t.Fatalf("save config: %v", err)

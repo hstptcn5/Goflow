@@ -1,6 +1,6 @@
 # Pack Author Tutorial
 
-This tutorial uses only local files and the Goflow CLI. The scaffolded pack contains no credentials or example secret values.
+This tutorial uses only local files and the Goflow CLI. The scaffolded pack contains no credentials or example secret values, and includes a bounded author-only `tests/offline.json` fixture.
 
 ## 1. Initialize
 
@@ -32,7 +32,7 @@ POSIX:
 ./goflow pack validate ./my-pack
 ```
 
-Validation checks `pack.json`, the entry workflow, portable paths, setup metadata, bindings, supported platform metadata, and pack-only secret rules.
+Validation checks `pack.json`, the entry workflow, portable paths, setup metadata, bindings, supported platform metadata, required runtime capabilities, the offline fixture, and pack-only secret rules.
 
 ## 3. Inspect
 
@@ -48,7 +48,7 @@ POSIX:
 ./goflow pack inspect ./my-pack --output json
 ```
 
-Inspect reports identity, version, target support, setup counts, controlled files, plugin/asset counts, and integrity state. It does not print workflow parameter values.
+Inspect reports identity, version, target/capability support, setup counts, controlled files, plugin/asset counts, fixture presence, and integrity state. It does not print workflow parameter or fixture values.
 
 ## 4. Offline Test
 
@@ -64,7 +64,9 @@ POSIX:
 ./goflow pack test ./my-pack --output json
 ```
 
-The offline test validates the pack, writes synthetic non-secret setup config, binds fake credential IDs for declared credential slots, applies setup bindings to a cloned workflow, and prepares the managed workflow twice in a temporary data directory. It does not open a browser, call the network, run external programs, or send messages. Connection tests that require a real external service are reported as skipped.
+The offline test validates the pack, overlays the strict fixture on deterministic non-secret setup config, binds fake credential IDs for declared credential slots, applies setup bindings to a cloned workflow, and prepares the managed workflow twice in a temporary data directory. It does not open a browser, call the network, run external programs, or send messages. Connection tests that require a real external service are reported as skipped.
+
+The fixture schema is `{ "schema_version": 1, "config": { ... } }`. Unknown fields or config keys, path escapes, symlinks, oversized files, future schemas, secret-like values, and values outside `config_schema` fail closed. The fixture and its manifest reference are excluded from the runtime bundle.
 
 ## 5. Build
 
@@ -80,7 +82,7 @@ POSIX:
 ./goflow pack build ./my-pack --output ./dist
 ```
 
-Builds are deterministic for the same input files and target runtime. The archive includes `PACK_INFO.json`, a runtime entry, the pack payload, and generated run instructions. Bundles are unsigned; verification checks local integrity against `PACK_INFO.json`.
+Builds are deterministic for the same input files and target runtime. The archive includes `PACK_INFO.json`, a runtime entry, the runtime Pack payload, and generated run instructions. Every shipped file is inventoried; undeclared author files and the offline fixture are not shipped. Bundles are unsigned; verification checks local integrity against `PACK_INFO.json`.
 
 ## 6. Extract And Verify
 
@@ -101,6 +103,21 @@ unzip ./dist/example.my-pack-0.1.0-linux-amd64.zip -d ./dist/example.my-pack
 ```
 
 `pack verify` does not run or import the pack. It verifies ZIP inventory or extracted-bundle inventory and checks hashes, expected files, and pack metadata.
+
+## Optional Offline Development Signature
+
+After obtaining a separately managed Ed25519 key pair, a publisher may sign an
+existing verified ZIP without placing the private key in the repository:
+
+```text
+goflow pack sign unsigned.zip --output signed.zip --key-id publisher.example.dev --private-key private.pem
+goflow pack verify-signature signed.zip --key-id publisher.example.dev --public-key public.pem
+```
+
+`--private-key -` reads PEM from stdin. Public keys must use an explicit file;
+the verifier never trusts a key embedded in the Pack or fetched from a network.
+This foundation does not provide publisher vetting, revocation, downgrade
+policy, production key governance, or a signed release.
 
 ## 7. Run Locally
 
@@ -123,6 +140,15 @@ Pack Run starts a loopback-only appliance server and prints the URL. Setup value
 Use `config_schema` for non-secret setup values such as titles, source URLs, thresholds, and chat IDs. Use `credential_requirements` for secrets such as bot tokens, API keys, SSH keys, OAuth tokens, and database URLs. Bind setup values into workflow node parameters through `bindings`.
 
 URL defaults must be absolute `http` or `https` URLs. Credential `test_kind` values are closed by credential type. Unsupported or impossible combinations are rejected by validation.
+
+Declare compatibility with the optional closed `required_capabilities` list:
+`goflow.pack.v1`, `goflow.setup.bindings.v1`,
+`goflow.setup.connection-tests.v1`, `goflow.schedule.daily.v1`, and
+`goflow.migration.host-managed.v1`. Packs using the reviewed normalized HTTP
+source must also declare `goflow.adapter.normalized-http.v1`; see
+[ADAPTERS.md](ADAPTERS.md). Unknown capabilities fail clearly. Legacy
+Pack Format v1 manifests may omit the list. Raw appliance cron and Pack-provided
+migration code remain unsupported.
 
 ## Secret Rules
 

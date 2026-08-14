@@ -72,6 +72,7 @@ var migrations = []migration{
 	{version: 2, name: "workflow_interfaces", up: migrationWorkflowInterfaces},
 	{version: 3, name: "execution_invocation", up: migrationExecutionInvocation},
 	{version: 4, name: "access_tokens_audit", up: migrationAccessTokensAudit},
+	{version: 5, name: "workflow_schedules", up: migrationWorkflowSchedules},
 }
 
 func migrationInitial(tx *sql.Tx) error {
@@ -202,6 +203,36 @@ func migrationAccessTokensAudit(tx *sql.Tx) error {
 			ON audit_events(workflow_id, created_at DESC);
 		CREATE INDEX IF NOT EXISTS idx_audit_events_execution
 			ON audit_events(execution_id, created_at DESC);
+	`)
+	return err
+}
+
+func migrationWorkflowSchedules(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS workflow_schedules (
+			workflow_id TEXT PRIMARY KEY,
+			pack_id TEXT NOT NULL,
+			schema_version INTEGER NOT NULL,
+			revision INTEGER NOT NULL DEFAULT 1,
+			enabled INTEGER NOT NULL DEFAULT 0,
+			kind TEXT NOT NULL,
+			local_time TEXT NOT NULL,
+			timezone TEXT NOT NULL,
+			missed_run_policy TEXT NOT NULL,
+			last_scheduled_for DATETIME,
+			next_run_at DATETIME,
+			last_execution_id TEXT,
+			state TEXT NOT NULL,
+			error_category TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_workflow_schedules_due
+			ON workflow_schedules(enabled, next_run_at);
+		CREATE INDEX IF NOT EXISTS idx_workflow_schedules_pack
+			ON workflow_schedules(pack_id, workflow_id);
 	`)
 	return err
 }

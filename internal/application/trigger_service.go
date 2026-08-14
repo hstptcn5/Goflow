@@ -22,6 +22,7 @@ const (
 	SourceAPI      TriggerSource = "api"
 	SourceWebhook  TriggerSource = "webhook"
 	SourceCron     TriggerSource = "cron"
+	SourceSchedule TriggerSource = "schedule"
 	SourceCLI      TriggerSource = "cli"
 	SourceMCP      TriggerSource = "mcp"
 	SourceMCPStdio TriggerSource = "mcp_stdio"

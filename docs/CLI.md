@@ -91,9 +91,19 @@ goflow pack init <directory> --id <id> --name <name> [--force]
 goflow pack inspect <pack-directory-or-bundle> [--output table|json]
 goflow pack test <pack-directory> [--output table|json]
 goflow pack verify <bundle.zip-or-extracted-directory> [--output table|json]
+goflow pack sign <bundle.zip> --output <signed.zip> --key-id <id> --private-key <path|->
+goflow pack verify-signature <bundle.zip-or-extracted-directory> --key-id <id> --public-key <path> [--output table|json]
 ```
 
-`pack init` creates a minimal deterministic pack scaffold and refuses non-empty directories unless `--force` is supplied. `pack inspect` reports manifest, setup, platform, file, and integrity metadata without printing workflow parameter values. `pack test` is offline: it validates setup metadata, applies synthetic non-secret config plus fake credential IDs in temporary state, prepares the managed workflow, and skips external connection checks. `pack verify` checks bundle inventory and hashes without running or importing the pack.
+`pack init` creates a minimal deterministic pack scaffold with a bounded author-only offline fixture and refuses non-empty directories unless `--force` is supplied. `pack inspect` reports manifest, setup, capability, platform, file, fixture-presence, and integrity metadata without printing workflow or fixture values. `pack test` is offline: it validates setup metadata, applies fixture or synthetic non-secret config plus fake credential IDs in temporary state, prepares the managed workflow, and skips external connection checks. `pack verify` checks bundle inventory and hashes without running or importing the pack. See `docs/PACK_AUTHOR_TUTORIAL.md` for the complete author flow.
+
+`pack sign` is an offline development command. It accepts one PEM PKCS#8
+Ed25519 private key from an explicit file or stdin (`-`) and writes a different
+ZIP atomically; it never prints or copies the key. `pack verify-signature`
+requires a matching explicit key ID and PEM PKIX Ed25519 public-key file. No key
+is trusted from the Pack or network. `pack verify` remains integrity-only and
+reports `UNSIGNED` or `SIGNED_UNVERIFIED`; only `verify-signature` reports
+`VERIFIED`. See `PACK_SIGNING.md` for trust limits.
 
 ## Pack Build
 

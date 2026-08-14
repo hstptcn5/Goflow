@@ -19,33 +19,38 @@ import (
 	"goflow/internal/crypto"
 	"goflow/internal/engine"
 	"goflow/internal/nodes"
+	"goflow/internal/scheduler"
 	"goflow/internal/storage"
 
 	"github.com/robfig/cron/v3"
 )
 
 type Options struct {
-	Config    *config.Config
-	UIFS      fs.FS
-	Listener  net.Listener
-	Logger    *log.Logger
-	Appliance *api.ApplianceContext
-	Registry  *nodes.PluginRegistry
+	Config        *config.Config
+	UIFS          fs.FS
+	Listener      net.Listener
+	Logger        *log.Logger
+	Appliance     *api.ApplianceContext
+	Registry      *nodes.PluginRegistry
+	ScheduleClock scheduler.Clock
+	ScheduleWake  <-chan scheduler.WakeRequest
 }
 
 type App struct {
 	URL string
 
-	server        *http.Server
-	listener      net.Listener
-	db            *storage.DB
-	cronScheduler *cron.Cron
-	cronCancel    context.CancelFunc
-	cleanupCancel context.CancelFunc
-	goroutines    sync.WaitGroup
-	done          chan error
-	shutdownOnce  sync.Once
-	logger        *log.Logger
+	server         *http.Server
+	listener       net.Listener
+	db             *storage.DB
+	cronScheduler  *cron.Cron
+	cronCancel     context.CancelFunc
+	schedule       *scheduler.Service
+	scheduleCancel context.CancelFunc
+	cleanupCancel  context.CancelFunc
+	goroutines     sync.WaitGroup
+	done           chan error
+	shutdownOnce   sync.Once
+	logger         *log.Logger
 }
 
 func Run(ctx context.Context, opts Options) error {
@@ -126,7 +131,34 @@ func Start(ctx context.Context, opts Options) (*App, error) {
 	cronScheduler.Start()
 
 	cronCtx, cronCancel := context.WithCancel(ctx)
+	scheduleCtx, scheduleCancel := context.WithCancel(ctx)
 	cleanupCtx, cleanupCancel := context.WithCancel(ctx)
+	var managedScheduler *scheduler.Service
+	if opts.Appliance != nil && opts.Appliance.Enabled {
+		scheduleClock := opts.ScheduleClock
+		if scheduleClock == nil {
+			scheduleClock = scheduler.SystemClock{}
+		}
+		scheduleStore := storage.NewWorkflowScheduleStore(db)
+		opts.Appliance.ScheduleStore = scheduleStore
+		opts.Appliance.ScheduleClock = scheduleClock
+		managedScheduler, err = scheduler.NewService(scheduler.Options{
+			Store:      scheduleStore,
+			Triggerer:  triggerService,
+			Clock:      scheduleClock,
+			Readiness:  func() (bool, string) { return api.ApplianceScheduleReadiness(opts.Appliance, credStore) },
+			Logger:     logger,
+			PackID:     opts.Appliance.PackID,
+			WorkflowID: opts.Appliance.WorkflowID,
+		})
+		if err != nil {
+			cronCancel()
+			scheduleCancel()
+			cleanupCancel()
+			<-cronScheduler.Stop().Done()
+			return nil, fmt.Errorf("initialize managed scheduler: %w", err)
+		}
+	}
 
 	router := api.NewRouter(
 		wfStore,
@@ -153,19 +185,24 @@ func Start(ctx context.Context, opts Options) (*App, error) {
 		WriteTimeout: 180 * time.Second,
 	}
 	app := &App{
-		URL:           "http://" + listener.Addr().String(),
-		server:        server,
-		listener:      listener,
-		db:            db,
-		cronScheduler: cronScheduler,
-		cronCancel:    cronCancel,
-		cleanupCancel: cleanupCancel,
-		done:          make(chan error, 1),
-		logger:        logger,
+		URL:            "http://" + listener.Addr().String(),
+		server:         server,
+		listener:       listener,
+		db:             db,
+		cronScheduler:  cronScheduler,
+		cronCancel:     cronCancel,
+		schedule:       managedScheduler,
+		scheduleCancel: scheduleCancel,
+		cleanupCancel:  cleanupCancel,
+		done:           make(chan error, 1),
+		logger:         logger,
 	}
 
 	startCleanupLoop(cleanupCtx, &app.goroutines, execStore, cfg, logger)
 	startCronScanner(cronCtx, &app.goroutines, cronScheduler, wfStore, triggerService, logger)
+	if managedScheduler != nil {
+		startManagedScheduler(scheduleCtx, &app.goroutines, managedScheduler, opts.ScheduleWake, logger)
+	}
 	go app.serve(ctx)
 
 	closeDBOnError = false
@@ -190,6 +227,9 @@ func (app *App) Shutdown(ctx context.Context) error {
 	app.shutdownOnce.Do(func() {
 		app.logger.Println("[INFO] Shutting down Goflow gracefully...")
 		app.cronCancel()
+		if app.scheduleCancel != nil {
+			app.scheduleCancel()
+		}
 		app.cleanupCancel()
 		if ctx == nil {
 			var cancel context.CancelFunc
@@ -206,6 +246,18 @@ func (app *App) Shutdown(ctx context.Context) error {
 		}
 	})
 	return err
+}
+
+func startManagedScheduler(ctx context.Context, wg *sync.WaitGroup, service *scheduler.Service, wake <-chan scheduler.WakeRequest, logger *log.Logger) {
+	if service == nil {
+		return
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		service.RunWithWake(ctx, scheduler.DefaultTickInterval, wake)
+		logger.Println("[Scheduler] Managed scheduler stopped gracefully")
+	}()
 }
 
 func (app *App) serve(ctx context.Context) {

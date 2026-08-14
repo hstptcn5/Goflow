@@ -1,8 +1,13 @@
 package cli
 
 import (
+	"archive/zip"
 	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"flag"
 	"io"
 	"os"
@@ -311,6 +316,62 @@ func TestPackBuildReturnsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestPackSignAndVerifySignatureCLIWithoutKeyLeak(t *testing.T) {
+	dir := writePackFixture(t, `{
+		"schema_version":1,"id":"example.signed","name":"Signed","version":"0.1.0",
+		"entry_workflow":"workflows/main.json","required_credentials":[],
+		"supported_platforms":["`+pack.CurrentPlatform()+`"]
+	}`, `{"name":"Signed","nodes":[{"id":"trigger","type":"webhookTrigger","params":{}}],"edges":[]}`)
+	runtimePath := filepath.Join(t.TempDir(), "goflow-runtime")
+	if err := os.WriteFile(runtimePath, []byte("runtime"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	unsigned := filepath.Join(t.TempDir(), "example.signed-0.1.0-"+pack.CurrentPlatform()+".zip")
+	result, err := pack.Build(pack.BuildOptions{PackDir: dir, OutputDir: filepath.Dir(unsigned), RuntimePath: runtimePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateDER, _ := x509.MarshalPKCS8PrivateKey(private)
+	publicDER, _ := x509.MarshalPKIXPublicKey(public)
+	privatePEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateDER})
+	publicPath := filepath.Join(t.TempDir(), "publisher-public.pem")
+	if err := os.WriteFile(publicPath, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	signed := filepath.Join(t.TempDir(), "signed.zip")
+	var stdout, stderr bytes.Buffer
+	runner := Runner{Stdout: &stdout, Stderr: &stderr, Stdin: bytes.NewReader(privatePEM)}
+	if code := runner.Run([]string{"pack", "sign", result.ArchivePath, "--output", signed, "--key-id", "publisher.test", "--private-key", "-"}); code != ExitOK {
+		t.Fatalf("sign failed: code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := runner.Run([]string{"pack", "verify", signed, "--output", "json"}); code != ExitOK || !strings.Contains(stdout.String(), `"authenticity": "SIGNED_UNVERIFIED"`) {
+		t.Fatalf("integrity verify did not distinguish untrusted signature: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := runner.Run([]string{"pack", "verify-signature", signed, "--key-id", "publisher.test", "--public-key", publicPath, "--output", "json"}); code != ExitOK {
+		t.Fatalf("verify failed: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"authenticity": "VERIFIED"`) {
+		t.Fatalf("missing verified result: %s", stdout.String())
+	}
+	archiveData, err := os.ReadFile(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, output := range [][]byte{stdout.Bytes(), stderr.Bytes(), archiveData} {
+		if bytes.Contains(output, bytes.TrimSpace(privatePEM)) {
+			t.Fatal("private key leaked")
+		}
+	}
+}
+
 func TestPackInitScaffoldValidateTestBuildVerify(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "fresh-pack")
 	var stdout, stderr bytes.Buffer
@@ -319,7 +380,7 @@ func TestPackInitScaffoldValidateTestBuildVerify(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("pack init failed code=%d stderr=%q", code, stderr.String())
 	}
-	for _, rel := range []string{"pack.json", filepath.Join("workflows", "main.json"), "README.md"} {
+	for _, rel := range []string{"pack.json", filepath.Join("workflows", "main.json"), filepath.Join("tests", "offline.json"), "README.md"} {
 		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
 			t.Fatalf("expected scaffold file %s: %v", rel, err)
 		}
@@ -348,6 +409,13 @@ func TestPackInitScaffoldValidateTestBuildVerify(t *testing.T) {
 	if testResult["status"] != "PASS" || testResult["managed_workflow"] != "PASS" {
 		t.Fatalf("unexpected pack test result: %#v", testResult)
 	}
+	if testResult["fixture"] != "PASS" {
+		t.Fatalf("scaffold offline fixture was not used: %#v", testResult)
+	}
+	manifestData, err := os.ReadFile(filepath.Join(dir, "pack.json"))
+	if err != nil || !strings.Contains(string(manifestData), pack.CapabilityPackV1) {
+		t.Fatalf("scaffold capability declaration missing: %v", err)
+	}
 
 	runtimePath := filepath.Join(t.TempDir(), "goflow-runtime")
 	if err := os.WriteFile(runtimePath, []byte("runtime"), 0600); err != nil {
@@ -375,6 +443,109 @@ func TestPackInitScaffoldValidateTestBuildVerify(t *testing.T) {
 	}
 	if verifyResult["status"] != "PASS" || verifyResult["id"] != "example.fresh-pack" {
 		t.Fatalf("unexpected verify result: %#v", verifyResult)
+	}
+
+	extracted := t.TempDir()
+	reader, err := zip.OpenReader(archive)
+	if err != nil {
+		t.Fatalf("open bundle fixture: %v", err)
+	}
+	for _, file := range reader.File {
+		target := filepath.Join(extracted, filepath.FromSlash(file.Name))
+		if file.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, 0700); err != nil {
+				t.Fatalf("create extracted fixture directory: %v", err)
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+			t.Fatalf("create extracted fixture parent: %v", err)
+		}
+		input, err := file.Open()
+		if err != nil {
+			t.Fatalf("open bundle member: %v", err)
+		}
+		output, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+		if err != nil {
+			input.Close()
+			t.Fatalf("create extracted member: %v", err)
+		}
+		_, copyErr := io.Copy(output, input)
+		closeInputErr := input.Close()
+		closeOutputErr := output.Close()
+		if copyErr != nil || closeInputErr != nil || closeOutputErr != nil {
+			t.Fatalf("extract bundle member: copy=%v input=%v output=%v", copyErr, closeInputErr, closeOutputErr)
+		}
+	}
+	reader.Close()
+	workflowPath := filepath.Join(extracted, "pack", "workflows", "main.json")
+	file, err := os.OpenFile(workflowPath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open workflow for tamper: %v", err)
+	}
+	if _, err := file.WriteString("\n"); err != nil {
+		file.Close()
+		t.Fatalf("tamper workflow: %v", err)
+	}
+	file.Close()
+	stdout.Reset()
+	stderr.Reset()
+	code = runner.Run([]string{"pack", "verify", extracted, "--output", "json"})
+	if code == ExitOK {
+		t.Fatalf("tampered pack verify returned success exit code: stdout=%q", stdout.String())
+	}
+	verifyResult = nil
+	if err := json.Unmarshal(stdout.Bytes(), &verifyResult); err != nil {
+		t.Fatalf("failed verify JSON was not parseable: %v", err)
+	}
+	if verifyResult["status"] != "FAILED" {
+		t.Fatalf("tampered verify status = %#v", verifyResult)
+	}
+}
+
+func TestPackTestUsesAndValidatesOfflineFixtureValues(t *testing.T) {
+	dir := writePackFixture(t, `{
+		"schema_version":1,
+		"id":"example.fixture",
+		"name":"Fixture",
+		"version":"0.1.0",
+		"entry_workflow":"workflows/main.json",
+		"required_credentials":[],
+		"supported_platforms":["`+pack.CurrentPlatform()+`"],
+		"offline_test_fixture":"tests/offline.json",
+		"config_schema":[{"key":"count","label":"Count","type":"integer","required":true,"min":1,"max":5,"display_only":true}]
+	}`, `{
+		"name":"Fixture",
+		"nodes":[{"id":"trigger","type":"webhookTrigger","params":{}}],
+		"edges":[]
+	}`)
+	if err := os.MkdirAll(filepath.Join(dir, "tests"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	fixturePath := filepath.Join(dir, "tests", "offline.json")
+	if err := os.WriteFile(fixturePath, []byte(`{"schema_version":1,"config":{"count":4}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	runner := Runner{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")}
+	if code := runner.Run([]string{"pack", "test", dir, "--output", "json"}); code != ExitOK {
+		t.Fatalf("valid fixture failed: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"fixture": "PASS"`) {
+		t.Fatalf("fixture evidence missing: %s", stdout.String())
+	}
+	if err := os.WriteFile(fixturePath, []byte(`{"schema_version":1,"config":{"count":9}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code := runner.Run([]string{"pack", "test", dir, "--output", "json"})
+	var failed map[string]interface{}
+	if err := json.Unmarshal(stdout.Bytes(), &failed); err != nil {
+		t.Fatalf("decode failed fixture result: %v", err)
+	}
+	if code == ExitOK || !strings.Contains(failed["error"].(string), "must be <= 5") {
+		t.Fatalf("invalid fixture was accepted: code=%d result=%#v stderr=%q", code, failed, stderr.String())
 	}
 }
 

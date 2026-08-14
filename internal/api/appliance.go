@@ -9,18 +9,20 @@ import (
 	"mime"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"regexp"
+	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
+	"goflow/internal/apperror"
 	"goflow/internal/application"
 	"goflow/internal/client"
 	"goflow/internal/engine"
 	"goflow/internal/pack"
 	"goflow/internal/packsetup"
+	"goflow/internal/scheduler"
 	"goflow/internal/storage"
 
 	"github.com/go-chi/chi/v5"
@@ -31,6 +33,8 @@ const applianceMaxJSONBody int64 = 64 << 10
 
 type ApplianceContext struct {
 	Enabled                bool
+	AppVersion             string
+	IntegrityState         string
 	Origin                 string
 	SessionToken           string
 	PackID                 string
@@ -45,6 +49,12 @@ type ApplianceContext struct {
 	Bindings               []pack.Binding
 	TelegramAPIBaseURL     string
 	ConnectionTestClient   *http.Client
+	ScheduleStore          *storage.WorkflowScheduleStore
+	ScheduleClock          applianceClock
+}
+
+type applianceClock interface {
+	Now() time.Time
 }
 
 func mountApplianceRoutes(
@@ -60,6 +70,8 @@ func mountApplianceRoutes(
 	}
 	credentialTestLimiter := newFixedWindowRateLimiter(10, time.Minute)
 	credentialTestSlots := make(chan struct{}, 1)
+	sourceTestLimiter := newFixedWindowRateLimiter(10, time.Minute)
+	sourceTestSlots := make(chan struct{}, 1)
 	r.Route("/api/appliance", func(r chi.Router) {
 		r.Use(applianceHostMiddleware(appliance))
 		r.Get("/bootstrap", applianceBootstrapHandler(appliance))
@@ -69,15 +81,18 @@ func mountApplianceRoutes(
 		r.Get("/workflow/status", applianceWorkflowStatusHandler(appliance, wfStore, execStore, credStore))
 		r.Get("/executions/latest", applianceLatestExecutionHandler(appliance, execStore))
 		r.Get("/executions", applianceRecentExecutionsHandler(appliance, execStore))
+		r.Get("/schedule", applianceScheduleHandler(appliance, execStore))
 		r.Group(func(r chi.Router) {
 			r.Use(applianceMutationMiddleware(appliance))
 			r.Post("/setup/config", applianceSaveConfigHandler(appliance))
+			r.Post("/setup/source/test", applianceTestSourceHandler(appliance, wfStore, sourceTestLimiter, sourceTestSlots))
 			r.Post("/setup/credentials", applianceSaveCredentialsHandler(appliance, credStore))
 			r.Post("/setup/credentials/create", applianceCreateCredentialHandler(appliance, credStore))
 			r.Post("/setup/credentials/test", applianceTestCredentialHandler(appliance, credStore, credentialTestLimiter, credentialTestSlots))
 			r.Post("/setup/complete", applianceCompleteHandler(appliance, wfStore, credStore))
 			r.Post("/setup/reopen", applianceReopenHandler(appliance))
 			r.Post("/workflow/run", applianceRunWorkflowHandler(appliance, credStore, triggerService))
+			r.Put("/schedule", applianceSaveScheduleHandler(appliance, execStore))
 		})
 	})
 }
@@ -87,14 +102,28 @@ func applianceBootstrapHandler(appliance *ApplianceContext) http.HandlerFunc {
 		renderJSON(w, http.StatusOK, map[string]interface{}{
 			"token": appliance.SessionToken,
 			"pack":  applianceIdentity(appliance),
+			"app": map[string]string{
+				"name":     "Goflow",
+				"version":  appliancePublicAppVersion(appliance),
+				"platform": runtime.GOOS + "/" + runtime.GOARCH,
+				"channel":  "UNSIGNED-PILOT-BETA",
+			},
 		})
 	}
+}
+
+func appliancePublicAppVersion(appliance *ApplianceContext) string {
+	version := strings.TrimSpace(appliance.AppVersion)
+	if version == "" {
+		return "development"
+	}
+	return version
 }
 
 func applianceStatusHandler(appliance *ApplianceContext, wfStore *storage.WorkflowStore, execStore *storage.ExecutionStore, credStore *storage.CredentialStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		state, missing, completed := applianceRuntimeState(appliance, wfStore, execStore, applianceCredentialResolver(credStore))
-		renderJSON(w, http.StatusOK, map[string]interface{}{
+		response := map[string]interface{}{
 			"pack":           applianceIdentity(appliance),
 			"workflow_id":    appliance.WorkflowID,
 			"server":         "ok",
@@ -102,26 +131,287 @@ func applianceStatusHandler(appliance *ApplianceContext, wfStore *storage.Workfl
 			"missing":        missing,
 			"setup_complete": completed,
 			"can_complete":   len(missing) == 0,
-		})
+		}
+		if migration, err := packsetup.LoadMigrationState(appliance.DataDir, applianceManifest(appliance)); err == nil && !completed {
+			response["attention_category"] = migration.Category
+		}
+		renderJSON(w, http.StatusOK, response)
 	}
+}
+
+type applianceScheduleView struct {
+	Configured       bool                       `json:"configured"`
+	Revision         int64                      `json:"revision"`
+	Enabled          bool                       `json:"enabled"`
+	Kind             string                     `json:"kind"`
+	LocalTime        string                     `json:"local_time"`
+	Timezone         string                     `json:"timezone"`
+	State            string                     `json:"state"`
+	ErrorCategory    string                     `json:"error_category,omitempty"`
+	LastScheduledFor *time.Time                 `json:"last_scheduled_for,omitempty"`
+	NextRunAt        *time.Time                 `json:"next_run_at,omitempty"`
+	LastResult       *applianceExecutionSummary `json:"last_result,omitempty"`
+}
+
+func applianceScheduleHandler(appliance *ApplianceContext, execStore *storage.ExecutionStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		view, status, err := applianceScheduleViewFor(appliance, execStore)
+		if err != nil {
+			http.Error(w, "schedule status is not available", status)
+			return
+		}
+		renderJSON(w, http.StatusOK, view)
+	}
+}
+
+func applianceSaveScheduleHandler(appliance *ApplianceContext, execStore *storage.ExecutionStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ExpectedRevision int64  `json:"expected_revision"`
+			Enabled          bool   `json:"enabled"`
+			LocalTime        string `json:"local_time"`
+			Timezone         string `json:"timezone"`
+		}
+		if err := decodeApplianceJSON(w, r, &req); err != nil {
+			return
+		}
+		if appliance.ScheduleStore == nil {
+			http.Error(w, "schedule service is not available", http.StatusServiceUnavailable)
+			return
+		}
+		now := applianceScheduleNow(appliance)
+		schedule := &storage.WorkflowSchedule{
+			WorkflowID:      appliance.WorkflowID,
+			PackID:          appliance.PackID,
+			SchemaVersion:   storage.WorkflowScheduleSchemaVersion,
+			Enabled:         req.Enabled,
+			Kind:            storage.ScheduleKindDaily,
+			LocalTime:       req.LocalTime,
+			Timezone:        req.Timezone,
+			MissedRunPolicy: storage.ScheduleMissedRunSkip,
+			State:           storage.ScheduleStateDisabled,
+		}
+		existing, err := appliance.ScheduleStore.GetByWorkflow(appliance.WorkflowID)
+		switch {
+		case err == nil:
+			if existing.PackID != appliance.PackID || req.ExpectedRevision != existing.Revision {
+				writeScheduleConflict(w)
+				return
+			}
+			schedule.LastScheduledFor = existing.LastScheduledFor
+			schedule.LastExecutionID = existing.LastExecutionID
+		case errors.Is(err, storage.ErrWorkflowScheduleNotFound):
+			if req.ExpectedRevision != 0 {
+				writeScheduleConflict(w)
+				return
+			}
+		case errors.Is(err, storage.ErrInvalidWorkflowSchedule):
+			renderJSON(w, http.StatusConflict, map[string]interface{}{
+				"category": storage.ScheduleErrorInvalid,
+				"error":    "The saved schedule needs attention before it can be changed.",
+			})
+			return
+		default:
+			http.Error(w, "schedule could not be loaded", http.StatusInternalServerError)
+			return
+		}
+		if req.Enabled {
+			schedule.State = storage.ScheduleStateOK
+			after := now
+			if schedule.LastScheduledFor != nil && schedule.LastScheduledFor.After(after) {
+				after = *schedule.LastScheduledFor
+			}
+			next, err := scheduler.NextDailyAfter(schedule.LocalTime, schedule.Timezone, after)
+			if err != nil {
+				renderJSON(w, http.StatusBadRequest, map[string]interface{}{
+					"category": storage.ScheduleErrorInvalid,
+					"error":    "Use a valid daily time and IANA timezone.",
+				})
+				return
+			}
+			schedule.NextRunAt = &next
+		}
+		if err := appliance.ScheduleStore.Configure(schedule, req.ExpectedRevision, now); err != nil {
+			if errors.Is(err, storage.ErrWorkflowScheduleConflict) {
+				writeScheduleConflict(w)
+				return
+			}
+			if errors.Is(err, storage.ErrInvalidWorkflowSchedule) {
+				renderJSON(w, http.StatusBadRequest, map[string]interface{}{
+					"category": storage.ScheduleErrorInvalid,
+					"error":    "Use a valid daily time and IANA timezone.",
+				})
+				return
+			}
+			http.Error(w, "schedule could not be saved", http.StatusInternalServerError)
+			return
+		}
+		view, status, err := applianceScheduleViewFor(appliance, execStore)
+		if err != nil {
+			http.Error(w, "schedule was saved but status is not available", status)
+			return
+		}
+		renderJSON(w, http.StatusOK, view)
+	}
+}
+
+func writeScheduleConflict(w http.ResponseWriter) {
+	renderJSON(w, http.StatusConflict, map[string]interface{}{
+		"category": "revision_conflict",
+		"error":    "The schedule changed in another session. Refresh and try again.",
+	})
+}
+
+func applianceScheduleViewFor(appliance *ApplianceContext, execStore *storage.ExecutionStore) (applianceScheduleView, int, error) {
+	view := applianceScheduleView{
+		Revision:  0,
+		Enabled:   false,
+		Kind:      storage.ScheduleKindDaily,
+		LocalTime: "09:00",
+		Timezone:  "UTC",
+		State:     storage.ScheduleStateDisabled,
+	}
+	if appliance.ScheduleStore == nil {
+		return view, http.StatusServiceUnavailable, errors.New("schedule store unavailable")
+	}
+	schedule, err := appliance.ScheduleStore.GetByWorkflow(appliance.WorkflowID)
+	if errors.Is(err, storage.ErrWorkflowScheduleNotFound) {
+		return view, http.StatusOK, nil
+	}
+	if errors.Is(err, storage.ErrInvalidWorkflowSchedule) {
+		view.Configured = true
+		view.State = storage.ScheduleStateNeedsAttention
+		view.ErrorCategory = storage.ScheduleErrorInvalid
+		return view, http.StatusOK, nil
+	}
+	if err != nil {
+		return view, http.StatusInternalServerError, err
+	}
+	view.Configured = true
+	view.Revision = schedule.Revision
+	view.Enabled = schedule.Enabled
+	view.Kind = schedule.Kind
+	view.LocalTime = schedule.LocalTime
+	view.Timezone = schedule.Timezone
+	view.State = schedule.State
+	view.ErrorCategory = schedule.ErrorCategory
+	view.LastScheduledFor = schedule.LastScheduledFor
+	view.NextRunAt = schedule.NextRunAt
+	if schedule.LastExecutionID != "" && execStore != nil {
+		if execution, err := execStore.GetByID(schedule.LastExecutionID); err == nil && execution.WorkflowID == appliance.WorkflowID {
+			summary := applianceExecutionSummaryFromExecution(*execution)
+			view.LastResult = &summary
+		}
+	}
+	return view, http.StatusOK, nil
+}
+
+func applianceScheduleNow(appliance *ApplianceContext) time.Time {
+	if appliance.ScheduleClock != nil {
+		return appliance.ScheduleClock.Now().UTC()
+	}
+	return time.Now().UTC()
 }
 
 func applianceDiagnosticsHandler(appliance *ApplianceContext, wfStore *storage.WorkflowStore, execStore *storage.ExecutionStore, credStore *storage.CredentialStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		state, missing, completed := applianceRuntimeState(appliance, wfStore, execStore, applianceCredentialResolver(credStore))
-		latest, _ := applianceLatestExecution(execStore, appliance.WorkflowID)
-		renderJSON(w, http.StatusOK, map[string]interface{}{
-			"pack":                  applianceIdentity(appliance),
-			"workflow_id":           appliance.WorkflowID,
-			"server":                "ok",
-			"state":                 state,
-			"missing":               missing,
-			"setup_complete":        completed,
-			"latest_execution":      latest,
-			"credential_ids_hidden": true,
-			"secrets_hidden":        true,
-			"generated_at":          time.Now().UTC(),
-		})
+		renderJSON(w, http.StatusOK, buildApplianceDiagnostics(appliance, wfStore, execStore, credStore))
+	}
+}
+
+type applianceDiagnostics struct {
+	SchemaVersion int                             `json:"schema_version"`
+	App           applianceDiagnosticsApp         `json:"app"`
+	Pack          applianceDiagnosticsPack        `json:"pack"`
+	Setup         applianceDiagnosticsSetup       `json:"setup"`
+	Schedule      applianceDiagnosticsSchedule    `json:"schedule"`
+	Executions    []applianceDiagnosticsExecution `json:"recent_executions"`
+	Integrity     applianceDiagnosticsIntegrity   `json:"integrity"`
+	Privacy       applianceDiagnosticsPrivacy     `json:"privacy"`
+}
+
+type applianceDiagnosticsApp struct {
+	Name     string `json:"name"`
+	Version  string `json:"version"`
+	Platform string `json:"platform"`
+}
+
+type applianceDiagnosticsPack struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+}
+
+type applianceDiagnosticsSetup struct {
+	State    string `json:"state"`
+	Category string `json:"category"`
+}
+
+type applianceDiagnosticsSchedule struct {
+	Configured    bool   `json:"configured"`
+	Enabled       bool   `json:"enabled"`
+	State         string `json:"state"`
+	ErrorCategory string `json:"error_category,omitempty"`
+}
+
+type applianceDiagnosticsExecution struct {
+	Status        string `json:"status"`
+	DurationMs    int64  `json:"duration_ms"`
+	ErrorCategory string `json:"error_category,omitempty"`
+}
+
+type applianceDiagnosticsIntegrity struct {
+	State string `json:"state"`
+}
+
+type applianceDiagnosticsPrivacy struct {
+	LocalOnly           bool `json:"local_only"`
+	CredentialIDsHidden bool `json:"credential_ids_hidden"`
+	SecretsHidden       bool `json:"secrets_hidden"`
+}
+
+func buildApplianceDiagnostics(appliance *ApplianceContext, wfStore *storage.WorkflowStore, execStore *storage.ExecutionStore, credStore *storage.CredentialStore) applianceDiagnostics {
+	state, _, completed := applianceReadiness(appliance, applianceCredentialResolver(credStore))
+	setupCategory := apperror.CategorySetupIncomplete
+	if state == "READY" {
+		setupCategory = "ready"
+	} else if migration, err := packsetup.LoadMigrationState(appliance.DataDir, applianceManifest(appliance)); err == nil && !completed {
+		if category, _, ok := apperror.Public(migration.Category); ok {
+			setupCategory = category
+		}
+	}
+	schedule := applianceDiagnosticsSchedule{State: storage.ScheduleStateDisabled}
+	if view, _, err := applianceScheduleViewFor(appliance, execStore); err == nil {
+		schedule.Configured = view.Configured
+		schedule.Enabled = view.Enabled
+		schedule.State = view.State
+		if category, _, ok := apperror.Public(view.ErrorCategory); ok {
+			schedule.ErrorCategory = category
+		}
+	} else {
+		schedule.State = storage.ScheduleStateNeedsAttention
+		schedule.ErrorCategory = apperror.CategoryInternal
+	}
+	executions := []applianceDiagnosticsExecution{}
+	if list, err := applianceRecentExecutions(execStore, appliance.WorkflowID, 10); err == nil {
+		for _, execution := range list {
+			executions = append(executions, applianceDiagnosticsExecution{
+				Status: execution.Status, DurationMs: execution.DurationMs, ErrorCategory: execution.ErrorCategory,
+			})
+		}
+	}
+	integrity := appliance.IntegrityState
+	if integrity != "verified" && integrity != "source_validated" {
+		integrity = "unknown"
+	}
+	return applianceDiagnostics{
+		SchemaVersion: 1,
+		App:           applianceDiagnosticsApp{Name: "Goflow", Version: appliancePublicAppVersion(appliance), Platform: runtime.GOOS + "/" + runtime.GOARCH},
+		Pack:          applianceDiagnosticsPack{ID: appliance.PackID, Version: appliance.PackVersion},
+		Setup:         applianceDiagnosticsSetup{State: state, Category: setupCategory},
+		Schedule:      schedule,
+		Executions:    executions,
+		Integrity:     applianceDiagnosticsIntegrity{State: integrity},
+		Privacy:       applianceDiagnosticsPrivacy{LocalOnly: true, CredentialIDsHidden: true, SecretsHidden: true},
 	}
 }
 
@@ -133,7 +423,7 @@ func applianceSetupHandler(appliance *ApplianceContext, credStore *storage.Crede
 		if loaded, err := packsetup.LoadConfig(appliance.DataDir, applianceManifest(appliance)); err == nil {
 			configValues = loaded.Config.Values
 		}
-		renderJSON(w, http.StatusOK, map[string]interface{}{
+		response := map[string]interface{}{
 			"state":                     state,
 			"missing":                   missing,
 			"config_schema":             appliance.ConfigSchema,
@@ -145,7 +435,11 @@ func applianceSetupHandler(appliance *ApplianceContext, credStore *storage.Crede
 			"decrypted_values_returned": false,
 			"setup_complete":            completed,
 			"can_complete":              len(missing) == 0,
-		})
+		}
+		if migration, err := packsetup.LoadMigrationState(appliance.DataDir, applianceManifest(appliance)); err == nil && !completed {
+			response["attention_category"] = migration.Category
+		}
+		renderJSON(w, http.StatusOK, response)
 	}
 }
 
@@ -160,10 +454,22 @@ func applianceSaveConfigHandler(appliance *ApplianceContext) http.HandlerFunc {
 		if req.Values == nil {
 			req.Values = map[string]interface{}{}
 		}
+		var previous map[string]interface{}
+		if loaded, err := packsetup.LoadConfig(appliance.DataDir, applianceManifest(appliance)); err == nil {
+			previous = loaded.Config.Values
+		}
 		cfg, err := packsetup.SaveConfig(appliance.DataDir, applianceManifest(appliance), req.Values)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		if previous != nil && !reflect.DeepEqual(previous, cfg.Values) {
+			if state, err := packsetup.LoadState(appliance.DataDir, applianceManifest(appliance)); err == nil && state.Completed {
+				if _, err := packsetup.SaveState(appliance.DataDir, applianceManifest(appliance), false, time.Now()); err != nil {
+					http.Error(w, "configuration was saved but setup could not be reopened", http.StatusInternalServerError)
+					return
+				}
+			}
 		}
 		renderJSON(w, http.StatusOK, map[string]interface{}{"values": cfg.Values})
 	}
@@ -212,17 +518,32 @@ func applianceCreateCredentialHandler(appliance *ApplianceContext, credStore *st
 			http.Error(w, "credential name and value are required", http.StatusBadRequest)
 			return
 		}
-		cred, err := credStore.Create(req.Name, requirement.Type, req.Value)
-		if err != nil {
-			http.Error(w, "credential could not be saved", http.StatusInternalServerError)
-			return
+		status := http.StatusCreated
+		credentialID := ""
+		if loaded, err := packsetup.LoadCredentialBindings(appliance.DataDir, applianceManifest(appliance), applianceCredentialResolver(credStore)); err == nil {
+			if slot, assigned := loaded.Credentials.Slots[req.Key]; assigned {
+				if err := credStore.UpdateData(slot.CredentialID, req.Value); err != nil {
+					http.Error(w, "credential could not be saved", http.StatusInternalServerError)
+					return
+				}
+				credentialID = slot.CredentialID
+				status = http.StatusOK
+			}
 		}
-		creds, err := packsetup.SaveCredentialBindings(appliance.DataDir, applianceManifest(appliance), map[string]string{req.Key: cred.ID}, applianceCredentialResolver(credStore))
+		if credentialID == "" {
+			cred, err := credStore.Create(req.Name, requirement.Type, req.Value)
+			if err != nil {
+				http.Error(w, "credential could not be saved", http.StatusInternalServerError)
+				return
+			}
+			credentialID = cred.ID
+		}
+		creds, err := packsetup.SaveCredentialBindings(appliance.DataDir, applianceManifest(appliance), map[string]string{req.Key: credentialID}, applianceCredentialResolver(credStore))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		renderJSON(w, http.StatusCreated, map[string]interface{}{"credentials": redactedCredentialSlots(creds.Slots)})
+		renderJSON(w, status, map[string]interface{}{"credentials": redactedCredentialSlots(creds.Slots)})
 	}
 }
 
@@ -237,10 +558,6 @@ func applianceTestCredentialHandler(appliance *ApplianceContext, credStore *stor
 			defer func() { <-slots }()
 		default:
 			http.Error(w, "credential test already running", http.StatusTooManyRequests)
-			return
-		}
-		if credStore == nil {
-			http.Error(w, "credential store is not available", http.StatusInternalServerError)
 			return
 		}
 		var req struct {
@@ -258,31 +575,15 @@ func applianceTestCredentialHandler(appliance *ApplianceContext, credStore *stor
 			renderJSON(w, http.StatusOK, map[string]interface{}{"status": "SKIPPED", "reason": "no connection test is declared"})
 			return
 		}
-		loaded, err := packsetup.LoadCredentialBindings(appliance.DataDir, applianceManifest(appliance), applianceCredentialResolver(credStore))
-		if err != nil {
-			http.Error(w, "credential slot is not ready", http.StatusBadRequest)
+		if err := applianceValidateCredentialDestination(r.Context(), appliance, credStore, req.Key); err != nil {
+			writeApplianceValidationError(w, http.StatusBadGateway, err)
 			return
 		}
-		slot, ok := loaded.Credentials.Slots[req.Key]
-		if !ok {
-			http.Error(w, "credential slot is not ready", http.StatusBadRequest)
-			return
-		}
-		secret, err := credStore.GetDecryptedData(slot.CredentialID)
-		if err != nil {
-			http.Error(w, "credential value is not available", http.StatusBadRequest)
-			return
-		}
-		switch requirement.TestKind {
-		case "telegram_get_me":
-			if err := applianceTelegramGetMe(r, appliance, secret); err != nil {
-				renderJSON(w, http.StatusBadGateway, map[string]interface{}{"status": "FAILED", "error": err.Error()})
-				return
-			}
-			renderJSON(w, http.StatusOK, map[string]interface{}{"status": "OK"})
-		default:
-			renderJSON(w, http.StatusOK, map[string]interface{}{"status": "SKIPPED", "reason": "connection test is not implemented"})
-		}
+		renderJSON(w, http.StatusOK, applianceValidationResult{
+			Status:  "VALID",
+			Message: "Bot token is valid and the configured chat is accessible.",
+			Summary: map[string]interface{}{"bot": "valid", "chat": "accessible"},
+		})
 	}
 }
 
@@ -345,6 +646,13 @@ func applianceRunWorkflowHandler(appliance *ApplianceContext, credStore *storage
 			IdempotencyKey: req.IdempotencyKey,
 		})
 		if err != nil {
+			if errors.Is(err, engine.ErrConcurrencyLimit) || errors.Is(err, engine.ErrWorkflowConcurrencyLimit) {
+				renderJSON(w, http.StatusConflict, map[string]interface{}{
+					"category": "already_running",
+					"error":    "This workflow is already running. The dashboard will keep tracking the active execution.",
+				})
+				return
+			}
 			writeExecutionError(w, err)
 			return
 		}
@@ -395,6 +703,10 @@ func applianceCompleteHandler(appliance *ApplianceContext, wfStore *storage.Work
 		missing := applianceMissingRequirements(appliance, applianceCredentialResolver(credStore))
 		if len(missing) > 0 {
 			renderJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "setup requirements are missing", "missing": missing})
+			return
+		}
+		if err := applianceValidateCompletion(r.Context(), appliance, wfStore, credStore); err != nil {
+			writeApplianceValidationError(w, http.StatusBadRequest, err)
 			return
 		}
 		prepared, err := appliancePrepareCompletion(appliance, wfStore, credStore)
@@ -632,6 +944,28 @@ func applianceReadiness(appliance *ApplianceContext, resolver packsetup.Credenti
 	return "READY", missing, completed
 }
 
+// ApplianceScheduleReadiness exposes only the bounded readiness category needed
+// by the managed scheduler. It never returns setup values or storage errors.
+func ApplianceScheduleReadiness(appliance *ApplianceContext, credStore *storage.CredentialStore) (bool, string) {
+	if appliance == nil || !appliance.Enabled {
+		return false, "setup_incomplete"
+	}
+	if len(applianceMissingRequirements(appliance, applianceCredentialResolver(credStore))) > 0 {
+		return false, "setup_incomplete"
+	}
+	state, err := packsetup.LoadState(appliance.DataDir, applianceManifest(appliance))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, "setup_incomplete"
+		}
+		return false, "revalidation_required"
+	}
+	if !state.Completed {
+		return false, "setup_incomplete"
+	}
+	return true, ""
+}
+
 func applianceRuntimeState(appliance *ApplianceContext, wfStore *storage.WorkflowStore, execStore *storage.ExecutionStore, resolver packsetup.CredentialResolver) (string, []string, bool) {
 	state, missing, completed := applianceReadiness(appliance, resolver)
 	if state != "READY" {
@@ -711,6 +1045,7 @@ type applianceExecutionSummary struct {
 	RequestID        string      `json:"request_id,omitempty"`
 	Input            interface{} `json:"input,omitempty"`
 	ErrorMessage     string      `json:"error_message,omitempty"`
+	ErrorCategory    string      `json:"error_category,omitempty"`
 }
 
 func applianceLatestExecution(execStore *storage.ExecutionStore, workflowID string) (*applianceExecutionSummary, error) {
@@ -731,22 +1066,28 @@ func applianceRecentExecutions(execStore *storage.ExecutionStore, workflowID str
 	}
 	result := make([]applianceExecutionSummary, 0, len(list))
 	for _, exec := range list {
-		dto := executionInspectorDTOFromExecution(exec)
-		result = append(result, applianceExecutionSummary{
-			ID:               dto.ID,
-			WorkflowID:       dto.WorkflowID,
-			Status:           dto.Status,
-			DurationMs:       dto.DurationMs,
-			StartedAt:        dto.StartedAt,
-			FinishedAt:       dto.FinishedAt,
-			TriggerSource:    dto.TriggerSource,
-			TriggerPrincipal: engine.RedactSensitiveString(dto.TriggerPrincipal),
-			RequestID:        engine.RedactSensitiveString(dto.RequestID),
-			Input:            dto.Input,
-			ErrorMessage:     dto.ErrorMessage,
-		})
+		result = append(result, applianceExecutionSummaryFromExecution(exec))
 	}
 	return result, nil
+}
+
+func applianceExecutionSummaryFromExecution(exec storage.Execution) applianceExecutionSummary {
+	dto := executionInspectorDTOFromExecution(exec)
+	errorCategory, errorMessage := appliancePublicExecutionError(dto.Status, dto.ErrorMessage)
+	return applianceExecutionSummary{
+		ID:               dto.ID,
+		WorkflowID:       dto.WorkflowID,
+		Status:           dto.Status,
+		DurationMs:       dto.DurationMs,
+		StartedAt:        dto.StartedAt,
+		FinishedAt:       dto.FinishedAt,
+		TriggerSource:    dto.TriggerSource,
+		TriggerPrincipal: engine.RedactSensitiveString(dto.TriggerPrincipal),
+		RequestID:        engine.RedactSensitiveString(dto.RequestID),
+		Input:            dto.Input,
+		ErrorMessage:     errorMessage,
+		ErrorCategory:    errorCategory,
+	}
 }
 
 func applianceCredentialResolver(credStore *storage.CredentialStore) packsetup.CredentialResolver {
@@ -803,59 +1144,4 @@ func credentialRequirement(appliance *ApplianceContext, key string) (pack.Creden
 		}
 	}
 	return pack.CredentialRequirement{}, false
-}
-
-func applianceTelegramGetMe(r *http.Request, appliance *ApplianceContext, token string) error {
-	base := strings.TrimRight(appliance.TelegramAPIBaseURL, "/")
-	if base == "" {
-		base = "https://api.telegram.org"
-	}
-	parsed, err := url.Parse(base)
-	if err != nil || !parsed.IsAbs() || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return fmt.Errorf("telegram API base URL is invalid")
-	}
-	testURL := fmt.Sprintf("%s/bot%s/getMe", base, token)
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, testURL, nil)
-	if err != nil {
-		return fmt.Errorf("telegram connection test could not be created")
-	}
-	client := appliance.ConnectionTestClient
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("telegram connection test failed: %s", redactConnectionTestText(err.Error()))
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, (64<<10)+1))
-	if err != nil {
-		return fmt.Errorf("telegram connection test response could not be read")
-	}
-	if len(data) > (64 << 10) {
-		return fmt.Errorf("telegram connection test response exceeds limit")
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("telegram connection test returned status %d: %s", resp.StatusCode, redactConnectionTestText(string(data)))
-	}
-	var decoded struct {
-		OK bool `json:"ok"`
-	}
-	if err := json.Unmarshal(data, &decoded); err != nil || !decoded.OK {
-		return fmt.Errorf("telegram connection test did not return ok")
-	}
-	return nil
-}
-
-func redactConnectionTestText(text string) string {
-	if len(text) > 4096 {
-		text = text[:4096]
-	}
-	for _, pattern := range []*regexp.Regexp{
-		regexp.MustCompile(`(?i)bot[0-9]+:[A-Za-z0-9_-]+`),
-		regexp.MustCompile(`(?i)(token|authorization|password|secret)["'=:\s]+[^"',}\s]+`),
-	} {
-		text = pattern.ReplaceAllString(text, "[REDACTED]")
-	}
-	return text
 }

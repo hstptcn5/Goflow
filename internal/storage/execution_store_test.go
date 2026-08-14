@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -63,6 +65,75 @@ func TestExecutionStoreCleanup(t *testing.T) {
 	}
 	if remaining[0].ID != "new-3" || remaining[1].ID != "new-2" {
 		t.Fatalf("expected newest executions to remain, got %+v", remaining)
+	}
+}
+
+func TestExecutionStoreCleanupPreservesRunningAndBoundsHistory(t *testing.T) {
+	db := newTestDB(t)
+	insertWorkflowForTest(t, db, "wf-1")
+	store := NewExecutionStore(db)
+	for i := 0; i < 25; i++ {
+		insertExecutionForTest(t, db, fmt.Sprintf("done-%02d", i), "wf-1", time.Now().Add(time.Duration(-i)*time.Minute))
+	}
+	_, err := db.WriteDB.Exec(`
+		INSERT INTO executions (id, workflow_id, status, duration_ms, logs_json, started_at)
+		VALUES ('active', 'wf-1', 'RUNNING', 0, '[]', ?)
+	`, time.Now().AddDate(-1, 0, 0))
+	if err != nil {
+		t.Fatalf("insert active execution: %v", err)
+	}
+	if _, err := store.Cleanup(30, 10); err != nil {
+		t.Fatalf("Cleanup failed: %v", err)
+	}
+	if active, err := store.GetByID("active"); err != nil || active.Status != "RUNNING" {
+		t.Fatalf("active execution was pruned: %+v, %v", active, err)
+	}
+	var completed int
+	if err := db.ReadDB.QueryRow(`SELECT COUNT(1) FROM executions WHERE workflow_id = 'wf-1' AND status != 'RUNNING'`).Scan(&completed); err != nil {
+		t.Fatalf("count bounded history: %v", err)
+	}
+	if completed > 10 {
+		t.Fatalf("completed history count = %d, want <= 10", completed)
+	}
+}
+
+func TestExecutionStoreConcurrentCleanupAndRead(t *testing.T) {
+	db := newTestDB(t)
+	insertWorkflowForTest(t, db, "wf-1")
+	store := NewExecutionStore(db)
+	for i := 0; i < 200; i++ {
+		insertExecutionForTest(t, db, fmt.Sprintf("exec-%03d", i), "wf-1", time.Now().Add(time.Duration(-i)*time.Minute))
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 16)
+	for i := 0; i < 8; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_, err := store.Cleanup(30, 50)
+			errs <- err
+		}()
+		go func() {
+			defer wg.Done()
+			_, err := store.ListByWorkflow("wf-1", 50)
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent cleanup/read failed: %v", err)
+		}
+	}
+}
+
+func TestExecutionStoreCleanupRejectsUnboundedConfiguration(t *testing.T) {
+	store := NewExecutionStore(newTestDB(t))
+	for _, test := range []struct{ days, max int }{{0, 10}, {366, 10}, {30, 0}, {30, 10001}} {
+		if _, err := store.Cleanup(test.days, test.max); err == nil {
+			t.Fatalf("Cleanup(%d, %d) accepted unsafe bounds", test.days, test.max)
+		}
 	}
 }
 

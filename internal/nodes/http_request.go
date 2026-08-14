@@ -2,13 +2,19 @@ package nodes
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"goflow/internal/apperror"
+	"goflow/internal/jsoncontract"
+	"goflow/internal/sourceprobe"
 )
 
 const (
@@ -27,7 +33,7 @@ func NewHTTPRequestExecutor() *HTTPRequestExecutor {
 	return &HTTPRequestExecutor{
 		client: &http.Client{
 			Timeout:       30 * time.Second,
-			CheckRedirect: safeHTTPRedirect,
+			CheckRedirect: sourceprobe.SafeRedirect,
 		},
 	}
 }
@@ -36,10 +42,13 @@ func NewHTTPRequestExecutorWithClient(client *http.Client) *HTTPRequestExecutor 
 	if client == nil {
 		return NewHTTPRequestExecutor()
 	}
-	return &HTTPRequestExecutor{client: client}
+	bounded := *client
+	bounded.CheckRedirect = sourceprobe.SafeRedirect
+	return &HTTPRequestExecutor{client: &bounded}
 }
 
 func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
+	_, strictContract := node.Params["response_contract"]
 	urlStr, _ := node.Params["url"].(string)
 	method, _ := node.Params["method"].(string)
 	method = strings.ToUpper(strings.TrimSpace(method))
@@ -92,20 +101,42 @@ func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 
 	resp, err := e.client.Do(req)
 	if err != nil {
+		if strictContract {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Context.Err(), context.DeadlineExceeded) {
+				return nil, apperror.New("source_timeout", "The source request timed out.")
+			}
+			return nil, apperror.New("source_unreachable", "Goflow could not connect to the source endpoint.")
+		}
 		return nil, fmt.Errorf("http request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxHTTPResponseBytes+1))
 	if err != nil {
+		if strictContract {
+			return nil, apperror.New("source_unreachable", "Goflow could not read the source response.")
+		}
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 	if int64(len(respBytes)) > maxHTTPResponseBytes {
+		if strictContract {
+			return nil, apperror.New("source_response_too_large", "The source response is larger than the allowed limit.")
+		}
 		return nil, fmt.Errorf("HTTP response exceeds %d byte limit", maxHTTPResponseBytes)
 	}
 
 	var jsonResult interface{}
-	if err := json.Unmarshal(respBytes, &jsonResult); err != nil {
+	if contractRaw, declared := node.Params["response_contract"]; declared {
+		contract, err := jsoncontract.Parse(contractRaw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid response_contract: %w", err)
+		}
+		result, err := sourceprobe.ValidateResponse(resp.StatusCode, resp.Header.Get("Content-Type"), respBytes, contract)
+		if err != nil {
+			return nil, err
+		}
+		jsonResult = result.Data
+	} else if err := json.Unmarshal(respBytes, &jsonResult); err != nil {
 		// Tr??? v??? d???ng string n???u kh??ng ph???i JSON
 		jsonResult = string(respBytes)
 	}
@@ -126,6 +157,11 @@ func (e *HTTPRequestExecutor) Validate(node *Node) error {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	if method != "" && !allowedHTTPMethod(method) {
 		return fmt.Errorf("HTTP method %q is not supported", method)
+	}
+	if raw, ok := node.Params["response_contract"]; ok {
+		if _, err := jsoncontract.Parse(raw); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -171,6 +207,14 @@ func (e *HTTPRequestExecutor) GetDefinition() NodeDefinition {
 				Default:     "",
 				Required:    false,
 				Description: "Request body for POST, PUT, or PATCH",
+			},
+			{
+				Name:        "response_contract",
+				Label:       "JSON Response Contract",
+				Type:        "json",
+				Default:     "",
+				Required:    false,
+				Description: "Optional required JSON fields and type constraints",
 			},
 		},
 	}
@@ -220,20 +264,4 @@ func validateHTTPHeader(name, value string) error {
 		}
 	}
 	return nil
-}
-
-func safeHTTPRedirect(req *http.Request, via []*http.Request) error {
-	if len(via) >= 10 {
-		return fmt.Errorf("stopped after 10 redirects")
-	}
-	previous := via[len(via)-1]
-	carriesAuth := previous.Header.Get("Authorization") != "" || previous.Header.Get("Cookie") != ""
-	if carriesAuth && !sameHTTPOrigin(previous.URL, req.URL) {
-		return http.ErrUseLastResponse
-	}
-	return nil
-}
-
-func sameHTTPOrigin(a, b *url.URL) bool {
-	return strings.EqualFold(a.Scheme, b.Scheme) && strings.EqualFold(a.Host, b.Host)
 }
