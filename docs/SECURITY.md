@@ -2,6 +2,24 @@
 
 Goflow is designed for trusted local or small internal self-hosted deployments.
 
+## Reporting A Vulnerability
+
+Do not post credentials, exploit details, private workflow data, database files,
+master keys, or unsanitized logs in a public issue.
+
+Private vulnerability reporting is not enabled for this repository at the
+Community `1.0.0-rc.1` checkpoint. Until a private GitHub reporting route is
+enabled, open a minimal issue at <https://github.com/hstptcn5/Goflow/issues>
+titled `Security contact request`. State only the affected version and that a
+private contact route is needed; do not include vulnerability details. A
+maintainer can then arrange a private channel. No security email address is
+claimed by this project.
+
+Security fixes are prioritized for the current Community RC or stable version
+and its explicitly documented upgrade source. Older snapshots and unsupported
+forks are best effort. This project does not claim an independent security
+audit, guaranteed response time, or complete protection from unsafe workflows.
+
 ## Authentication
 
 Set `GOFLOW_API_KEY` for any deployment beyond trusted localhost.

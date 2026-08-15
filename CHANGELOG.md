@@ -6,6 +6,10 @@ All notable changes to Goflow are tracked here.
 
 ### Added
 
+- Community `1.0.0-rc.1` build identity with offline `goflow version` table and JSON output.
+- Deterministic unsigned generic Platform bundles for five targets, strict byte-level verification, extracted-runtime smoke, restart persistence, and exact-base Beta-to-RC upgrade checks.
+- Community release, upgrade, support, security-reporting, and artifact-installation policies.
+
 - Vue Router app shell with durable pages for Workflows, Workflow Editor, Executions, Credentials, Templates, Nodes, Settings, and Help.
 - `UX_GOAL_PROGRESS.md`, `docs/UX_AUDIT.md`, and `docs/UX_MILESTONE_1_TEST_PLAN.md` for UX Milestone 1 tracking and verification.
 - Frontend Vitest and Playwright test foundations covering navigation, workflow save state, API auth prompt behavior, empty/error states, and a browser smoke path.

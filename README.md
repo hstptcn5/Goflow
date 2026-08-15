@@ -5,7 +5,7 @@ task-specific applications.
 
 [![CI](https://github.com/hstptcn5/Goflow/actions/workflows/ci.yml/badge.svg)](https://github.com/hstptcn5/Goflow/actions/workflows/ci.yml)
 [![Go 1.25.13](https://img.shields.io/badge/Go-1.25.13-00ADD8?logo=go&logoColor=white)](go.mod)
-[![Status: Productization Beta](https://img.shields.io/badge/status-Productization%20Beta-f59e0b)](docs/BETA_LIMITATIONS.md)
+[![Status: Community RC](https://img.shields.io/badge/status-Community%201.0%20RC-f59e0b)](docs/COMMUNITY_RELEASE_POLICY.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 
 Goflow combines four parts in one local-first platform:
@@ -19,6 +19,11 @@ The default deployment is one Go executable with SQLite. It needs no Docker,
 Node.js runtime, external database, or separate frontend server. Workflows,
 execution history, setup state, and encrypted credentials remain local unless a
 workflow explicitly sends data elsewhere.
+
+Community `1.0.0-rc.1` is an unsigned release candidate, not a stable GitHub
+Release. See the [release policy](docs/COMMUNITY_RELEASE_POLICY.md),
+[installation guide](docs/INSTALLATION.md), and
+[upgrade guide](docs/COMMUNITY_UPGRADE.md).
 
 ## Quick Start
 
@@ -204,6 +209,7 @@ alternatives.
 | CLI and MCP | [CLI](docs/CLI.md), [MCP](docs/MCP.md) |
 | Nodes and adapters | [Node guide](NODES.md), [adapter contract](docs/ADAPTERS.md) |
 | Security and recovery | [Security](docs/SECURITY.md), [backup/restore](docs/DATA_BACKUP_RESTORE.md) |
+| Community release and support | [Release policy](docs/COMMUNITY_RELEASE_POLICY.md), [upgrade](docs/COMMUNITY_UPGRADE.md), [support](docs/COMMUNITY_SUPPORT.md) |
 | Beta operations | [Operations index](docs/BETA_OPERATIONS.md), [limitations](docs/BETA_LIMITATIONS.md) |
 | Windows appliance | [Windows pilot guide](docs/WINDOWS_PILOT_GUIDE.md) |
 | Architecture | [Architecture](docs/ARCHITECTURE.md) |
@@ -212,7 +218,7 @@ alternatives.
 
 ## Current Limitations
 
-- Goflow is Productization Beta software.
+- Goflow Community `1.0.0-rc.1` is prerelease software.
 - Windows pilot artifacts are unsigned.
 - There is no installer or production Release channel.
 - The supported operating boundary is trusted local or small internal use.
