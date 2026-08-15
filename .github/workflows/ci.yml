@@ -8,6 +8,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: goflow-ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -15,9 +19,126 @@ env:
   GOFLOW_CI_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
+  change-classification:
+    name: Classify changes
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      base_sha: ${{ steps.classify.outputs.base_sha }}
+      head_sha: ${{ steps.classify.outputs.head_sha }}
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Classify changed files
+        id: classify
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -u
+          docs_only=false
+          base_sha=""
+          head_sha="$CURRENT_SHA"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            {
+              echo "docs_only=false"
+              echo "base_sha="
+              echo "head_sha=$head_sha"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base_sha="$PR_BASE_SHA"
+            head_sha="$PR_HEAD_SHA"
+          elif [ "$EVENT_NAME" = "push" ]; then
+            base_sha="$PUSH_BEFORE_SHA"
+          else
+            {
+              echo "docs_only=false"
+              echo "base_sha="
+              echo "head_sha=$head_sha"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files=""
+          diff_ok=true
+          if [ "$EVENT_NAME" = "push" ] && [ "$base_sha" = "0000000000000000000000000000000000000000" ]; then
+            changed_files="$(git diff-tree --root --no-commit-id --name-only -r "$head_sha")" || { changed_files=""; diff_ok=false; }
+          else
+            changed_files="$(git diff --name-only "$base_sha" "$head_sha")" || { changed_files=""; diff_ok=false; }
+          fi
+
+          base_ok=false
+          head_ok=false
+          if [ -n "$base_sha" ] && git rev-parse --verify "$base_sha^{commit}" >/dev/null 2>&1; then
+            base_ok=true
+          fi
+          if git rev-parse --verify "$head_sha^{commit}" >/dev/null 2>&1; then
+            head_ok=true
+          fi
+
+          if [ "$diff_ok" = true ] && [ "$base_ok" = true ] && [ "$head_ok" = true ] && [ -n "$changed_files" ]; then
+            docs_only=true
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              case "$file" in
+                .github/workflows/*|examples/packs/*) docs_only=false; break ;;
+                README.md|docs/*|*.md|LICENSE|TRADEMARK.md|COMMERCIAL.md|CHANGELOG.md) ;;
+                *) docs_only=false; break ;;
+              esac
+            done <<< "$changed_files"
+          fi
+
+          {
+            echo "docs_only=$docs_only"
+            echo "base_sha=$base_sha"
+            echo "head_sha=$head_sha"
+          } >> "$GITHUB_OUTPUT"
+
+  documentation:
+    name: Documentation checks
+    runs-on: ubuntu-latest
+    needs: change-classification
+    if: needs.change-classification.outputs.docs_only == 'true'
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.change-classification.outputs.head_sha }}
+          fetch-depth: 0
+
+      - name: Verify exact checkout and diff commits
+        env:
+          BASE_SHA: ${{ needs.change-classification.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.change-classification.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          git rev-parse --verify "$BASE_SHA^{commit}" >/dev/null
+          git rev-parse --verify "$HEAD_SHA^{commit}" >/dev/null
+
+      - name: Check documentation diff
+        env:
+          BASE_SHA: ${{ needs.change-classification.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.change-classification.outputs.head_sha }}
+        run: git diff --check "$BASE_SHA" "$HEAD_SHA"
+
   backend:
     name: Backend tests
     runs-on: ubuntu-latest
+    needs: change-classification
+    if: needs.change-classification.outputs.docs_only != 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,6 +183,8 @@ jobs:
   frontend:
     name: Frontend build
     runs-on: ubuntu-latest
+    needs: change-classification
+    if: needs.change-classification.outputs.docs_only != 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -94,8 +217,10 @@ jobs:
     name: Appliance Playwright E2E
     runs-on: ubuntu-latest
     needs:
+      - change-classification
       - backend
       - frontend
+    if: needs.change-classification.outputs.docs_only != 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -142,7 +267,9 @@ jobs:
     name: Pack contracts and DailyOps
     runs-on: ubuntu-latest
     needs:
+      - change-classification
       - backend
+    if: needs.change-classification.outputs.docs_only != 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -195,9 +322,11 @@ jobs:
     name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
     runs-on: ubuntu-latest
     needs:
+      - change-classification
       - backend
       - frontend
       - pack-contracts
+    if: needs.change-classification.outputs.docs_only != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -266,10 +395,12 @@ jobs:
     name: Windows DailyOps pilot appliance
     runs-on: windows-latest
     needs:
+      - change-classification
       - backend
       - frontend
       - appliance-e2e
       - pack-contracts
+    if: needs.change-classification.outputs.docs_only != 'true'
     steps:
       - name: Checkout exact workflow commit
         uses: actions/checkout@v4
@@ -336,13 +467,14 @@ jobs:
 
   development-artifacts:
     name: Unsigned development artifacts ${{ matrix.goos }}-${{ matrix.goarch }}
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
     needs:
+      - change-classification
       - backend
       - frontend
       - appliance-e2e
       - pack-contracts
+    if: github.event_name == 'workflow_dispatch' && needs.change-classification.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
