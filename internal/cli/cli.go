@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"goflow/internal/buildinfo"
 	"goflow/internal/client"
 	"goflow/internal/mcpserver"
 	"goflow/internal/pack"
@@ -40,6 +41,7 @@ type Runner struct {
 	PackRuntimePath string
 	UIFS            fs.FS
 	AppVersion      string
+	BuildInfo       buildinfo.Info
 }
 
 type clientOptions struct {
@@ -63,6 +65,8 @@ func (r Runner) Run(args []string) int {
 		return ExitOK
 	case "status":
 		return r.status(args[1:])
+	case "version":
+		return r.version(args[1:])
 	case "workflow":
 		return r.workflow(args[1:])
 	case "pack":
@@ -85,6 +89,7 @@ func (r Runner) usage() {
 
 Usage:
   goflow serve
+  goflow version [--output table|json]
   goflow status [--output table|json]
   goflow workflow list [--active] [--output table|json]
   goflow workflow describe <workflow-id|slug|name> [--output table|json]
@@ -115,6 +120,28 @@ Environment:
 
 PowerShell tip:
   Prefer --set or --input payload.json. Inline --json quoting can be fragile on Windows PowerShell.`)
+}
+
+func (r Runner) version(args []string) int {
+	fs := flag.NewFlagSet("version", flag.ContinueOnError)
+	fs.SetOutput(r.Stderr)
+	output := fs.String("output", "table", "Output format: table or json")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
+		return ExitInvalidInput
+	}
+	info := r.BuildInfo
+	if info.Version == "" {
+		info = buildinfo.Current(r.AppVersion)
+	}
+	if *output == "json" {
+		return writeJSON(r.Stdout, info)
+	}
+	if *output != "table" {
+		fmt.Fprintln(r.Stderr, "--output must be table or json")
+		return ExitInvalidInput
+	}
+	fmt.Fprintf(r.Stdout, "Version: %s\nChannel: %s\nCommit: %s\nTarget: %s\nGo version: %s\n", info.Version, info.Channel, info.Commit, info.Target, info.GoVersion)
+	return ExitOK
 }
 
 func (r Runner) token(args []string) int {

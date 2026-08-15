@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"goflow/config"
+	"goflow/internal/buildinfo"
 	"goflow/internal/cli"
 	"goflow/internal/packrun"
 	"goflow/internal/serverapp"
@@ -21,8 +22,9 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	identity := buildinfo.Current(getAppVersion())
 	if len(args) > 1 && args[1] != "serve" {
-		return cli.Runner{Stdout: stdout, Stderr: stderr, Stdin: os.Stdin, UIFS: getEmbeddedUI(), AppVersion: getAppVersion()}.Run(args[1:])
+		return cli.Runner{Stdout: stdout, Stderr: stderr, Stdin: os.Stdin, UIFS: getEmbeddedUI(), AppVersion: identity.Version, BuildInfo: identity}.Run(args[1:])
 	}
 
 	log.Println("==================================================")
@@ -36,7 +38,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		if bundleDir, ok := detectExtractedBundle(); ok {
 			if err := packrun.RunExtractedBundle(ctx, bundleDir, packrun.Options{
 				UIFS:       getEmbeddedUI(),
-				AppVersion: getAppVersion(),
+				AppVersion: identity.Version,
 				Stdout:     stdout,
 				Stderr:     stderr,
 			}); err != nil {

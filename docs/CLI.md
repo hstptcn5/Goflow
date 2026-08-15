@@ -1,6 +1,8 @@
 # CLI
 
-The `goflow` binary includes an alpha CLI. The CLI calls the running Goflow REST API; it does not open SQLite directly and does not run a separate workflow engine.
+The `goflow` binary includes a CLI. Most commands call the running Goflow REST
+API; `version`, help, workflow validation, and Pack authoring commands operate
+locally.
 
 ## Environment
 
@@ -14,6 +16,7 @@ GOFLOW_API_KEY=your-api-key-or-scoped-token
 ## Common Commands
 
 ```bash
+goflow version --output json
 goflow status
 goflow workflow list
 goflow workflow describe <workflow-id-or-slug>
@@ -36,6 +39,25 @@ goflow token create mcp-runner --scope workflow:list --scope workflow:read --sco
 goflow token delete <token-id>
 goflow mcp stdio
 ```
+
+## Build Identity
+
+`goflow version [--output table|json]` does not start or contact a server. JSON
+has this stable schema:
+
+```json
+{
+  "version": "1.0.0-rc.1",
+  "channel": "community-rc",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "target": "linux-amd64",
+  "go_version": "go1.25.13"
+}
+```
+
+Official candidate builds bind all identity fields at compile time. Source and
+development builds report `channel: development` and use `commit: unknown`
+unless supplied with a complete validated build identity.
 
 ## PowerShell JSON Quoting
 
