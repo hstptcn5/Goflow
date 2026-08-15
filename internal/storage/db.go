@@ -67,6 +67,7 @@ func NewDB(dbPath string) (*DB, error) {
 	}
 
 	if err := db.InitSchema(); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("failed to init schema: %w", err)
 	}
 

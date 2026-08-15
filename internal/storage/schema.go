@@ -28,6 +28,9 @@ func (db *DB) RunMigrations() error {
 	`); err != nil {
 		return fmt.Errorf("failed to create schema_migrations: %w", err)
 	}
+	if err := db.validateMigrationHistory(); err != nil {
+		return err
+	}
 
 	for _, m := range migrations {
 		applied, err := db.isMigrationApplied(m.version)
@@ -54,6 +57,36 @@ func (db *DB) RunMigrations() error {
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("failed to commit migration %04d: %w", m.version, err)
 		}
+	}
+	return nil
+}
+
+func (db *DB) validateMigrationHistory() error {
+	expected := make(map[int]string, len(migrations))
+	for _, m := range migrations {
+		expected[m.version] = m.name
+	}
+	rows, err := db.WriteDB.Query(`SELECT version, name FROM schema_migrations ORDER BY version`)
+	if err != nil {
+		return fmt.Errorf("failed to inspect migration history: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var version int
+		var name string
+		if err := rows.Scan(&version, &name); err != nil {
+			return fmt.Errorf("failed to read migration history: %w", err)
+		}
+		want, ok := expected[version]
+		if !ok {
+			return fmt.Errorf("database schema version %04d is newer than or unsupported by this Goflow runtime", version)
+		}
+		if name != want {
+			return fmt.Errorf("database migration %04d has unexpected name %q", version, name)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to inspect migration history: %w", err)
 	}
 	return nil
 }
