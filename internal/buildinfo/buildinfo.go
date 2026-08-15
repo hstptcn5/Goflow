@@ -9,6 +9,7 @@ import (
 const (
 	DevelopmentChannel = "development"
 	CommunityRCChannel = "community-rc"
+	CommunityRCVersion = "1.0.0-rc.1"
 )
 
 // These values are populated for official builds with -ldflags -X. Empty values
@@ -29,9 +30,12 @@ type Info struct {
 }
 
 func Current(embeddedVersion string) Info {
-	version := bounded(BuildVersion, strings.TrimSpace(embeddedVersion), "development")
+	version := bounded("", strings.TrimSpace(embeddedVersion), "development")
+	if validVersion(BuildVersion) {
+		version = BuildVersion
+	}
 	channel := DevelopmentChannel
-	if BuildChannel == CommunityRCChannel && BuildVersion != "" && validCommit(BuildCommit) && validTarget(BuildTarget) {
+	if BuildChannel == CommunityRCChannel && BuildVersion == CommunityRCVersion && validCommit(BuildCommit) && validTarget(BuildTarget) {
 		channel = CommunityRCChannel
 	}
 	commit := "unknown"
@@ -43,6 +47,10 @@ func Current(embeddedVersion string) Info {
 		target = BuildTarget
 	}
 	return Info{Version: version, Channel: channel, Commit: commit, Target: target, GoVersion: runtime.Version()}
+}
+
+func validVersion(value string) bool {
+	return value == CommunityRCVersion
 }
 
 func (i Info) ValidateOfficial(version, commit, target string) error {

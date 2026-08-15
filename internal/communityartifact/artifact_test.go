@@ -51,7 +51,7 @@ func TestVerifyRejectsAdversarialArchives(t *testing.T) {
 		mutate func([]zipItem) []zipItem
 		want   string
 	}{
-		{name: "duplicate", mutate: func(items []zipItem) []zipItem { return append(items, items[0]) }, want: "entries; expected exactly 4"},
+		{name: "duplicate", mutate: func(items []zipItem) []zipItem { items[1] = items[0]; return items }, want: "duplicate ZIP entry"},
 		{name: "traversal", mutate: func(items []zipItem) []zipItem { items[0].name = "../goflow"; return items }, want: "unsafe ZIP entry"},
 		{name: "extra", mutate: func(items []zipItem) []zipItem {
 			return append(items, zipItem{name: "SIGNATURE", data: []byte("false")})
@@ -73,6 +73,14 @@ func TestVerifyRejectsAdversarialArchives(t *testing.T) {
 			}
 			return items
 		}, want: "unknown field"},
+		{name: "local path leakage", mutate: func(items []zipItem) []zipItem {
+			for i := range items {
+				if items[i].name == "README.txt" {
+					items[i].data = append(items[i].data, []byte(`C:\Users\builder\repo`)...)
+				}
+			}
+			return items
+		}, want: "local build path"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

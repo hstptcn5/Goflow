@@ -224,10 +224,16 @@ func Verify(path string, expected VerifyOptions) (*Metadata, error) {
 	if err := verifyExecutableTarget(runtimeData, metadata.Target); err != nil {
 		return nil, err
 	}
+	verifiedEntries := []archiveEntry{{name: metadata.Runtime.Path, data: runtimeData}, {name: "COMMUNITY_ARTIFACT.json", data: metadataData}}
 	for _, name := range []string{"README.txt", "LICENSE"} {
-		if _, err := readZipLimited(files[name], MaxTextBytes); err != nil {
+		data, err := readZipLimited(files[name], MaxTextBytes)
+		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", name, err)
 		}
+		verifiedEntries = append(verifiedEntries, archiveEntry{name: name, data: data})
+	}
+	if err := rejectLeakage(verifiedEntries, ""); err != nil {
+		return nil, err
 	}
 	return &metadata, nil
 }
@@ -353,8 +359,10 @@ func rejectLeakage(entries []archiveEntry, runtimePath string) error {
 	if cwd, err := os.Getwd(); err == nil && len(cwd) >= 4 {
 		markers = append(markers, []byte(cwd), []byte(filepath.ToSlash(cwd)))
 	}
-	if absolute, err := filepath.Abs(runtimePath); err == nil {
-		markers = append(markers, []byte(filepath.Dir(absolute)), []byte(filepath.ToSlash(filepath.Dir(absolute))))
+	if runtimePath != "" {
+		if absolute, err := filepath.Abs(runtimePath); err == nil {
+			markers = append(markers, []byte(filepath.Dir(absolute)), []byte(filepath.ToSlash(filepath.Dir(absolute))))
+		}
 	}
 	for _, entry := range entries {
 		for _, marker := range markers {

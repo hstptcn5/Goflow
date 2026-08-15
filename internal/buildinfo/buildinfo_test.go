@@ -21,6 +21,16 @@ func TestCurrentOfficialIdentity(t *testing.T) {
 	}
 }
 
+func TestCurrentRejectsInvalidInjectedVersion(t *testing.T) {
+	commit := "0123456789abcdef0123456789abcdef01234567"
+	reset := setBuildValues("1.0.0-rc.1\nforged", CommunityRCChannel, commit, "linux-amd64")
+	defer reset()
+	got := Current(CommunityRCVersion)
+	if got.Version != CommunityRCVersion || got.Channel != DevelopmentChannel {
+		t.Fatalf("invalid injection was trusted: %#v", got)
+	}
+}
+
 func setBuildValues(version, channel, commit, target string) func() {
 	oldVersion, oldChannel, oldCommit, oldTarget := BuildVersion, BuildChannel, BuildCommit, BuildTarget
 	BuildVersion, BuildChannel, BuildCommit, BuildTarget = version, channel, commit, target
