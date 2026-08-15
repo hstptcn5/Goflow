@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Go 1.24 or newer.
+- Go 1.25.13, matching `go.mod`.
 - Node.js and npm for frontend development and tests.
 
 Production use does not require Node.js because the Web UI is embedded into the Go binary.
@@ -59,4 +59,3 @@ From the repository root:
 ```
 
 This smoke script covers CLI, MCP stdio, MCP HTTP, cancellation, scoped token allowlist, concurrent idempotency, cron trigger, and audit behavior.
-

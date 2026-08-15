@@ -1,91 +1,95 @@
-# Goflow Commercial Strategy
+# Goflow Product And Commercial Direction
 
-Goflow uses an open-core strategy.
+Goflow is a local-first workflow automation engine that can turn workflows
+into portable, task-specific applications.
 
-The Community edition is open source and intended for individual developers, homelabs, small internal automations, learning, and lightweight self-hosted workflow execution.
+This document is the canonical commercial-direction document. It distinguishes
+what the public repository provides today from possible future editions. Goflow
+Pro Creator, Goflow Teams, and Goflow OEM are roadmap directions; they are not
+currently available products, subscriptions, or offers.
 
-Paid offerings may include hosted services, enterprise features, premium integrations, support, and managed deployment help.
+## Current Product
 
-See `ROADMAP.md` for the broader product roadmap and sequencing.
+Goflow currently has two related product paths.
 
----
+### Goflow Platform
 
-## Editions
+The Platform is the public, self-hosted application. It includes the visual
+workflow editor, local execution engine, scheduler, encrypted credentials, CLI,
+supported developer interfaces, and the current Pack authoring, validation,
+testing, building, verification, and running lifecycle.
 
-| Edition | Intended users | License / terms |
-| :--- | :--- | :--- |
-| Goflow Community | Individuals, homelabs, small internal tools, self-hosted preview deployments | MIT License |
-| Goflow Pro | Power users, small teams, production operators | Commercial terms |
-| Goflow Enterprise | Companies needing governance, compliance, support, and managed rollout | Commercial terms |
-| Goflow Cloud | Users who want a hosted managed service instead of self-hosting | SaaS subscription terms |
+It is local-first and uses an embedded Web UI and SQLite by default. It does not
+require a hosted Goflow service.
 
-The current repository contains the Community edition unless a specific file or package states otherwise.
+### Pack Appliance
 
----
+A Pack Appliance packages a workflow with a focused setup and run experience.
+It is intended to let a non-technical operator configure and operate a specific
+task without editing workflow JSON.
 
-## Community Scope
+DailyOps is the current reference and demonstration Pack. It is not Goflow's
+entire product identity, and it does not establish compatibility with any
+particular vendor.
 
-The Community edition should remain useful on its own:
+## Edition Direction
 
-- Single-binary self-hosted workflow runner
-- Embedded visual workflow builder
-- SQLite storage
-- Built-in node executors
-- Local credential vault
-- Webhooks, cron triggers, HTTP requests, basic integrations
-- Import/export workflow JSON
-- Community templates
-- Plugin runner
+| Edition | Current status | Boundary |
+| --- | --- | --- |
+| Goflow Free / Community | Available in this public repository | All capabilities already published here, including the core engine, editor, scheduler, local credentials, CLI, supported developer interfaces, and current Pack lifecycle |
+| Goflow Pro Creator | Planned; not currently sold | No-code Appliance/Pack Builder, guided configuration and credential-schema tools, branding and white-label controls, launcher metadata, installer generation, signed distribution workflows, update channels and rollback UX, commercial distribution convenience, premium adapter tooling or maintained commercial adapters, and priority support where eventually offered |
+| Goflow Teams | Future direction; not available | Shared projects, role-based access, team license administration, audit and governance, and shared Pack distribution |
+| Goflow OEM | Future direction; not available | Embedding and redistribution agreements, custom branding and distribution, commercial support, and negotiated terms |
 
-Community users should be able to build real workflows without needing a paid license.
+### Free / Community Commitment
 
----
+The public repository remains MIT licensed in this phase. Users may self-host,
+use, copy, modify, and redistribute the published code, including for
+commercial purposes, under the MIT License.
+Capabilities already released publicly will not be removed or artificially
+restricted merely to create a paid tier. The execution core should remain
+useful without a paid plan.
 
-## Commercial Feature Candidates
+## Monetization Principles
 
-The following areas are candidates for paid Pro, Enterprise, or Cloud offerings:
+- Do not paywall capabilities already released under MIT.
+- Monetize convenience, packaging, trusted distribution, maintained
+  integrations, and support.
+- Keep local execution and the public core useful without a paid plan.
+- Do not claim customer validation, commercial demand, or willingness to pay
+  without evidence.
+- Do not invent prices or present roadmap editions as purchasable products.
 
-- Multi-user login
-- Team workspaces
-- Role-based access control
-- SSO, SAML, OIDC, SCIM
-- Audit logs
-- Workflow version history and rollback
-- Approval workflows
-- Advanced backup and restore UI
-- Encrypted remote backups
-- High-availability deployment support
-- Premium node packs
-- Official managed OAuth connectors
-- Plugin signing and trusted plugin marketplace
-- Advanced observability dashboards
-- Usage analytics
-- Priority support
-- Professional services for custom nodes and deployment
-- Hosted Goflow Cloud
+RevenueCat is one possible future billing and entitlement provider. It is not
+an implemented dependency or a selected vendor. Any future entitlement design
+must keep provider secrets out of desktop binaries. Offline and local-first use
+would require a deliberately designed signed entitlement mechanism rather than
+an embedded billing secret or an assumption of continuous network access.
 
-This list is a roadmap direction, not a promise that every item will become paid.
+Pricing, refund policy, taxes, terms, support commitments, and final billing or
+entitlement provider selection remain undecided.
 
----
+## Licensing Boundary
 
-## What Users Can Do With Community
+Existing published MIT versions remain MIT. Removing or changing the license
+for a later version cannot revoke rights already granted for published code.
 
-Under the MIT License, users may use, copy, modify, distribute, and run the Community edition, including for commercial internal use, as long as they follow the MIT License terms.
+If proprietary Pro work is created in the future, it should be isolated from
+the public core through a clear repository, module, and build boundary. This
+milestone does not create a private repository, proprietary module, CLA,
+dual-license arrangement, source-available license, or commercial license.
 
-See `LICENSE` for the exact license text.
+Contributor agreements, copyright ownership, and third-party obligations must
+be audited before any future relicensing decision. This document describes
+product direction and is not professional legal advice.
 
----
+The MIT License covers the software. Use of the Goflow name and branding is a
+separate matter described in [TRADEMARK.md](TRADEMARK.md).
 
-## Trademark Boundary
+## Roadmap And Current Limitations
 
-The MIT License covers the software code. It does not grant permission to misuse the Goflow name, logo, branding, or project identity.
-
-See `TRADEMARK.md` for branding guidance.
-
----
-
-## Commercial Contact
-
-Commercial licensing, hosted deployments, paid support, and custom integration work can be offered separately from the Community edition.
-
-Contact information should be added here before a public commercial launch.
+The canonical phase sequence is in [ROADMAP.md](ROADMAP.md). Current operational
+limitations remain authoritative in
+[docs/BETA_LIMITATIONS.md](docs/BETA_LIMITATIONS.md), including the absence of a
+stable Release channel, production signing, installer, hosted control plane,
+and production marketplace.

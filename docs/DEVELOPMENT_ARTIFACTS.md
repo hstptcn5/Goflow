@@ -1,10 +1,12 @@
 # Development Artifact Verification
 
-Goflow ecosystem alpha artifacts are unsigned development artifacts. They are for pilot verification only.
+Goflow CI artifacts are temporary, unsigned evaluation outputs tied to an exact
+commit and workflow run. They are not GitHub Releases, installers, signed
+distribution, or latest-version pointers.
 
 ## Expected CI Behavior
 
-Pull-request CI runs:
+Full pull-request CI for code or workflow changes runs:
 
 - Backend tests, race tests, vet, and `govulncheck`.
 - Frontend unit tests and production build.
@@ -15,6 +17,17 @@ Pull-request CI runs:
 - Bundle verification and canary/path scan.
 - Multi-platform runtime build matrix.
 
+For code or workflow changes, full CI also verifies and uploads the native
+Windows DailyOps artifact:
+
+```text
+UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64
+```
+
+This artifact is an unsigned Productization Beta pilot candidate. It is not a
+stable platform release or a claim of vendor compatibility. Docs-only pull
+requests use the lightweight documentation path and do not build it.
+
 Manual `workflow_dispatch` additionally uploads artifacts named:
 
 ```text
@@ -23,14 +36,19 @@ UNSIGNED-DEVELOPMENT-ALPHA-goflow-<goos>-<goarch>
 
 The manual workflow must not create tags, GitHub Releases, installers, signatures, or latest-version pointers.
 
-`workflow_dispatch` is usable through the normal GitHub Actions UI/API only after the workflow declaration exists on the default branch. For the ecosystem alpha stacked PRs, the first manual development-artifacts run is therefore a post-merge operational gate, not a pull-request code gate.
+The Alpha marker remains the name of this separate development channel; it does
+not imply that the current product status has reverted from Productization
+Beta. Do not use `workflow_dispatch` merely to obtain a general release.
 
 ## Verify An Artifact
 
 1. Download the artifact from the exact GitHub Actions run.
-2. Confirm the artifact name includes `UNSIGNED-DEVELOPMENT-ALPHA` for manual alpha artifacts.
+2. Confirm the exact expected channel: `UNSIGNED-PILOT-BETA` for the native
+   Windows pilot or `UNSIGNED-DEVELOPMENT-ALPHA` for manual multi-platform
+   development artifacts.
 3. Extract it into a temporary directory.
-4. Check the included `UNSIGNED-DEVELOPMENT-ALPHA.txt` metadata and `SHA256SUMS-*.txt`.
+4. Check the matching `UNSIGNED-PILOT-BETA.txt` or
+   `UNSIGNED-DEVELOPMENT-ALPHA.txt` metadata and `SHA256SUMS-*.txt`.
 5. Run the binary only on a local trusted machine.
 6. For pack bundles, run:
 
