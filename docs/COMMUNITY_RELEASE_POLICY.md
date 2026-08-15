@@ -15,9 +15,12 @@ Each CI artifact is named `UNSIGNED-COMMUNITY-RC-goflow-<target>` and contains
 one ZIP plus its outer SHA-256 file. The ZIP contains only the runtime,
 `COMMUNITY_ARTIFACT.json`, `README.txt`, and `LICENSE`.
 
-The checksum and inner runtime hash establish integrity for identified bytes.
-They do not establish publisher authenticity. Community RC artifacts are
-unsigned, are not installers, and are not published through a `latest` URL.
+The adjacent checksum binds the exact archive basename and bytes. Inside the
+archive, a deterministic inventory in `COMMUNITY_ARTIFACT.json` binds the exact
+path, size, and SHA-256 of the runtime, `README.txt`, and `LICENSE`. These checks
+establish integrity for identified bytes; they do not establish publisher
+authenticity. Community RC artifacts are unsigned, are not installers, and are
+not published through a `latest` URL.
 
 ## Compatibility
 

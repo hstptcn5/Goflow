@@ -14,35 +14,42 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"goflow/internal/buildinfo"
 )
 
 const (
 	ArtifactMarker   = "UNSIGNED-COMMUNITY-RC"
 	SchemaVersion    = 1
-	ReleaseVersion   = "1.0.0-rc.1"
+	ReleaseVersion   = buildinfo.CommunityRCVersion
 	ReleaseChannel   = "community-rc"
 	MaxArchiveBytes  = 300 << 20
 	MaxRuntimeBytes  = 256 << 20
 	MaxMetadataBytes = 64 << 10
 	MaxTextBytes     = 1 << 20
+	MaxChecksumBytes = 512
 )
 
 var zipTimestamp = time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
 
-type RuntimeInfo struct {
+type MemberInfo struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
 	Size   int64  `json:"size"`
 }
 
 type Metadata struct {
-	SchemaVersion int         `json:"schema_version"`
-	Marker        string      `json:"marker"`
-	Version       string      `json:"version"`
-	Channel       string      `json:"channel"`
-	Commit        string      `json:"commit"`
-	Target        string      `json:"target"`
-	Runtime       RuntimeInfo `json:"runtime"`
+	SchemaVersion int          `json:"schema_version"`
+	Marker        string       `json:"marker"`
+	Version       string       `json:"version"`
+	Channel       string       `json:"channel"`
+	Commit        string       `json:"commit"`
+	Target        string       `json:"target"`
+	Files         []MemberInfo `json:"files"`
+}
+
+func (m Metadata) RuntimePath() string {
+	return runtimeName(m.Target)
 }
 
 type BuildOptions struct {
@@ -97,23 +104,24 @@ func Build(opts BuildOptions) (*BuildResult, error) {
 		return nil, fmt.Errorf("license: %w", err)
 	}
 	runtimeName := runtimeName(opts.Target)
-	runtimeSum := sha256.Sum256(runtimeData)
+	readmeData := []byte(readme(runtimeName))
+	entries := []archiveEntry{
+		{name: runtimeName, mode: 0755, data: runtimeData},
+		{name: "README.txt", mode: 0644, data: readmeData},
+		{name: "LICENSE", mode: 0644, data: licenseData},
+	}
+	inventory := inventoryForEntries(entries)
 	metadata := Metadata{
 		SchemaVersion: SchemaVersion, Marker: ArtifactMarker, Version: opts.Version, Channel: opts.Channel,
 		Commit: strings.ToLower(opts.Commit), Target: opts.Target,
-		Runtime: RuntimeInfo{Path: runtimeName, SHA256: hex.EncodeToString(runtimeSum[:]), Size: int64(len(runtimeData))},
+		Files: inventory,
 	}
 	metadataData, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
 		return nil, err
 	}
 	metadataData = append(metadataData, '\n')
-	entries := []archiveEntry{
-		{name: runtimeName, mode: 0755, data: runtimeData},
-		{name: "COMMUNITY_ARTIFACT.json", mode: 0644, data: metadataData},
-		{name: "README.txt", mode: 0644, data: []byte(readme(runtimeName))},
-		{name: "LICENSE", mode: 0644, data: licenseData},
-	}
+	entries = append(entries, archiveEntry{name: "COMMUNITY_ARTIFACT.json", mode: 0644, data: metadataData})
 	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
 	if err := rejectLeakage(entries, opts.RuntimePath); err != nil {
 		return nil, err
@@ -126,40 +134,62 @@ func Build(opts BuildOptions) (*BuildResult, error) {
 	}
 	archiveName := fmt.Sprintf("goflow-community-%s-%s.zip", opts.Version, opts.Target)
 	archivePath := filepath.Join(opts.OutputDir, archiveName)
-	if _, err := os.Stat(archivePath); err == nil {
-		return nil, fmt.Errorf("output archive already exists: %s", archivePath)
-	} else if !os.IsNotExist(err) {
-		return nil, err
+	checksumPath := archivePath + ".sha256"
+	for _, destination := range []string{archivePath, checksumPath} {
+		if _, err := os.Stat(destination); err == nil {
+			return nil, fmt.Errorf("output destination already exists: %s", filepath.Base(destination))
+		} else if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("check output destination: %w", err)
+		}
 	}
-	temp, err := os.CreateTemp(opts.OutputDir, ".community-artifact-*.zip")
+	tempArchive, err := os.CreateTemp(opts.OutputDir, ".community-artifact-*.zip")
 	if err != nil {
 		return nil, err
 	}
-	tempPath := temp.Name()
-	defer os.Remove(tempPath)
-	if err := writeArchive(temp, entries); err != nil {
-		temp.Close()
+	tempArchivePath := tempArchive.Name()
+	defer os.Remove(tempArchivePath)
+	if err := writeArchive(tempArchive, entries); err != nil {
+		tempArchive.Close()
 		return nil, err
 	}
-	if err := temp.Close(); err != nil {
+	if err := tempArchive.Close(); err != nil {
 		return nil, err
 	}
-	if _, err := Verify(tempPath, VerifyOptions{Version: opts.Version, Channel: opts.Channel, Commit: opts.Commit, Target: opts.Target}); err != nil {
+	if _, err := Verify(tempArchivePath, VerifyOptions{Version: opts.Version, Channel: opts.Channel, Commit: opts.Commit, Target: opts.Target}); err != nil {
 		return nil, fmt.Errorf("verify temporary archive: %w", err)
 	}
-	archiveData, err := readRegularLimited(tempPath, MaxArchiveBytes)
+	digest, err := hashRegularFile(tempArchivePath, MaxArchiveBytes)
 	if err != nil {
 		return nil, err
 	}
-	archiveSum := sha256.Sum256(archiveData)
-	digest := hex.EncodeToString(archiveSum[:])
-	if err := os.Rename(tempPath, archivePath); err != nil {
+	checksumData := []byte(digest + "  " + archiveName + "\n")
+	if err := verifyChecksumData(checksumData, archiveName, digest); err != nil {
+		return nil, fmt.Errorf("verify generated checksum: %w", err)
+	}
+	tempChecksum, err := os.CreateTemp(opts.OutputDir, ".community-checksum-*.sha256")
+	if err != nil {
+		return nil, err
+	}
+	tempChecksumPath := tempChecksum.Name()
+	defer os.Remove(tempChecksumPath)
+	if _, err := tempChecksum.Write(checksumData); err != nil {
+		tempChecksum.Close()
+		return nil, fmt.Errorf("write temporary checksum: %w", err)
+	}
+	if err := tempChecksum.Close(); err != nil {
+		return nil, fmt.Errorf("close temporary checksum: %w", err)
+	}
+	if err := publishNoReplace(tempChecksumPath, checksumPath); err != nil {
+		return nil, fmt.Errorf("publish checksum: %w", err)
+	}
+	if err := publishNoReplace(tempArchivePath, archivePath); err != nil {
+		_ = os.Remove(checksumPath)
 		return nil, fmt.Errorf("publish archive: %w", err)
 	}
-	checksumPath := archivePath + ".sha256"
-	if err := os.WriteFile(checksumPath, []byte(digest+"  "+archiveName+"\n"), 0644); err != nil {
-		os.Remove(archivePath)
-		return nil, fmt.Errorf("write checksum: %w", err)
+	if err := VerifyChecksumFile(archivePath, checksumPath); err != nil {
+		_ = os.Remove(archivePath)
+		_ = os.Remove(checksumPath)
+		return nil, fmt.Errorf("verify published checksum: %w", err)
 	}
 	return &BuildResult{ArchivePath: archivePath, ChecksumPath: checksumPath, SHA256: digest, Metadata: metadata}, nil
 }
@@ -209,28 +239,28 @@ func Verify(path string, expected VerifyOptions) (*Metadata, error) {
 	if err := validateMetadata(metadata, expected); err != nil {
 		return nil, err
 	}
-	runtimeFile := files[metadata.Runtime.Path]
-	if runtimeFile == nil {
-		return nil, fmt.Errorf("runtime %q is missing", metadata.Runtime.Path)
-	}
-	runtimeData, err := readZipLimited(runtimeFile, MaxRuntimeBytes)
-	if err != nil {
-		return nil, fmt.Errorf("read runtime: %w", err)
-	}
-	sum := sha256.Sum256(runtimeData)
-	if metadata.Runtime.Size != int64(len(runtimeData)) || metadata.Runtime.SHA256 != hex.EncodeToString(sum[:]) {
-		return nil, fmt.Errorf("runtime hash or size does not match metadata")
+	verifiedEntries := []archiveEntry{{name: "COMMUNITY_ARTIFACT.json", data: metadataData}}
+	var runtimeData []byte
+	for _, member := range metadata.Files {
+		limit := int64(MaxTextBytes)
+		if member.Path == runtimeName(metadata.Target) {
+			limit = MaxRuntimeBytes
+		}
+		data, err := readZipLimited(files[member.Path], limit)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", member.Path, err)
+		}
+		sum := sha256.Sum256(data)
+		if member.Size != int64(len(data)) || member.SHA256 != hex.EncodeToString(sum[:]) {
+			return nil, fmt.Errorf("member %q hash or size does not match metadata", member.Path)
+		}
+		verifiedEntries = append(verifiedEntries, archiveEntry{name: member.Path, data: data})
+		if member.Path == runtimeName(metadata.Target) {
+			runtimeData = data
+		}
 	}
 	if err := verifyExecutableTarget(runtimeData, metadata.Target); err != nil {
 		return nil, err
-	}
-	verifiedEntries := []archiveEntry{{name: metadata.Runtime.Path, data: runtimeData}, {name: "COMMUNITY_ARTIFACT.json", data: metadataData}}
-	for _, name := range []string{"README.txt", "LICENSE"} {
-		data, err := readZipLimited(files[name], MaxTextBytes)
-		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", name, err)
-		}
-		verifiedEntries = append(verifiedEntries, archiveEntry{name: name, data: data})
 	}
 	if err := rejectLeakage(verifiedEntries, ""); err != nil {
 		return nil, err
@@ -245,8 +275,8 @@ func validateMetadata(m Metadata, expected VerifyOptions) error {
 	if err := validateIdentity(m.Version, m.Channel, m.Commit, m.Target); err != nil {
 		return err
 	}
-	if m.Runtime.Path != runtimeName(m.Target) {
-		return fmt.Errorf("runtime path %q does not match target %q", m.Runtime.Path, m.Target)
+	if err := validateInventory(m.Files, m.Target); err != nil {
+		return err
 	}
 	if expected.Version != "" && m.Version != expected.Version || expected.Channel != "" && m.Channel != expected.Channel || expected.Commit != "" && m.Commit != strings.ToLower(expected.Commit) || expected.Target != "" && m.Target != expected.Target {
 		return fmt.Errorf("artifact identity does not match expected exact build")
@@ -273,6 +303,110 @@ func validateIdentity(version, channel, commit, target string) error {
 		return fmt.Errorf("unsupported target %q", target)
 	}
 	return nil
+}
+
+func inventoryForEntries(entries []archiveEntry) []MemberInfo {
+	inventory := make([]MemberInfo, 0, len(entries))
+	for _, entry := range entries {
+		sum := sha256.Sum256(entry.data)
+		inventory = append(inventory, MemberInfo{Path: entry.name, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(entry.data))})
+	}
+	sort.Slice(inventory, func(i, j int) bool { return inventory[i].Path < inventory[j].Path })
+	return inventory
+}
+
+func validateInventory(inventory []MemberInfo, target string) error {
+	expected := map[string]bool{"LICENSE": true, "README.txt": true, runtimeName(target): true}
+	seen := make(map[string]bool, len(inventory))
+	prior := ""
+	for _, member := range inventory {
+		if member.Path == "COMMUNITY_ARTIFACT.json" {
+			return fmt.Errorf("metadata must not inventory itself")
+		}
+		if seen[member.Path] {
+			return fmt.Errorf("inventory contains duplicate path %q", member.Path)
+		}
+		seen[member.Path] = true
+		if !expected[member.Path] {
+			return fmt.Errorf("inventory contains unexpected path %q", member.Path)
+		}
+		if prior != "" && member.Path <= prior {
+			return fmt.Errorf("inventory paths must be in canonical sorted order")
+		}
+		prior = member.Path
+		if member.Size < 0 || len(member.SHA256) != 64 {
+			return fmt.Errorf("inventory metadata for %q is invalid", member.Path)
+		}
+		if decoded, err := hex.DecodeString(member.SHA256); err != nil || hex.EncodeToString(decoded) != member.SHA256 {
+			return fmt.Errorf("inventory digest for %q must be lowercase SHA-256", member.Path)
+		}
+	}
+	if len(seen) != len(expected) {
+		return fmt.Errorf("inventory must bind exactly runtime, README.txt, and LICENSE")
+	}
+	for path := range expected {
+		if !seen[path] {
+			return fmt.Errorf("inventory is missing required path %q", path)
+		}
+	}
+	return nil
+}
+
+func VerifyChecksumFile(archivePath, checksumPath string) error {
+	checksumData, err := readRegularLimited(checksumPath, MaxChecksumBytes)
+	if err != nil {
+		return fmt.Errorf("checksum file: %w", err)
+	}
+	digest, err := hashRegularFile(archivePath, MaxArchiveBytes)
+	if err != nil {
+		return fmt.Errorf("archive checksum: %w", err)
+	}
+	return verifyChecksumData(checksumData, filepath.Base(archivePath), digest)
+}
+
+func verifyChecksumData(data []byte, expectedArchiveName, digest string) error {
+	if len(data) == 0 || len(data) > MaxChecksumBytes {
+		return fmt.Errorf("checksum file must contain exactly one bounded line")
+	}
+	if expectedArchiveName == "" || expectedArchiveName != filepath.Base(expectedArchiveName) || strings.ContainsAny(expectedArchiveName, `/\\`) {
+		return fmt.Errorf("expected archive name is invalid")
+	}
+	expected := digest + "  " + expectedArchiveName + "\n"
+	if string(data) != expected {
+		return fmt.Errorf("checksum line must contain the lowercase archive SHA-256 and exact basename")
+	}
+	return nil
+}
+
+func hashRegularFile(path string, limit int64) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() || info.Size() > limit {
+		return "", fmt.Errorf("must be a regular file no larger than %d bytes", limit)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	h := sha256.New()
+	written, err := io.Copy(h, io.LimitReader(file, limit+1))
+	if err != nil {
+		return "", err
+	}
+	if written > limit {
+		return "", fmt.Errorf("exceeds %d byte limit", limit)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func publishNoReplace(tempPath, destination string) error {
+	if err := os.Link(tempPath, destination); err != nil {
+		return err
+	}
+	return os.Remove(tempPath)
 }
 
 func runtimeName(target string) string {

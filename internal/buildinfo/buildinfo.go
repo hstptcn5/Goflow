@@ -31,30 +31,29 @@ type Info struct {
 
 func Current(embeddedVersion string) Info {
 	version := bounded("", strings.TrimSpace(embeddedVersion), "development")
-	if validVersion(BuildVersion) {
-		version = BuildVersion
+	target := CurrentTarget()
+	if BuildVersion == CommunityRCVersion &&
+		BuildChannel == CommunityRCChannel &&
+		validCommit(BuildCommit) &&
+		validTarget(BuildTarget) &&
+		BuildTarget == target {
+		return Info{
+			Version:   BuildVersion,
+			Channel:   CommunityRCChannel,
+			Commit:    strings.ToLower(BuildCommit),
+			Target:    target,
+			GoVersion: runtime.Version(),
+		}
 	}
-	channel := DevelopmentChannel
-	if BuildChannel == CommunityRCChannel && BuildVersion == CommunityRCVersion && validCommit(BuildCommit) && validTarget(BuildTarget) {
-		channel = CommunityRCChannel
-	}
-	commit := "unknown"
-	if validCommit(BuildCommit) {
-		commit = strings.ToLower(BuildCommit)
-	}
-	target := runtime.GOOS + "-" + runtime.GOARCH
-	if validTarget(BuildTarget) {
-		target = BuildTarget
-	}
-	return Info{Version: version, Channel: channel, Commit: commit, Target: target, GoVersion: runtime.Version()}
+	return Info{Version: version, Channel: DevelopmentChannel, Commit: "unknown", Target: target, GoVersion: runtime.Version()}
 }
 
-func validVersion(value string) bool {
-	return value == CommunityRCVersion
+func CurrentTarget() string {
+	return runtime.GOOS + "-" + runtime.GOARCH
 }
 
 func (i Info) ValidateOfficial(version, commit, target string) error {
-	if i.Version != version || i.Channel != CommunityRCChannel || i.Commit != strings.ToLower(commit) || i.Target != target {
+	if target != CurrentTarget() || i.Target != CurrentTarget() || i.Version != version || i.Channel != CommunityRCChannel || i.Commit != strings.ToLower(commit) {
 		return fmt.Errorf("runtime identity mismatch: got version=%q channel=%q commit=%q target=%q", i.Version, i.Channel, i.Commit, i.Target)
 	}
 	return nil

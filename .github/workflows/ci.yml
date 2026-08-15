@@ -359,6 +359,13 @@ jobs:
       - name: Verify exact checkout
         run: test "$(git rev-parse HEAD)" = "$GOFLOW_CI_COMMIT"
 
+      - name: Read canonical Community version
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
+          test -n "$version"
+          echo "GOFLOW_RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -390,7 +397,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             channel="development"
           fi
-          ldflags="-s -w -X goflow/internal/buildinfo.BuildVersion=1.0.0-rc.1 -X goflow/internal/buildinfo.BuildChannel=$channel -X goflow/internal/buildinfo.BuildCommit=$GOFLOW_CI_COMMIT -X goflow/internal/buildinfo.BuildTarget=${{ matrix.goos }}-${{ matrix.goarch }}"
+          ldflags="-s -w -X goflow/internal/buildinfo.BuildVersion=$GOFLOW_RELEASE_VERSION -X goflow/internal/buildinfo.BuildChannel=$channel -X goflow/internal/buildinfo.BuildCommit=$GOFLOW_CI_COMMIT -X goflow/internal/buildinfo.BuildTarget=${{ matrix.goos }}-${{ matrix.goarch }}"
           go build -trimpath -ldflags="$ldflags" -o "$RUNNER_TEMP/community-runtime/goflow${{ matrix.ext }}" main.go static_embed.go
 
       - name: Build and verify Community RC artifact
@@ -404,7 +411,7 @@ jobs:
             --commit "$GOFLOW_CI_COMMIT" \
             --target "${{ matrix.goos }}-${{ matrix.goarch }}"
           go run ./internal/testharness/communityrc verify \
-            --archive "dist/goflow-community-1.0.0-rc.1-${{ matrix.goos }}-${{ matrix.goarch }}.zip" \
+            --archive "dist/goflow-community-${GOFLOW_RELEASE_VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}.zip" \
             --commit "$GOFLOW_CI_COMMIT" \
             --target "${{ matrix.goos }}-${{ matrix.goarch }}"
 
@@ -420,14 +427,14 @@ jobs:
             --commit "$GOFLOW_CI_COMMIT" \
             --target linux-amd64
           cmp \
-            "dist/goflow-community-1.0.0-rc.1-linux-amd64.zip" \
-            "$RUNNER_TEMP/community-second/goflow-community-1.0.0-rc.1-linux-amd64.zip"
+            "dist/goflow-community-${GOFLOW_RELEASE_VERSION}-linux-amd64.zip" \
+            "$RUNNER_TEMP/community-second/goflow-community-${GOFLOW_RELEASE_VERSION}-linux-amd64.zip"
 
       - name: Run canonical extracted-runtime smoke and restart test
         if: github.event_name != 'workflow_dispatch' && matrix.goos == 'linux' && matrix.goarch == 'amd64'
         run: |
           go run ./internal/testharness/communityrc smoke \
-            --archive "dist/goflow-community-1.0.0-rc.1-linux-amd64.zip" \
+            --archive "dist/goflow-community-${GOFLOW_RELEASE_VERSION}-linux-amd64.zip" \
             --commit "$GOFLOW_CI_COMMIT" \
             --target linux-amd64
 
@@ -447,7 +454,7 @@ jobs:
           go run ./internal/testharness/communityrc upgrade \
             --base-runtime "$RUNNER_TEMP/goflow-beta" \
             --base-commit "$GOFLOW_BETA_BASE_COMMIT" \
-            --archive "dist/goflow-community-1.0.0-rc.1-linux-amd64.zip" \
+            --archive "dist/goflow-community-${GOFLOW_RELEASE_VERSION}-linux-amd64.zip" \
             --commit "$GOFLOW_CI_COMMIT" \
             --target linux-amd64
 
@@ -457,8 +464,8 @@ jobs:
         with:
           name: UNSIGNED-COMMUNITY-RC-goflow-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
-            dist/goflow-community-1.0.0-rc.1-${{ matrix.goos }}-${{ matrix.goarch }}.zip
-            dist/goflow-community-1.0.0-rc.1-${{ matrix.goos }}-${{ matrix.goarch }}.zip.sha256
+            dist/goflow-community-*-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+            dist/goflow-community-*-${{ matrix.goos }}-${{ matrix.goarch }}.zip.sha256
           if-no-files-found: error
 
   windows-pilot:

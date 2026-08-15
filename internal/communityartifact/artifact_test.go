@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -64,7 +65,7 @@ func TestVerifyRejectsAdversarialArchives(t *testing.T) {
 				}
 			}
 			return items
-		}, want: "runtime hash"},
+		}, want: "member"},
 		{name: "false signing metadata", mutate: func(items []zipItem) []zipItem {
 			for i := range items {
 				if items[i].name == "COMMUNITY_ARTIFACT.json" {
@@ -73,14 +74,34 @@ func TestVerifyRejectsAdversarialArchives(t *testing.T) {
 			}
 			return items
 		}, want: "unknown field"},
-		{name: "local path leakage", mutate: func(items []zipItem) []zipItem {
+		{name: "modified README", mutate: func(items []zipItem) []zipItem {
 			for i := range items {
 				if items[i].name == "README.txt" {
-					items[i].data = append(items[i].data, []byte(`C:\Users\builder\repo`)...)
+					items[i].data = append(items[i].data, []byte("modified")...)
 				}
 			}
 			return items
-		}, want: "local build path"},
+		}, want: "member"},
+		{name: "modified LICENSE", mutate: func(items []zipItem) []zipItem {
+			for i := range items {
+				if items[i].name == "LICENSE" {
+					items[i].data = append(items[i].data, []byte("modified")...)
+				}
+			}
+			return items
+		}, want: "member"},
+		{name: "local path leakage with updated inventory", mutate: memberMutation("README.txt", []byte(`C:\Users\builder\repo`)), want: "local build path"},
+		{name: "duplicate inventory", mutate: metadataMutation(func(m *Metadata) { m.Files = append(m.Files, m.Files[0]) }), want: "duplicate path"},
+		{name: "missing inventory", mutate: metadataMutation(func(m *Metadata) { m.Files = m.Files[:len(m.Files)-1] }), want: "exactly runtime"},
+		{name: "extra inventory", mutate: metadataMutation(func(m *Metadata) {
+			m.Files = append(m.Files, MemberInfo{Path: "extra.txt", SHA256: strings.Repeat("0", 64)})
+		}), want: "unexpected path"},
+		{name: "wrong inventory size", mutate: metadataMutation(func(m *Metadata) { m.Files[0].Size++ }), want: "hash or size"},
+		{name: "wrong inventory hash", mutate: metadataMutation(func(m *Metadata) { m.Files[0].SHA256 = strings.Repeat("0", 64) }), want: "hash or size"},
+		{name: "metadata self inventory", mutate: metadataMutation(func(m *Metadata) {
+			m.Files = append(m.Files, MemberInfo{Path: "COMMUNITY_ARTIFACT.json", SHA256: strings.Repeat("0", 64)})
+		}), want: "must not inventory itself"},
+		{name: "noncanonical inventory order", mutate: metadataMutation(func(m *Metadata) { m.Files[0], m.Files[1] = m.Files[1], m.Files[0] }), want: "canonical sorted order"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -90,6 +111,51 @@ func TestVerifyRejectsAdversarialArchives(t *testing.T) {
 				t.Fatalf("error=%v want containing %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func memberMutation(name string, suffix []byte) func([]zipItem) []zipItem {
+	return func(items []zipItem) []zipItem {
+		for i := range items {
+			if items[i].name == name {
+				items[i].data = append(items[i].data, suffix...)
+			}
+		}
+		return metadataMutation(func(m *Metadata) {
+			for i := range m.Files {
+				if m.Files[i].Path != name {
+					continue
+				}
+				for _, item := range items {
+					if item.name == name {
+						sum := sha256.Sum256(item.data)
+						m.Files[i].Size = int64(len(item.data))
+						m.Files[i].SHA256 = hex.EncodeToString(sum[:])
+					}
+				}
+			}
+		})(items)
+	}
+}
+
+func metadataMutation(mutate func(*Metadata)) func([]zipItem) []zipItem {
+	return func(items []zipItem) []zipItem {
+		for i := range items {
+			if items[i].name != "COMMUNITY_ARTIFACT.json" {
+				continue
+			}
+			var metadata Metadata
+			if err := json.Unmarshal(items[i].data, &metadata); err != nil {
+				panic(err)
+			}
+			mutate(&metadata)
+			data, err := json.MarshalIndent(metadata, "", "  ")
+			if err != nil {
+				panic(err)
+			}
+			items[i].data = append(data, '\n')
+		}
+		return items
 	}
 }
 

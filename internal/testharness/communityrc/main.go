@@ -4,29 +4,37 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"goflow/internal/buildinfo"
 	"goflow/internal/communityartifact"
+	"goflow/internal/crypto"
+	"goflow/internal/storage"
 
 	_ "modernc.org/sqlite"
 )
 
-const secretCanary = "community-rc-secret-canary-7d95d4"
+const (
+	secretCanary       = "community-rc-secret-canary-7d95d4"
+	maxStartupLogBytes = 64 << 10
+)
 
 func main() {
 	if len(os.Args) < 2 {
@@ -64,6 +72,9 @@ func build(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := communityartifact.VerifyChecksumFile(result.ArchivePath, result.ChecksumPath); err != nil {
+		return err
+	}
 	fmt.Printf("archive=%s\nchecksum=%s\nsha256=%s\n", result.ArchivePath, result.ChecksumPath, result.SHA256)
 	return nil
 }
@@ -74,6 +85,9 @@ func verify(args []string) error {
 	commit := fs.String("commit", "", "full source commit")
 	target := fs.String("target", "", "target")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := communityartifact.VerifyChecksumFile(*archive, *archive+".sha256"); err != nil {
 		return err
 	}
 	metadata, err := communityartifact.Verify(*archive, communityartifact.VerifyOptions{Version: communityartifact.ReleaseVersion, Channel: communityartifact.ReleaseChannel, Commit: *commit, Target: *target})
@@ -89,6 +103,9 @@ func smoke(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := communityartifact.VerifyChecksumFile(archive, archive+".sha256"); err != nil {
+		return err
+	}
 	metadata, err := communityartifact.Verify(archive, expected)
 	if err != nil {
 		return err
@@ -98,10 +115,10 @@ func smoke(args []string) error {
 		return err
 	}
 	defer cleanup()
-	if err := assertExactAppDir(appDir, metadata.Runtime.Path); err != nil {
+	if err := assertExactAppDir(appDir, metadata.RuntimePath()); err != nil {
 		return err
 	}
-	runtimePath := filepath.Join(appDir, metadata.Runtime.Path)
+	runtimePath := filepath.Join(appDir, metadata.RuntimePath())
 	if err := verifyVersionCommand(runtimePath, *metadata); err != nil {
 		return err
 	}
@@ -110,23 +127,23 @@ func smoke(args []string) error {
 		return err
 	}
 	defer os.RemoveAll(dataDir)
-	workflowID, err := exerciseRuntime(runtimePath, dataDir, true)
+	workflowID, credentialID, err := exerciseRuntime(runtimePath, dataDir, true)
 	if err != nil {
 		return err
 	}
-	if workflowID == "" {
-		return fmt.Errorf("workflow identity was empty")
+	if workflowID == "" || credentialID == "" {
+		return fmt.Errorf("representative state identity was empty")
 	}
-	if err := exerciseRestart(runtimePath, dataDir, workflowID); err != nil {
+	if err := exerciseRestart(runtimePath, dataDir, workflowID, credentialID); err != nil {
 		return err
 	}
-	if err := assertExactAppDir(appDir, metadata.Runtime.Path); err != nil {
+	if err := assertExactAppDir(appDir, metadata.RuntimePath()); err != nil {
 		return err
 	}
 	if err := rejectPlaintext(dataDir, secretCanary); err != nil {
 		return err
 	}
-	fmt.Printf("smoke=success restart=success ui=200 healthz=200 workflow=%s data_dir=external\n", workflowID)
+	fmt.Printf("smoke=success restart=success credential=decrypted ui=200 healthz=200 workflow=%s data_dir=external\n", workflowID)
 	return nil
 }
 
@@ -143,6 +160,9 @@ func upgrade(args []string) error {
 	if len(*baseCommit) != 40 {
 		return fmt.Errorf("base commit must be a full SHA")
 	}
+	if err := communityartifact.VerifyChecksumFile(*archive, *archive+".sha256"); err != nil {
+		return err
+	}
 	metadata, err := communityartifact.Verify(*archive, communityartifact.VerifyOptions{Version: communityartifact.ReleaseVersion, Channel: communityartifact.ReleaseChannel, Commit: *commit, Target: *target})
 	if err != nil {
 		return err
@@ -152,17 +172,17 @@ func upgrade(args []string) error {
 		return err
 	}
 	defer cleanup()
-	candidate := filepath.Join(appDir, metadata.Runtime.Path)
+	candidate := filepath.Join(appDir, metadata.RuntimePath())
 	dataDir, err := os.MkdirTemp("", "goflow-community-upgrade-*")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(dataDir)
-	workflowID, err := exerciseRuntime(*baseRuntime, dataDir, true)
+	workflowID, credentialID, err := exerciseRuntime(*baseRuntime, dataDir, true)
 	if err != nil {
 		return fmt.Errorf("beta runtime: %w", err)
 	}
-	if err := exerciseRestart(candidate, dataDir, workflowID); err != nil {
+	if err := exerciseRestart(candidate, dataDir, workflowID, credentialID); err != nil {
 		return fmt.Errorf("RC runtime over beta data: %w", err)
 	}
 	if err := rejectPlaintext(dataDir, secretCanary); err != nil {
@@ -183,7 +203,7 @@ func upgrade(args []string) error {
 	if strings.Contains(logs, secretCanary) {
 		return fmt.Errorf("failed startup leaked credential plaintext")
 	}
-	fmt.Printf("upgrade=success base_commit=%s workflow=%s corrupt_migration=failed-closed\n", *baseCommit, workflowID)
+	fmt.Printf("upgrade=success base_commit=%s workflow=%s credential=decrypted corrupt_migration=failed-closed\n", *baseCommit, workflowID)
 	return nil
 }
 
@@ -272,17 +292,18 @@ type process struct {
 	logFile *os.File
 }
 
+var (
+	serverURLPattern     = regexp.MustCompile(`(?m)^.*Goflow Web Server running on (\S+)\r?$`)
+	errServerURLNotFound = errors.New("server URL not found")
+)
+
 func startRuntime(path, dataDir string) (*process, string, error) {
-	port, err := availablePort()
-	if err != nil {
-		return nil, "", err
-	}
 	logFile, err := os.CreateTemp("", "goflow-community-log-*.txt")
 	if err != nil {
 		return nil, "", err
 	}
 	cmd := exec.Command(path, "serve")
-	cmd.Env = append(os.Environ(), "GOFLOW_HOST=127.0.0.1", "GOFLOW_PORT="+port, "GOFLOW_DB_PATH="+filepath.Join(dataDir, "goflow.db"), "GOFLOW_MASTER_KEY_FILE="+filepath.Join(dataDir, "goflow.master.key"), "GOFLOW_LOG_LEVEL=info")
+	cmd.Env = append(os.Environ(), "GOFLOW_HOST=127.0.0.1", "GOFLOW_PORT=0", "GOFLOW_DB_PATH="+filepath.Join(dataDir, "goflow.db"), "GOFLOW_MASTER_KEY_FILE="+filepath.Join(dataDir, "goflow.master.key"), "GOFLOW_LOG_LEVEL=info")
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {
@@ -292,8 +313,8 @@ func startRuntime(path, dataDir string) (*process, string, error) {
 	}
 	p := &process{cmd: cmd, done: make(chan error, 1), logPath: logFile.Name(), logFile: logFile}
 	go func() { p.done <- cmd.Wait(); close(p.done) }()
-	origin := "http://127.0.0.1:" + port
-	if err := waitReady(p, origin, 30*time.Second); err != nil {
+	origin, err := waitReady(p, 30*time.Second)
+	if err != nil {
 		_ = stopRuntime(p)
 		return nil, "", err
 	}
@@ -332,61 +353,113 @@ func stopRuntime(p *process) error {
 	}
 }
 
-func waitReady(p *process, origin string, timeout time.Duration) error {
+func waitReady(p *process, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: time.Second}
 	for time.Now().Before(deadline) {
 		select {
 		case err := <-p.done:
-			logs, _ := os.ReadFile(p.logPath)
-			return fmt.Errorf("runtime exited before readiness: %v: %s", err, logs)
+			return "", fmt.Errorf("runtime exited before readiness: %v", err)
 		default:
 		}
-		if res, err := client.Get(origin + "/healthz"); err == nil {
-			res.Body.Close()
-			if res.StatusCode == http.StatusOK {
-				return nil
+		logs, err := readStartupLog(p.logPath)
+		if err != nil {
+			return "", err
+		}
+		origin, err := parseServerURL(logs)
+		if err == nil {
+			if res, probeErr := client.Get(origin + "/healthz"); probeErr == nil {
+				res.Body.Close()
+				if res.StatusCode == http.StatusOK {
+					return origin, nil
+				}
 			}
+		} else if !errors.Is(err, errServerURLNotFound) {
+			return "", err
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return fmt.Errorf("runtime readiness timeout")
+	return "", fmt.Errorf("runtime readiness timeout")
 }
 
-func exerciseRuntime(path, dataDir string, create bool) (string, error) {
+func readStartupLog(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("inspect startup log: %w", err)
+	}
+	if info.Size() > maxStartupLogBytes {
+		return nil, fmt.Errorf("startup log exceeded bounded size")
+	}
+	return os.ReadFile(path)
+}
+
+func parseServerURL(logs []byte) (string, error) {
+	if len(logs) > maxStartupLogBytes {
+		return "", fmt.Errorf("startup log exceeded bounded size")
+	}
+	matches := serverURLPattern.FindAllSubmatch(logs, -1)
+	if len(matches) == 0 {
+		return "", errServerURLNotFound
+	}
+	if len(matches) != 1 {
+		return "", fmt.Errorf("startup log contains multiple server URLs")
+	}
+	raw := string(matches[0][1])
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.Hostname() != "127.0.0.1" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("startup log contains invalid loopback server URL")
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil || port < 1 || port > 65535 || parsed.Host != "127.0.0.1:"+strconv.Itoa(port) {
+		return "", fmt.Errorf("startup log contains invalid loopback server port")
+	}
+	return "http://127.0.0.1:" + strconv.Itoa(port), nil
+}
+
+func exerciseRuntime(path, dataDir string, create bool) (string, string, error) {
 	p, origin, err := startRuntime(path, dataDir)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	var workflowID string
+	var credentialID string
 	defer func() {
 		if p != nil {
 			_ = stopRuntime(p)
 		}
 	}()
 	if err := getStatus(origin+"/", http.StatusOK); err != nil {
-		return "", fmt.Errorf("UI: %w", err)
+		return "", "", fmt.Errorf("UI: %w", err)
 	}
 	if create {
 		var wf struct {
 			ID string `json:"id"`
 		}
 		if err := postJSON(origin+"/api/v1/workflows", map[string]any{"name": "Community upgrade fixture", "description": "Phase 1 compatibility fixture", "nodes_json": "[]", "edges_json": "[]"}, http.StatusCreated, &wf); err != nil {
-			return "", err
+			return "", "", err
 		}
 		workflowID = wf.ID
-		if err := postJSON(origin+"/api/v1/credentials", map[string]any{"name": "Compatibility credential", "type": "API_KEY", "data": secretCanary}, http.StatusCreated, nil); err != nil {
-			return "", err
+		var credential struct {
+			ID string `json:"id"`
 		}
+		if err := postJSON(origin+"/api/v1/credentials", map[string]any{"name": "Compatibility credential", "type": "API_KEY", "data": secretCanary}, http.StatusCreated, &credential); err != nil {
+			return "", "", err
+		}
+		credentialID = credential.ID
 	}
 	if err := stopRuntime(p); err != nil {
-		return "", err
+		return "", "", err
 	}
 	p = nil
-	return workflowID, nil
+	if create {
+		if err := verifyCredentialAtRest(dataDir, credentialID); err != nil {
+			return "", "", err
+		}
+	}
+	return workflowID, credentialID, nil
 }
 
-func exerciseRestart(path, dataDir, workflowID string) error {
+func exerciseRestart(path, dataDir, workflowID, credentialID string) error {
 	p, origin, err := startRuntime(path, dataDir)
 	if err != nil {
 		return err
@@ -417,19 +490,34 @@ func exerciseRestart(path, dataDir, workflowID string) error {
 		return err
 	}
 	p = nil
-	return nil
+	return verifyCredentialAtRest(dataDir, credentialID)
 }
 
-func availablePort() (string, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+func verifyCredentialAtRest(dataDir, credentialID string) error {
+	keyFile, err := os.Open(filepath.Join(dataDir, "goflow.master.key"))
 	if err != nil {
-		return "", err
+		return fmt.Errorf("credential decryption evidence could not load the test key")
 	}
-	port := fmt.Sprint(l.Addr().(*net.TCPAddr).Port)
-	if err := l.Close(); err != nil {
-		return "", err
+	keyData, readErr := io.ReadAll(io.LimitReader(keyFile, 1025))
+	closeErr := keyFile.Close()
+	if readErr != nil || closeErr != nil || len(keyData) == 0 || len(keyData) > 1024 {
+		return fmt.Errorf("credential decryption evidence could not load the test key")
 	}
-	return port, nil
+	db, err := storage.NewDB(filepath.Join(dataDir, "goflow.db"))
+	if err != nil {
+		return fmt.Errorf("credential decryption evidence could not open test state")
+	}
+	defer db.Close()
+	store := storage.NewCredentialStore(db, crypto.NewCryptoManager(strings.TrimSpace(string(keyData))))
+	credentials, err := store.ListAll()
+	if err != nil || len(credentials) != 1 || credentials[0].ID != credentialID {
+		return fmt.Errorf("credential decryption evidence found unexpected test state")
+	}
+	decrypted, err := store.GetDecryptedData(credentialID)
+	if err != nil || subtle.ConstantTimeCompare([]byte(decrypted), []byte(secretCanary)) != 1 {
+		return fmt.Errorf("credential decryption evidence did not match")
+	}
+	return nil
 }
 
 func getStatus(url string, want int) error {
