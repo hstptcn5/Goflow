@@ -1,104 +1,146 @@
-# Goflow Roadmap
+# Goflow Product Roadmap
 
-This roadmap describes the current product direction for Goflow. It is directional, not a promise that every item will ship exactly as written.
+Goflow is a local-first workflow automation engine that can turn workflows
+into portable, task-specific applications. This is the canonical product phase
+roadmap. It defines direction and decision boundaries, not delivery dates or a
+promise that every item will ship.
 
-Goflow Community remains a local-first, single-binary workflow automation engine for individuals, homelabs, and small internal deployments. Commercial editions may add team governance, managed operations, premium integrations, and support.
+Current product and edition boundaries are defined in
+[COMMERCIAL.md](COMMERCIAL.md). A phase is not evidence that its named product
+is available; availability must be stated separately in current documentation.
 
-## Product Principles
+## Roadmap Principles
 
-- Keep the Community edition useful for real local and internal automations.
-- Prefer secure defaults, clear docs, and reliable execution before adding broad integration surface.
-- Make workflow creation easier through templates, examples, inline guidance, and predictable node behavior.
-- Keep the runtime simple: one executable, embedded UI, SQLite, and no required external services by default.
-- Treat team, governance, and managed deployment features as commercial candidates.
+- Keep the public execution core useful and preserve capabilities already
+  released under MIT.
+- Separate the Goflow Platform from focused Pack Appliance experiences while
+  keeping one execution foundation.
+- Prove reliability and trust boundaries before commercial packaging.
+- Keep local-first and offline operation deliberate, including any future
+  entitlement and update mechanisms.
+- Require evidence before vendor, pricing, market, or delivery claims.
 
-## Current Preview
+## Phase 0: Product & Commercial Reset
 
-Implemented or substantially in place:
+Outcome:
 
-- Single-binary Go backend with embedded Vue UI.
-- SQLite storage with local credential vault encryption.
-- Cron, webhook, HTTP, AI, database, communication, scripting, logic, sub-workflow, and plugin nodes.
-- AI Assistant workflow generation with validation and repair.
-- Template Gallery with ready-to-import workflows.
-- Bilingual node documentation in `NODES.md`.
-- Backup, release, plugin, commercial, and trademark guidance.
-- Local security hardening for API access, WebSocket access, webhook limits, cleanup, and stale execution recovery.
+- Establish truthful product positioning, current distribution guidance, the
+  Free/Pro/Teams/OEM boundary, monetization principles, and this roadmap.
 
-## Phase 1: Usability and Onboarding
+Non-goals:
 
-Goal: make Goflow easier for new users to understand and use without knowing every node upfront.
+- Product features, billing integration, proprietary code, licensing changes,
+  pricing, releases, installers, or commercial launch.
 
-- First-run setup checklist for API key, master key, credentials, and first template.
-- Credential setup hints directly inside node configuration panels.
-- Better empty states for workflows, executions, credentials, templates, and plugins.
-- Template search, categories, tags, and difficulty labels.
-- One-click sample workflow load for common use cases.
-- Node output schema hints for placeholder discovery.
-- Import validation that explains missing credentials, unsupported nodes, and malformed edges.
-- More screenshots and short docs for common workflows.
+## Phase 1: Community 1.0
 
-## Phase 2: Reliability and Operations
+Outcome:
 
-Goal: make self-hosted use safer and easier to operate over time.
+- Define and meet a stable Community release bar for the existing platform and
+  Pack lifecycle: documented compatibility, dependable installation and
+  upgrade guidance, security review, support boundaries, and trusted release
+  evidence.
 
-- Workflow version history and rollback.
-- Backup and restore UI.
-- Execution search, filtering, and export.
-- Per-node retry policy configuration.
-- Error routing for failed branches.
-- Dead-letter or quarantine workflow pattern for failed webhook payloads.
-- Log export bundle for debugging.
-- Credential rotation helper and stale credential warnings.
-- Health endpoint and basic operational diagnostics.
+Non-goals:
 
-## Phase 3: Plugin and Template Ecosystem
+- Paid entitlements, no-code Pro Builder, production hosted services, Teams, or
+  removal of existing public capabilities.
 
-Goal: let advanced users extend Goflow without changing the core binary.
+## Phase 2: Pro Creator Alpha
 
-- Plugin SDK and local test harness.
-- Plugin manifest validation.
-- Plugin examples for validation, redaction, enrichment, scoring, and alert formatting.
-- Template contribution guidelines.
-- Public examples catalog.
-- Optional node packs for domain-specific integrations.
-- Security model for trusted plugin directories and signed plugin metadata.
+Outcome:
 
-See `CLI_MCP_ROADMAP.md` for the deeper plan to expose Goflow workflows through a CLI and MCP-compatible AI tool interface. See `ROADMAP_PROGRESS.md` for the current implementation timeline and checklist.
+- Validate a separated Pro Creator prototype for visually building focused
+  Pack Appliances, including guided setup schema, branding, launcher metadata,
+  and packaging workflows.
 
-## Phase 4: Team and Pro Foundations
+Non-goals:
 
-Goal: define the commercial boundary without weakening Community.
+- A generally available paid product, production signing, final pricing,
+  automatic updates, Teams, or OEM contracts.
 
-Commercial candidates:
+## Phase 3: Pro Creator Beta And Entitlements
 
-- Multi-user login.
-- Team workspaces.
-- Role-based access control.
-- Audit logs.
-- Workflow approvals.
-- Managed OAuth connectors.
-- Advanced observability dashboards.
-- Encrypted remote backups.
-- Priority support.
-- SSO/OIDC/SAML/SCIM for Enterprise.
-- Hosted Goflow Cloud.
+Outcome:
 
-Community should continue to support single-user self-hosting, workflow building, local credentials, templates, plugins, and common built-in nodes.
+- Test the complete Creator workflow and a reviewed local-first entitlement
+  design, including offline signed entitlement behavior and rollback-safe
+  license-state handling.
 
-## Not Planned Right Now
+Non-goals:
 
-- Turning the Community edition into a multi-tenant SaaS server.
-- Requiring Docker, PostgreSQL, Redis, or Node.js for production runtime.
-- Shipping an unrestricted public plugin marketplace before plugin safety and trust rules are mature.
-- Trying to match every Zapier, Make, or n8n connector before Goflow's local-first core is polished.
+- Embedding provider secrets in binaries, assuming permanent connectivity,
+  declaring RevenueCat selected, or claiming production commercial readiness.
 
-## Contribution Focus
+## Phase 4: Trusted Windows Distribution
 
-The most valuable near-term contributions are:
+Outcome:
 
-- Clear workflow templates with realistic placeholders.
-- Node docs with examples, common errors, and credential instructions.
-- Bug fixes in execution visibility, validation, and import/export behavior.
-- Small focused integrations that fit the local-first model.
-- Plugin examples that demonstrate safe input/output contracts.
+- Establish reproducible Windows packaging, publisher identity, production
+  signing, provenance, explicit update channels, rollback UX, and verified
+  install/uninstall behavior.
+
+Non-goals:
+
+- Shipping unsigned artifacts as stable releases, silent background updates,
+  bypassing operating-system protections, or selecting an unreviewed installer
+  toolchain.
+
+## Phase 5: Private Pack Hub
+
+Outcome:
+
+- Provide controlled Pack distribution with publisher identity, signatures,
+  compatibility metadata, revocation, review, and incident-response rules.
+
+Non-goals:
+
+- An unrestricted public marketplace, trust-on-first-use, native Pack code
+  execution without sandbox review, or treating checksums as authenticity.
+
+## Phase 6: Agent Action Gateway
+
+Outcome:
+
+- Offer policy-controlled agent access to approved workflows and Packs through
+  supported interfaces, with scoped identity, auditability, bounded inputs,
+  and explicit operator authorization.
+
+Non-goals:
+
+- Letting agents edit or execute arbitrary workflows, bypassing workflow
+  security boundaries, or introducing an unbounded hosted agent control plane.
+
+## Phase 7: Teams
+
+Outcome:
+
+- Add shared projects, role-based access, team license administration, audit
+  and governance, and shared Pack distribution after the single-user product
+  and entitlement boundaries are proven.
+
+Non-goals:
+
+- Claiming enterprise compliance by default, weakening local-first operation,
+  or moving existing Community capabilities behind a team plan.
+
+## Phase 8: OEM
+
+Outcome:
+
+- Support negotiated embedding, custom branding and distribution, lifecycle
+  responsibilities, and commercial support through explicit agreements and
+  clear technical boundaries.
+
+Non-goals:
+
+- Granting automatic trademark rights, retroactively changing MIT grants,
+  offering unsupported redistribution, or publishing generic legal terms
+  without ownership and counsel review.
+
+## Decisions Intentionally Open
+
+No delivery dates, prices, refund or tax policies, billing provider, installer
+toolchain, signing authority, hosted-service plan, or OEM terms are selected by
+this roadmap. Those decisions require separate technical, security, legal, and
+commercial evidence.

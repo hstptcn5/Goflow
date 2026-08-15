@@ -462,13 +462,13 @@ See [PACK_AUTHOR_TUTORIAL.md](PACK_AUTHOR_TUTORIAL.md) for a PowerShell and POSI
 
 Operator docs:
 
-- [APPLIANCE_QUICKSTART.md](APPLIANCE_QUICKSTART.md)
+- [BETA_OPERATIONS.md](BETA_OPERATIONS.md)
+- [WINDOWS_PILOT_GUIDE.md](WINDOWS_PILOT_GUIDE.md)
 - [APPLIANCE_TROUBLESHOOTING.md](APPLIANCE_TROUBLESHOOTING.md)
 - [DATA_BACKUP_RESTORE.md](DATA_BACKUP_RESTORE.md)
 - [CREDENTIAL_ROTATION.md](CREDENTIAL_ROTATION.md)
 - [DAILYOPS_DEMO_GUIDE.md](DAILYOPS_DEMO_GUIDE.md)
 - [DEVELOPMENT_ARTIFACTS.md](DEVELOPMENT_ARTIFACTS.md)
-- [PILOT_GUIDE.md](PILOT_GUIDE.md)
 
 ## Run
 
@@ -557,7 +557,19 @@ and governance limitations are defined in [PACK_SIGNING.md](PACK_SIGNING.md).
 
 ## Development Artifacts
 
-GitHub Actions may produce unsigned alpha artifacts only from the manual `workflow_dispatch` path. Artifact names must include `UNSIGNED-DEVELOPMENT-ALPHA`, include SHA-256 checksum files and deterministic build metadata, and must not create tags, GitHub Releases, installers, signatures, or latest-version pointers.
+Full CI runs for code or workflow changes may produce the native Windows
+DailyOps pilot artifact named
+`UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64`. It is an unsigned,
+temporary Beta evaluation artifact tied to an exact commit and workflow run. It
+is not a stable release, installer, signed distribution, or vendor-compatibility
+claim.
+
+The separate manual `workflow_dispatch` path may produce multi-platform
+development artifacts named `UNSIGNED-DEVELOPMENT-ALPHA`. Those artifacts are
+also temporary and unsigned. The Alpha marker identifies that development
+artifact channel; it does not change the current Productization Beta status or
+make the artifacts releases. Neither path creates tags, GitHub Releases,
+installers, signatures, or latest-version pointers.
 
 Development artifacts inherit the repository artifact retention policy configured in GitHub Actions. They are temporary CI outputs for pilot verification, not production releases or authenticity claims. Before acceptance, generated artifact members and extracted contents are scanned for canary secrets, local paths, usernames, hostnames, database/key files, `.env`, and unlisted runtime state.
 

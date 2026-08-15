@@ -1,6 +1,7 @@
 # Goflow
 
-Local-first workflow automation and portable workflow appliances in a single Go binary.
+A local-first workflow automation engine that can turn workflows into portable,
+task-specific applications.
 
 [![CI](https://github.com/hstptcn5/Goflow/actions/workflows/ci.yml/badge.svg)](https://github.com/hstptcn5/Goflow/actions/workflows/ci.yml)
 [![Go 1.25.13](https://img.shields.io/badge/Go-1.25.13-00ADD8?logo=go&logoColor=white)](go.mod)
@@ -207,6 +208,7 @@ alternatives.
 | Windows appliance | [Windows pilot guide](docs/WINDOWS_PILOT_GUIDE.md) |
 | Architecture | [Architecture](docs/ARCHITECTURE.md) |
 | Development | [Development](docs/DEVELOPMENT.md) |
+| Product and commercial direction | [Commercial direction](COMMERCIAL.md), [roadmap](ROADMAP.md) |
 
 ## Current Limitations
 

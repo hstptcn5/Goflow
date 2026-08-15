@@ -2,23 +2,27 @@
 
 Goflow runs as a single Go binary with an embedded Web UI.
 
-## Download A Release
+## Current Distribution Status
 
-Download the latest archive from GitHub Releases, extract it, then run:
+Goflow does not currently publish a stable GitHub Release, installer, signed
+binary, or `latest` download. Build the platform from source for normal local
+development and evaluation.
 
-```bash
-./goflow serve
-```
+GitHub Actions can also produce temporary unsigned CI artifacts tied to an
+exact workflow run and commit. The native Windows pilot artifact is named
+`UNSIGNED-PILOT-BETA-goflow-dailyops-windows-amd64`. It is a Beta evaluation
+artifact for the focused DailyOps appliance, not a stable Goflow release,
+installer, publisher-authentic binary, or general update channel. Artifact
+availability and retention depend on GitHub Actions; obtain one only from a
+trusted pilot coordinator who provides the exact run, commit, and checksum.
 
-On Windows PowerShell:
-
-```powershell
-.\goflow.exe serve
-```
-
-Open `http://127.0.0.1:8080`.
+See [Windows pilot guide](WINDOWS_PILOT_GUIDE.md) and
+[Beta limitations](BETA_LIMITATIONS.md) before evaluating that artifact. Do not
+disable SmartScreen or other security controls to run unsigned software.
 
 ## Build From Source
+
+Requirement: Go `1.25.13`, matching the repository's `go.mod`.
 
 ```bash
 git clone https://github.com/hstptcn5/Goflow.git
@@ -35,6 +39,8 @@ cd Goflow
 go build -o goflow.exe main.go static_embed.go
 .\goflow.exe serve
 ```
+
+Open `http://127.0.0.1:8080`.
 
 ## Useful Environment Variables
 
