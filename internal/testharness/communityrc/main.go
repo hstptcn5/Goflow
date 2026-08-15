@@ -32,13 +32,16 @@ import (
 )
 
 const (
-	secretCanary       = "community-rc-secret-canary-7d95d4"
+	secretCanary       = "community-stable-secret-canary-7d95d4"
 	maxStartupLogBytes = 64 << 10
+	rcSourceVersion    = "1.0.0-rc.1"
+	rcSourceChannel    = "community-rc"
+	rcSourceCommit     = "0fdf961ecf67a6ec903d6555b48f67d937728a08"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fatal("mode is required: build, verify, smoke, or upgrade")
+		fatal("mode is required: build, verify, smoke, upgrade, or backup-restore")
 	}
 	var err error
 	switch os.Args[1] {
@@ -50,6 +53,8 @@ func main() {
 		err = smoke(os.Args[2:])
 	case "upgrade":
 		err = upgrade(os.Args[2:])
+	case "backup-restore":
+		err = backupRestore(os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown mode %q", os.Args[1])
 	}
@@ -149,16 +154,19 @@ func smoke(args []string) error {
 
 func upgrade(args []string) error {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
-	baseRuntime := fs.String("base-runtime", "", "runtime built from exact beta commit")
-	baseCommit := fs.String("base-commit", "", "exact beta commit")
+	baseRuntime := fs.String("base-runtime", "", "runtime built from exact RC commit")
+	baseCommit := fs.String("base-commit", "", "exact RC commit")
 	archive := fs.String("archive", "", "candidate archive")
 	commit := fs.String("commit", "", "candidate commit")
 	target := fs.String("target", "linux-amd64", "candidate target")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if len(*baseCommit) != 40 {
-		return fmt.Errorf("base commit must be a full SHA")
+	if *baseCommit != rcSourceCommit {
+		return fmt.Errorf("base commit must be exact RC source %s", rcSourceCommit)
+	}
+	if err := verifyExactVersionCommand(*baseRuntime, buildinfo.Info{Version: rcSourceVersion, Channel: rcSourceChannel, Commit: rcSourceCommit, Target: *target}); err != nil {
+		return fmt.Errorf("RC runtime identity: %w", err)
 	}
 	if err := communityartifact.VerifyChecksumFile(*archive, *archive+".sha256"); err != nil {
 		return err
@@ -180,10 +188,13 @@ func upgrade(args []string) error {
 	defer os.RemoveAll(dataDir)
 	workflowID, credentialID, err := exerciseRuntime(*baseRuntime, dataDir, true)
 	if err != nil {
-		return fmt.Errorf("beta runtime: %w", err)
+		return fmt.Errorf("RC runtime: %w", err)
 	}
 	if err := exerciseRestart(candidate, dataDir, workflowID, credentialID); err != nil {
-		return fmt.Errorf("RC runtime over beta data: %w", err)
+		return fmt.Errorf("Stable runtime over RC data: %w", err)
+	}
+	if err := exerciseRestart(candidate, dataDir, workflowID, credentialID); err != nil {
+		return fmt.Errorf("Stable second restart over RC data: %w", err)
 	}
 	if err := rejectPlaintext(dataDir, secretCanary); err != nil {
 		return err
@@ -204,6 +215,80 @@ func upgrade(args []string) error {
 		return fmt.Errorf("failed startup leaked credential plaintext")
 	}
 	fmt.Printf("upgrade=success base_commit=%s workflow=%s credential=decrypted corrupt_migration=failed-closed\n", *baseCommit, workflowID)
+	return nil
+}
+
+func backupRestore(args []string) error {
+	archive, expected, err := acceptanceFlags("backup-restore", args)
+	if err != nil {
+		return err
+	}
+	if err := communityartifact.VerifyChecksumFile(archive, archive+".sha256"); err != nil {
+		return err
+	}
+	metadata, err := communityartifact.Verify(archive, expected)
+	if err != nil {
+		return err
+	}
+	appDir, cleanup, err := extractArtifact(archive)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	runtimePath := filepath.Join(appDir, metadata.RuntimePath())
+	if err := verifyVersionCommand(runtimePath, *metadata); err != nil {
+		return err
+	}
+	sourceDir, err := os.MkdirTemp("", "goflow-community-backup-source-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(sourceDir)
+	workflowID, credentialID, err := exerciseRuntime(runtimePath, sourceDir, true)
+	if err != nil {
+		return fmt.Errorf("create stopped backup source: %w", err)
+	}
+	backupDir, err := os.MkdirTemp("", "goflow-community-backup-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(backupDir)
+	for _, name := range []string{"goflow.db", "goflow.master.key"} {
+		if err := copyRegularFile(filepath.Join(sourceDir, name), filepath.Join(backupDir, name)); err != nil {
+			return fmt.Errorf("back up stopped state: %w", err)
+		}
+	}
+	restoredDir, err := restoreFiles(backupDir, "goflow.db", "goflow.master.key")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(restoredDir)
+	if err := exerciseRestart(runtimePath, restoredDir, workflowID, credentialID); err != nil {
+		return fmt.Errorf("restored state: %w", err)
+	}
+	if err := exerciseRestart(runtimePath, restoredDir, workflowID, credentialID); err != nil {
+		return fmt.Errorf("restored state second restart: %w", err)
+	}
+	dbOnlyDir, err := restoreFiles(backupDir, "goflow.db")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dbOnlyDir)
+	if err := verifyPartialRestore(runtimePath, dbOnlyDir, workflowID, credentialID, true); err != nil {
+		return fmt.Errorf("database-only restore: %w", err)
+	}
+	keyOnlyDir, err := restoreFiles(backupDir, "goflow.master.key")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(keyOnlyDir)
+	if err := verifyPartialRestore(runtimePath, keyOnlyDir, workflowID, credentialID, false); err != nil {
+		return fmt.Errorf("key-only restore: %w", err)
+	}
+	if err := rejectPlaintext(appDir, secretCanary); err != nil {
+		return err
+	}
+	fmt.Printf("backup_restore=success workflow=%s credential=decrypted database_only=failed-safe key_only=failed-safe stopped_runtime=true\n", workflowID)
 	return nil
 }
 
@@ -273,6 +358,10 @@ func assertExactAppDir(dir, runtimeName string) error {
 }
 
 func verifyVersionCommand(path string, metadata communityartifact.Metadata) error {
+	return verifyExactVersionCommand(path, buildinfo.Info{Version: metadata.Version, Channel: metadata.Channel, Commit: metadata.Commit, Target: metadata.Target})
+}
+
+func verifyExactVersionCommand(path string, expected buildinfo.Info) error {
 	cmd := exec.Command(path, "version", "--output", "json")
 	out, err := cmd.Output()
 	if err != nil {
@@ -282,7 +371,10 @@ func verifyVersionCommand(path string, metadata communityartifact.Metadata) erro
 	if err := json.Unmarshal(out, &info); err != nil {
 		return err
 	}
-	return info.ValidateOfficial(metadata.Version, metadata.Commit, metadata.Target)
+	if info.Version != expected.Version || info.Channel != expected.Channel || info.Commit != expected.Commit || info.Target != expected.Target {
+		return fmt.Errorf("runtime identity mismatch: got version=%q channel=%q commit=%q target=%q", info.Version, info.Channel, info.Commit, info.Target)
+	}
+	return nil
 }
 
 type process struct {
@@ -479,12 +571,18 @@ func exerciseRestart(path, dataDir, workflowID, credentialID string) error {
 	if len(workflows) != 1 {
 		return fmt.Errorf("workflow duplicated or missing after restart: count=%d", len(workflows))
 	}
+	if id, _ := workflows[0]["id"].(string); id != workflowID {
+		return fmt.Errorf("workflow identity changed after restart")
+	}
 	var credentials []map[string]any
 	if err := getJSON(origin+"/api/v1/credentials", &credentials); err != nil {
 		return err
 	}
 	if len(credentials) != 1 {
 		return fmt.Errorf("credential duplicated or missing after restart: count=%d", len(credentials))
+	}
+	if id, _ := credentials[0]["id"].(string); id != credentialID {
+		return fmt.Errorf("credential identity changed after restart")
 	}
 	if err := stopRuntime(p); err != nil {
 		return err
@@ -584,6 +682,80 @@ func rejectPlaintext(root, canary string) error {
 	})
 }
 
+func restoreFiles(backupDir string, names ...string) (string, error) {
+	dest, err := os.MkdirTemp("", "goflow-community-restore-*")
+	if err != nil {
+		return "", err
+	}
+	for _, name := range names {
+		if err := copyRegularFile(filepath.Join(backupDir, name), filepath.Join(dest, name)); err != nil {
+			os.RemoveAll(dest)
+			return "", err
+		}
+	}
+	return dest, nil
+}
+
+func copyRegularFile(source, destination string) error {
+	info, err := os.Lstat(source)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("backup source %q is not a regular file", filepath.Base(source))
+	}
+	data, err := os.ReadFile(source)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(destination, data, 0600)
+}
+
+func verifyPartialRestore(runtimePath, dataDir, workflowID, credentialID string, databaseOnly bool) error {
+	p, origin, err := startRuntime(runtimePath, dataDir)
+	if err != nil {
+		return fmt.Errorf("runtime did not start safely for inspection: %w", err)
+	}
+	defer func() {
+		if p != nil {
+			_ = stopRuntime(p)
+		}
+	}()
+	var workflows []map[string]any
+	if err := getJSON(origin+"/api/v1/workflows", &workflows); err != nil {
+		return err
+	}
+	var credentials []map[string]any
+	if err := getJSON(origin+"/api/v1/credentials", &credentials); err != nil {
+		return err
+	}
+	if databaseOnly {
+		if len(workflows) != 1 || workflows[0]["id"] != workflowID {
+			return fmt.Errorf("database-only restore changed workflow identity")
+		}
+		if len(credentials) != 1 || credentials[0]["id"] != credentialID {
+			return fmt.Errorf("database-only restore changed credential identity")
+		}
+	} else {
+		if len(workflows) != 0 || len(credentials) != 0 {
+			return fmt.Errorf("key-only restore unexpectedly recovered state")
+		}
+		if err := getStatus(origin+"/api/v1/workflows/"+workflowID, http.StatusNotFound); err != nil {
+			return fmt.Errorf("key-only restore exposed original workflow: %w", err)
+		}
+	}
+	if err := stopRuntime(p); err != nil {
+		return err
+	}
+	p = nil
+	if databaseOnly {
+		if err := verifyCredentialAtRest(dataDir, credentialID); err == nil {
+			return fmt.Errorf("database-only restore decrypted credential without the backed-up key")
+		}
+	}
+	return rejectPlaintext(dataDir, secretCanary)
+}
+
 func copyDataDir(source string) (string, error) {
 	dest, err := os.MkdirTemp("", "goflow-community-corrupt-*")
 	if err != nil {
@@ -639,4 +811,7 @@ func expectStartupFailure(path, dataDir string) (string, error) {
 	return string(output), nil
 }
 
-func fatal(message string) { fmt.Fprintln(os.Stderr, "community RC harness:", message); os.Exit(1) }
+func fatal(message string) {
+	fmt.Fprintln(os.Stderr, "community release harness:", message)
+	os.Exit(1)
+}

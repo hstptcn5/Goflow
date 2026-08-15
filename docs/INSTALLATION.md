@@ -2,20 +2,21 @@
 
 Goflow runs as a single Go binary with an embedded Web UI.
 
-## Community 1.0 RC Artifacts
+## Community 1.0 Stable Candidate Artifacts
 
-Goflow `1.0.0-rc.1` prepares temporary unsigned Community Platform artifacts in
-exact-head CI. It does not publish a stable GitHub Release, installer, signed
-binary, or `latest` download.
+Goflow `1.0.0` is being prepared with temporary unsigned Community Stable
+artifacts in exact-head CI. It has not been published as a stable GitHub
+Release and provides no installer, signed binary, automatic update channel, or
+`latest` download.
 
 The five expected Actions artifact names are:
 
 ```text
-UNSIGNED-COMMUNITY-RC-goflow-linux-amd64
-UNSIGNED-COMMUNITY-RC-goflow-linux-arm64
-UNSIGNED-COMMUNITY-RC-goflow-windows-amd64
-UNSIGNED-COMMUNITY-RC-goflow-darwin-amd64
-UNSIGNED-COMMUNITY-RC-goflow-darwin-arm64
+UNSIGNED-COMMUNITY-STABLE-goflow-linux-amd64
+UNSIGNED-COMMUNITY-STABLE-goflow-linux-arm64
+UNSIGNED-COMMUNITY-STABLE-goflow-windows-amd64
+UNSIGNED-COMMUNITY-STABLE-goflow-darwin-amd64
+UNSIGNED-COMMUNITY-STABLE-goflow-darwin-arm64
 ```
 
 To evaluate one, obtain the exact expected workflow run, commit, target ZIP, and
@@ -23,7 +24,7 @@ adjacent `.sha256` file. The checksum file must contain exactly the lowercase
 SHA-256 and exact ZIP basename; verify it before extraction. Then inspect the
 sorted member inventory in `COMMUNITY_ARTIFACT.json`, which binds the exact
 path, size, and SHA-256 of the runtime, `README.txt`, and `LICENSE`. Run
-`goflow version --output json`; marker, version, `community-rc` channel, exact
+`goflow version --output json`; marker, version, `community-stable` channel, exact
 commit, and target must agree. These checks establish integrity for identified
 bytes, not publisher authenticity. Do not disable operating-system security
 controls to run an unsigned candidate.

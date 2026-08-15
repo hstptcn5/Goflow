@@ -18,10 +18,12 @@ Full pull-request CI for code or workflow changes runs:
 - Multi-platform runtime build matrix.
 
 Normal pull-request and main runs for code changes also build the five generic
-Community RC artifacts named `UNSIGNED-COMMUNITY-RC-goflow-<target>`. Each
-contains only the platform runtime, bounded metadata, README, and LICENSE plus
-an adjacent archive checksum. The canonical Linux target receives deterministic
-double-build, extracted-platform restart, and exact-base upgrade checks.
+Community Stable candidate artifacts named
+`UNSIGNED-COMMUNITY-STABLE-goflow-<target>`. Each contains only the platform
+runtime, bounded metadata, README, and LICENSE plus an adjacent archive
+checksum. The canonical Linux target receives deterministic double-build,
+extracted-platform restart, exact RC-to-Stable upgrade, and stopped
+backup/restore checks.
 
 For code or workflow changes, full CI also verifies and uploads the native
 Windows DailyOps artifact:
@@ -40,7 +42,7 @@ Manual `workflow_dispatch` additionally uploads artifacts named:
 UNSIGNED-DEVELOPMENT-ALPHA-goflow-<goos>-<goarch>
 ```
 
-The manual workflow does not package or upload Community RC artifacts and must
+The manual workflow does not package or upload Community Stable artifacts and must
 not create tags, GitHub Releases, installers, signatures, or latest-version
 pointers.
 
@@ -53,8 +55,8 @@ Beta. Do not use `workflow_dispatch` merely to obtain a general release.
 1. Download the artifact from the exact GitHub Actions run.
 2. Confirm the exact expected channel: `UNSIGNED-PILOT-BETA` for the native
    Windows pilot or `UNSIGNED-DEVELOPMENT-ALPHA` for manual multi-platform
-   development artifacts. For Community RC, require
-   `UNSIGNED-COMMUNITY-RC`, the exact commit, and the expected target in
+   development artifacts. For Community Stable candidates, require
+   `UNSIGNED-COMMUNITY-STABLE`, the exact commit, and the expected target in
    `COMMUNITY_ARTIFACT.json`.
 3. Extract it into a temporary directory.
 4. Check the matching `UNSIGNED-PILOT-BETA.txt` or

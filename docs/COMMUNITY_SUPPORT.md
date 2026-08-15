@@ -3,9 +3,9 @@
 Goflow Community support is best effort. There is no response-time, resolution,
 availability, or maintenance SLA.
 
-During the Community RC phase, support and compatibility work targets the
-current `1.0.0-rc.x` candidate and the documented upgrade path from the exact
-merged Beta base. Older development snapshots, modified binaries, unsupported
+During stable-candidate preparation, support and compatibility work targets
+`1.0.0` and the documented upgrade path from exact tag `v1.0.0-rc.1`. Older
+development snapshots, modified binaries, unsupported
 database schemas, custom forks, and unlisted platforms may still receive useful
 guidance but are outside the acceptance boundary.
 

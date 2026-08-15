@@ -19,10 +19,10 @@ import (
 )
 
 const (
-	ArtifactMarker   = "UNSIGNED-COMMUNITY-RC"
+	ArtifactMarker   = "UNSIGNED-COMMUNITY-STABLE"
 	SchemaVersion    = 1
-	ReleaseVersion   = buildinfo.CommunityRCVersion
-	ReleaseChannel   = "community-rc"
+	ReleaseVersion   = buildinfo.CommunityStableVersion
+	ReleaseChannel   = buildinfo.CommunityStableChannel
 	MaxArchiveBytes  = 300 << 20
 	MaxRuntimeBytes  = 256 << 20
 	MaxMetadataBytes = 64 << 10
@@ -564,5 +564,5 @@ func verifyExecutableTarget(data []byte, target string) error {
 }
 
 func readme(runtime string) string {
-	return "Goflow Community 1.0 Release Candidate\n\nRun .\\goflow.exe on Windows or ./" + runtime + " on Linux/macOS.\nData is stored outside this directory when GOFLOW_DB_PATH and GOFLOW_MASTER_KEY_FILE are configured.\nThis archive is unsigned and does not claim publisher authenticity. Verify the adjacent SHA-256 checksum before use.\n"
+	return "Goflow Community 1.0 Stable Candidate\n\nRun .\\goflow.exe on Windows or ./" + runtime + " on Linux/macOS.\nData is stored outside this directory when GOFLOW_DB_PATH and GOFLOW_MASTER_KEY_FILE are configured.\nThis archive is unsigned and does not claim publisher authenticity. Verify the adjacent SHA-256 checksum before use.\n"
 }

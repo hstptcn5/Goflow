@@ -393,14 +393,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/community-runtime" dist
-          channel="community-rc"
+          channel="community-stable"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             channel="development"
           fi
           ldflags="-s -w -X goflow/internal/buildinfo.BuildVersion=$GOFLOW_RELEASE_VERSION -X goflow/internal/buildinfo.BuildChannel=$channel -X goflow/internal/buildinfo.BuildCommit=$GOFLOW_CI_COMMIT -X goflow/internal/buildinfo.BuildTarget=${{ matrix.goos }}-${{ matrix.goarch }}"
           go build -trimpath -ldflags="$ldflags" -o "$RUNNER_TEMP/community-runtime/goflow${{ matrix.ext }}" main.go static_embed.go
 
-      - name: Build and verify Community RC artifact
+      - name: Build and verify Community Stable artifact
         if: github.event_name != 'workflow_dispatch'
         run: |
           set -euo pipefail
@@ -438,31 +438,43 @@ jobs:
             --commit "$GOFLOW_CI_COMMIT" \
             --target linux-amd64
 
-      - name: Run exact Beta-to-RC upgrade compatibility test
+      - name: Run stopped backup and restore acceptance test
         if: github.event_name != 'workflow_dispatch' && matrix.goos == 'linux' && matrix.goarch == 'amd64'
-        env:
-          GOFLOW_BETA_BASE_COMMIT: 66fe7993f99aeac32339324dd07f58f47ad1f940
         run: |
-          set -euo pipefail
-          base_source="$RUNNER_TEMP/goflow-beta-source"
-          mkdir -p "$base_source"
-          git archive "$GOFLOW_BETA_BASE_COMMIT" | tar -xf - -C "$base_source"
-          (
-            cd "$base_source"
-            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/goflow-beta" main.go static_embed.go
-          )
-          go run ./internal/testharness/communityrc upgrade \
-            --base-runtime "$RUNNER_TEMP/goflow-beta" \
-            --base-commit "$GOFLOW_BETA_BASE_COMMIT" \
+          go run ./internal/testharness/communityrc backup-restore \
             --archive "dist/goflow-community-${GOFLOW_RELEASE_VERSION}-linux-amd64.zip" \
             --commit "$GOFLOW_CI_COMMIT" \
             --target linux-amd64
 
-      - name: Upload Community RC artifact
+      - name: Run exact RC-to-Stable upgrade compatibility test
+        if: github.event_name != 'workflow_dispatch' && matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        env:
+          GOFLOW_RC_TAG: v1.0.0-rc.1
+          GOFLOW_RC_BASE_COMMIT: 0fdf961ecf67a6ec903d6555b48f67d937728a08
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "$GOFLOW_RC_TAG^{commit}")" = "$GOFLOW_RC_BASE_COMMIT"
+          base_source="$RUNNER_TEMP/goflow-rc-source"
+          mkdir -p "$base_source"
+          git archive "$GOFLOW_RC_TAG^{tree}" | tar -xf - -C "$base_source"
+          (
+            cd "$base_source"
+            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+              -ldflags="-s -w -X goflow/internal/buildinfo.BuildVersion=1.0.0-rc.1 -X goflow/internal/buildinfo.BuildChannel=community-rc -X goflow/internal/buildinfo.BuildCommit=$GOFLOW_RC_BASE_COMMIT -X goflow/internal/buildinfo.BuildTarget=linux-amd64" \
+              -o "$RUNNER_TEMP/goflow-rc" main.go static_embed.go
+          )
+          go run ./internal/testharness/communityrc upgrade \
+            --base-runtime "$RUNNER_TEMP/goflow-rc" \
+            --base-commit "$GOFLOW_RC_BASE_COMMIT" \
+            --archive "dist/goflow-community-${GOFLOW_RELEASE_VERSION}-linux-amd64.zip" \
+            --commit "$GOFLOW_CI_COMMIT" \
+            --target linux-amd64
+
+      - name: Upload Community Stable artifact
         if: github.event_name != 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: UNSIGNED-COMMUNITY-RC-goflow-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: UNSIGNED-COMMUNITY-STABLE-goflow-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
             dist/goflow-community-*-${{ matrix.goos }}-${{ matrix.goarch }}.zip
             dist/goflow-community-*-${{ matrix.goos }}-${{ matrix.goarch }}.zip.sha256

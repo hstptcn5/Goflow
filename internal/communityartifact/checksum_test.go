@@ -11,7 +11,7 @@ import (
 
 func TestVerifyChecksumFile(t *testing.T) {
 	dir := t.TempDir()
-	archive := filepath.Join(dir, "goflow-community-1.0.0-rc.1-linux-amd64.zip")
+	archive := filepath.Join(dir, "goflow-community-1.0.0-linux-amd64.zip")
 	data := []byte("archive bytes")
 	if err := os.WriteFile(archive, data, 0600); err != nil {
 		t.Fatal(err)

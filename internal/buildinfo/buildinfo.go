@@ -7,9 +7,9 @@ import (
 )
 
 const (
-	DevelopmentChannel = "development"
-	CommunityRCChannel = "community-rc"
-	CommunityRCVersion = "1.0.0-rc.1"
+	DevelopmentChannel     = "development"
+	CommunityStableChannel = "community-stable"
+	CommunityStableVersion = "1.0.0"
 )
 
 // These values are populated for official builds with -ldflags -X. Empty values
@@ -32,14 +32,14 @@ type Info struct {
 func Current(embeddedVersion string) Info {
 	version := bounded("", strings.TrimSpace(embeddedVersion), "development")
 	target := CurrentTarget()
-	if BuildVersion == CommunityRCVersion &&
-		BuildChannel == CommunityRCChannel &&
+	if BuildVersion == CommunityStableVersion &&
+		BuildChannel == CommunityStableChannel &&
 		validCommit(BuildCommit) &&
 		validTarget(BuildTarget) &&
 		BuildTarget == target {
 		return Info{
 			Version:   BuildVersion,
-			Channel:   CommunityRCChannel,
+			Channel:   CommunityStableChannel,
 			Commit:    strings.ToLower(BuildCommit),
 			Target:    target,
 			GoVersion: runtime.Version(),
@@ -53,7 +53,7 @@ func CurrentTarget() string {
 }
 
 func (i Info) ValidateOfficial(version, commit, target string) error {
-	if target != CurrentTarget() || i.Target != CurrentTarget() || i.Version != version || i.Channel != CommunityRCChannel || i.Commit != strings.ToLower(commit) {
+	if target != CurrentTarget() || i.Target != CurrentTarget() || i.Version != version || i.Channel != CommunityStableChannel || i.Commit != strings.ToLower(commit) {
 		return fmt.Errorf("runtime identity mismatch: got version=%q channel=%q commit=%q target=%q", i.Version, i.Channel, i.Commit, i.Target)
 	}
 	return nil

@@ -47,8 +47,8 @@ has this stable schema:
 
 ```json
 {
-  "version": "1.0.0-rc.1",
-  "channel": "community-rc",
+  "version": "1.0.0",
+  "channel": "community-stable",
   "commit": "0123456789abcdef0123456789abcdef01234567",
   "target": "linux-amd64",
   "go_version": "go1.25.13"

@@ -5,7 +5,7 @@ task-specific applications.
 
 [![CI](https://github.com/hstptcn5/Goflow/actions/workflows/ci.yml/badge.svg)](https://github.com/hstptcn5/Goflow/actions/workflows/ci.yml)
 [![Go 1.25.13](https://img.shields.io/badge/Go-1.25.13-00ADD8?logo=go&logoColor=white)](go.mod)
-[![Status: Community RC](https://img.shields.io/badge/status-Community%201.0%20RC-f59e0b)](docs/COMMUNITY_RELEASE_POLICY.md)
+[![Status: Community 1.0 Stable Candidate](https://img.shields.io/badge/status-Community%201.0%20Stable%20Candidate-f59e0b)](docs/COMMUNITY_RELEASE_POLICY.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 
 Goflow combines four parts in one local-first platform:
@@ -20,8 +20,11 @@ Node.js runtime, external database, or separate frontend server. Workflows,
 execution history, setup state, and encrypted credentials remain local unless a
 workflow explicitly sends data elsewhere.
 
-Community `1.0.0-rc.1` is an unsigned release candidate, not a stable GitHub
-Release. See the [release policy](docs/COMMUNITY_RELEASE_POLICY.md),
+Community `1.0.0` is being prepared as an unsigned stable candidate; it has not
+been published as a stable GitHub Release. The preceding RC was successfully
+evaluated on three anonymous Windows devices according to owner-reported field
+results. Linux and macOS remain CI-verified only. See the
+[release policy](docs/COMMUNITY_RELEASE_POLICY.md),
 [installation guide](docs/INSTALLATION.md), and
 [upgrade guide](docs/COMMUNITY_UPGRADE.md).
 
@@ -218,12 +221,13 @@ alternatives.
 
 ## Current Limitations
 
-- Goflow Community `1.0.0-rc.1` is prerelease software.
-- Windows pilot artifacts are unsigned.
-- There is no installer or production Release channel.
+- Goflow Community `1.0.0` is being prepared and is not yet published.
+- Community Stable candidate and Windows pilot artifacts are unsigned.
+- There is no installer, code signing, automatic update channel, or SLA.
 - The supported operating boundary is trusted local or small internal use.
 - Pack Run does not execute packaged plugins.
 - There is no production marketplace, registry, or hosted control plane.
+- Pro Creator, billing, Teams, OEM, and hosted services remain future work.
 
 See [Beta limitations](docs/BETA_LIMITATIONS.md) for the maintained boundary.
 

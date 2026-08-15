@@ -1,7 +1,8 @@
-# Community RC Upgrade Guide
+# Community 1.0 Upgrade Guide
 
-This guide covers evaluation of Goflow `1.0.0-rc.1` from the merged Beta base
-`66fe7993f99aeac32339324dd07f58f47ad1f940`.
+This guide covers evaluation of the Goflow `1.0.0` stable candidate from the
+exact `v1.0.0-rc.1` source at
+`0fdf961ecf67a6ec903d6555b48f67d937728a08`.
 
 1. Stop Goflow cleanly. Do not copy a live SQLite database.
 2. Locate the external data directory containing `goflow.db` and
@@ -10,7 +11,8 @@ This guide covers evaluation of Goflow `1.0.0-rc.1` from the merged Beta base
    matching master key together, and never overwrite the only backup.
 4. Download the candidate from the expected exact-head GitHub Actions run.
 5. Verify the outer `.sha256` file, then inspect `COMMUNITY_ARTIFACT.json` for
-   marker `UNSIGNED-COMMUNITY-RC`, version, channel, exact commit, and target.
+   marker `UNSIGNED-COMMUNITY-STABLE`, version `1.0.0`, channel
+   `community-stable`, exact commit, and target.
 6. Extract the candidate into a new empty application directory. Do not extract
    it over the previous runtime.
 7. Copy the backup to a disposable test data directory and configure

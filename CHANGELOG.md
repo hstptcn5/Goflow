@@ -6,8 +6,8 @@ All notable changes to Goflow are tracked here.
 
 ### Added
 
-- Community `1.0.0-rc.1` build identity with offline `goflow version` table and JSON output.
-- Deterministic unsigned generic Platform bundles for five targets, strict byte-level verification, extracted-runtime smoke, restart persistence, and exact-base Beta-to-RC upgrade checks.
+- Community `1.0.0` stable-candidate build identity with offline `goflow version` table and JSON output.
+- Deterministic unsigned Community Stable bundles for five targets, strict byte-level verification, extracted-runtime smoke, restart persistence, exact RC-to-Stable upgrade checks, and stopped backup/restore acceptance.
 - Community release, upgrade, support, security-reporting, and artifact-installation policies.
 
 - Vue Router app shell with durable pages for Workflows, Workflow Editor, Executions, Credentials, Templates, Nodes, Settings, and Help.

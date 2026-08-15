@@ -10,7 +10,7 @@ import (
 
 func TestVersionJSONIsStableAndOffline(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	info := buildinfo.Info{Version: "1.0.0-rc.1", Channel: "community-rc", Commit: "0123456789abcdef0123456789abcdef01234567", Target: "linux-amd64", GoVersion: "go1.test"}
+	info := buildinfo.Info{Version: "1.0.0", Channel: "community-stable", Commit: "0123456789abcdef0123456789abcdef01234567", Target: "linux-amd64", GoVersion: "go1.test"}
 	code := (Runner{Stdout: &stdout, Stderr: &stderr, BuildInfo: info}).Run([]string{"version", "--output", "json"})
 	if code != ExitOK || stderr.Len() != 0 {
 		t.Fatalf("code=%d stderr=%q", code, stderr.String())
