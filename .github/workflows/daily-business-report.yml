@@ -1,0 +1,75 @@
+name: Daily Business Report Pilot
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'examples/packs/daily-business-report/**'
+      - 'internal/pack/**'
+      - 'internal/packsetup/**'
+      - 'internal/nodes/**'
+      - 'internal/engine/**'
+      - 'internal/api/appliance*'
+      - 'ui/src/components/ApplianceApp.vue'
+      - 'ui/package.json'
+      - 'ui/package-lock.json'
+      - 'scripts/build-daily-business-report.ps1'
+      - 'docs/DAILY_BUSINESS_REPORT_*.md'
+      - '.github/workflows/daily-business-report.yml'
+      - 'main.go'
+      - 'static_embed.go'
+      - 'VERSION'
+
+env:
+  GOFLOW_CHECKPOINT_G_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+
+permissions:
+  contents: read
+
+jobs:
+  windows-pilot:
+    name: Windows flagship artifact
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GOFLOW_CHECKPOINT_G_COMMIT }}
+          fetch-depth: 0
+
+      - name: Verify exact checkout
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne $env:GOFLOW_CHECKPOINT_G_COMMIT) {
+            throw 'checkout does not match requested commit'
+          }
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build and verify Windows pilot
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path checkpoint-g-artifact | Out-Null
+          .\scripts\build-daily-business-report.ps1 `
+            -OutputDirectory (Resolve-Path checkpoint-g-artifact).Path `
+            -Commit $env:GOFLOW_CHECKPOINT_G_COMMIT
+
+      - name: Upload verified pilot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UNSIGNED-PILOT-BETA-goflow-daily-business-report-windows-amd64
+          path: checkpoint-g-artifact/**
+          if-no-files-found: error
+          retention-days: 14
