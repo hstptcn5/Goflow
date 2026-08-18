@@ -41,7 +41,6 @@
       "description": "Chat, group, or channel that should receive the daily report.",
       "type": "string",
       "required": true,
-      "default": "@daily_business_report_demo",
       "min_length": 1,
       "max_length": 120
     },
