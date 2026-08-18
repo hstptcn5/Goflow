@@ -12,8 +12,13 @@ if ([string]::IsNullOrWhiteSpace($version)) { throw 'Daily Business Report pack 
 $sourcePath = Join-Path $PSScriptRoot 'build-daily-business-report.ps1'
 $generatedPath = Join-Path $PSScriptRoot '.build-daily-business-report-current.generated.ps1'
 $source = Get-Content -Raw -LiteralPath $sourcePath
-$source = $source -replace "\$PackVersion = '0\.9\.0'", "`$PackVersion = '$version'"
-if ($source -notmatch [regex]::Escape("`$PackVersion = '$version'")) {
+$oldLine = '$PackVersion = ''0.9.0'''
+$newLine = '$PackVersion = ''' + $version + ''''
+if (-not $source.Contains($oldLine)) {
+    throw 'could not find the legacy PackVersion assignment in the artifact builder'
+}
+$source = $source.Replace($oldLine, $newLine)
+if (-not $source.Contains($newLine)) {
     throw 'could not bind the artifact builder to the current pack version'
 }
 try {
