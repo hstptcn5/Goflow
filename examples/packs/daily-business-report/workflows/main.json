@@ -1,0 +1,120 @@
+{
+  "name": "Daily Business Report",
+  "description": "Fetch a normalized daily business snapshot and deliver one concise Telegram report with optional AI commentary.",
+  "is_active": false,
+  "max_concurrent_runs": 1,
+  "concurrency_policy": "reject",
+  "nodes": [
+    {
+      "id": "fetch_business",
+      "type": "httpRequest",
+      "name": "Fetch business snapshot",
+      "params": {
+        "method": "GET",
+        "url": "https://example.test/daily-business-report.json",
+        "headers": "{}",
+        "response_contract": {
+          "required": {
+            "report_date": { "type": "string", "non_empty": true },
+            "timezone": { "type": "string", "non_empty": true },
+            "revenue": { "type": "number" },
+            "order_count": { "type": "integer", "minimum": 0 },
+            "cancelled_refunded_count": { "type": "integer", "minimum": 0 },
+            "low_stock_summary": { "type": "string" },
+            "comparison_summary": { "type": "string" }
+          }
+        }
+      }
+    },
+    {
+      "id": "use_ai",
+      "type": "conditionIf",
+      "name": "AI commentary enabled?",
+      "params": { "field": "none", "operator": "not_equals", "value": "none" }
+    },
+    {
+      "id": "build_plain",
+      "type": "jsonTransform",
+      "name": "Build deterministic report",
+      "params": {
+        "json_template": "{\"message\":\"<b>Daily Business Report</b>\\nDate: {{fetch_business.data.report_date}} ({{fetch_business.data.timezone}})\\nRevenue: {{fetch_business.data.revenue}}\\nOrders: {{fetch_business.data.order_count}}\\nCancelled/refunded: {{fetch_business.data.cancelled_refunded_count}}\\nLow stock: {{fetch_business.data.low_stock_summary}}\\nTrend: {{fetch_business.data.comparison_summary}}\"}"
+      }
+    },
+    {
+      "id": "send_plain",
+      "type": "telegramBot",
+      "name": "Send deterministic report",
+      "params": { "credential_id": "", "chat_id": "@daily_business_report_demo", "message": "{{build_plain.transformed.message}}" }
+    },
+    {
+      "id": "use_openai",
+      "type": "conditionIf",
+      "name": "Use OpenAI?",
+      "params": { "field": "none", "operator": "equals", "value": "openai" }
+    },
+    {
+      "id": "openai_summary",
+      "type": "openAIGPT",
+      "name": "Generate OpenAI commentary",
+      "params": {
+        "model": "gpt-4o-mini",
+        "credential_id": "",
+        "api_key": "",
+        "system_message": "You summarize business metrics. Be concise, factual, and never invent numbers or causes that are not in the supplied data.",
+        "prompt": "Write at most 3 short sentences highlighting what needs attention. Date={{fetch_business.data.report_date}}; revenue={{fetch_business.data.revenue}}; orders={{fetch_business.data.order_count}}; cancelled/refunded={{fetch_business.data.cancelled_refunded_count}}; low stock={{fetch_business.data.low_stock_summary}}; comparison={{fetch_business.data.comparison_summary}}."
+      }
+    },
+    {
+      "id": "build_openai",
+      "type": "jsonTransform",
+      "name": "Build OpenAI report",
+      "params": {
+        "json_template": "{\"message\":\"<b>Daily Business Report</b>\\nDate: {{fetch_business.data.report_date}} ({{fetch_business.data.timezone}})\\nRevenue: {{fetch_business.data.revenue}}\\nOrders: {{fetch_business.data.order_count}}\\nCancelled/refunded: {{fetch_business.data.cancelled_refunded_count}}\\nLow stock: {{fetch_business.data.low_stock_summary}}\\nTrend: {{fetch_business.data.comparison_summary}}\\n\\n<b>AI note</b>\\n{{openai_summary.ai_response}}\"}"
+      }
+    },
+    {
+      "id": "send_openai",
+      "type": "telegramBot",
+      "name": "Send OpenAI report",
+      "params": { "credential_id": "", "chat_id": "@daily_business_report_demo", "message": "{{build_openai.transformed.message}}" }
+    },
+    {
+      "id": "deepseek_summary",
+      "type": "deepseekAI",
+      "name": "Generate DeepSeek commentary",
+      "params": {
+        "model": "deepseek-v4-flash",
+        "credential_id": "",
+        "api_key": "",
+        "system_message": "You summarize business metrics. Be concise, factual, and never invent numbers or causes that are not in the supplied data.",
+        "prompt": "Write at most 3 short sentences highlighting what needs attention. Date={{fetch_business.data.report_date}}; revenue={{fetch_business.data.revenue}}; orders={{fetch_business.data.order_count}}; cancelled/refunded={{fetch_business.data.cancelled_refunded_count}}; low stock={{fetch_business.data.low_stock_summary}}; comparison={{fetch_business.data.comparison_summary}}."
+      }
+    },
+    {
+      "id": "build_deepseek",
+      "type": "jsonTransform",
+      "name": "Build DeepSeek report",
+      "params": {
+        "json_template": "{\"message\":\"<b>Daily Business Report</b>\\nDate: {{fetch_business.data.report_date}} ({{fetch_business.data.timezone}})\\nRevenue: {{fetch_business.data.revenue}}\\nOrders: {{fetch_business.data.order_count}}\\nCancelled/refunded: {{fetch_business.data.cancelled_refunded_count}}\\nLow stock: {{fetch_business.data.low_stock_summary}}\\nTrend: {{fetch_business.data.comparison_summary}}\\n\\n<b>AI note</b>\\n{{deepseek_summary.ai_response}}\"}"
+      }
+    },
+    {
+      "id": "send_deepseek",
+      "type": "telegramBot",
+      "name": "Send DeepSeek report",
+      "params": { "credential_id": "", "chat_id": "@daily_business_report_demo", "message": "{{build_deepseek.transformed.message}}" }
+    }
+  ],
+  "edges": [
+    { "id": "fetch_to_ai_choice", "source": "fetch_business", "target": "use_ai" },
+    { "id": "no_ai_to_plain", "source": "use_ai", "sourceHandle": "false", "target": "build_plain" },
+    { "id": "plain_to_send", "source": "build_plain", "target": "send_plain" },
+    { "id": "ai_to_provider", "source": "use_ai", "sourceHandle": "true", "target": "use_openai" },
+    { "id": "provider_openai", "source": "use_openai", "sourceHandle": "true", "target": "openai_summary" },
+    { "id": "openai_to_build", "source": "openai_summary", "target": "build_openai" },
+    { "id": "openai_to_send", "source": "build_openai", "target": "send_openai" },
+    { "id": "provider_deepseek", "source": "use_openai", "sourceHandle": "false", "target": "deepseek_summary" },
+    { "id": "deepseek_to_build", "source": "deepseek_summary", "target": "build_deepseek" },
+    { "id": "deepseek_to_send", "source": "build_deepseek", "target": "send_deepseek" }
+  ]
+}
