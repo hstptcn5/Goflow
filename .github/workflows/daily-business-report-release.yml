@@ -1,0 +1,216 @@
+name: Publish Daily Business Report Public Beta
+
+on:
+  push:
+    branches:
+      - agent/checkpoint-h-public-distribution
+    paths:
+      - '.github/workflows/daily-business-report-release.yml'
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: daily-business-report-v0.9.0-beta.1
+  RELEASE_TITLE: Daily Business Report v0.9.0 — Public Beta 1
+  RELEASE_BUNDLE: Goflow-Daily-Business-Report-Windows-amd64.zip
+
+jobs:
+  publish-windows-beta:
+    name: Verify and publish Windows public beta
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact checkout
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.sha }}') {
+            throw 'checkout does not match requested release commit'
+          }
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Validate UI and Go code
+        shell: pwsh
+        run: |
+          Push-Location ui
+          try {
+            npm ci
+            if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
+            npm run test
+            if ($LASTEXITCODE -ne 0) { throw 'UI tests failed' }
+            npm run build
+            if ($LASTEXITCODE -ne 0) { throw 'UI build failed' }
+          } finally {
+            Pop-Location
+          }
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { throw 'go test ./... failed' }
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { throw 'go vet ./... failed' }
+
+      - name: Validate public onboarding contract
+        shell: pwsh
+        run: |
+          $sample = Get-Content -Raw examples/packs/daily-business-report/sample-source.json | ConvertFrom-Json
+          foreach ($field in @('report_date','timezone','revenue','order_count','cancelled_refunded_count','low_stock_summary','comparison_summary')) {
+            if ($null -eq $sample.$field) { throw "public sample is missing $field" }
+          }
+          if ($sample.order_count -lt 0 -or $sample.cancelled_refunded_count -lt 0) {
+            throw 'public sample counts must be non-negative'
+          }
+
+          $pack = Get-Content -Raw examples/packs/daily-business-report/pack.json | ConvertFrom-Json
+          if ($pack.id -ne 'official.daily-business-report' -or $pack.version -ne '0.9.0') {
+            throw 'public release pack identity mismatch'
+          }
+
+          $source = @($pack.config_schema | Where-Object { $_.key -eq 'source_url' })
+          if ($source.Count -ne 1) { throw 'source_url setup field is missing or duplicated' }
+          $expected = "https://raw.githubusercontent.com/hstptcn5/Goflow/$env:RELEASE_TAG/examples/packs/daily-business-report/sample-source.json"
+          if ($source[0].default -ne $expected) { throw 'source_url default is not pinned to this public beta tag' }
+
+          $chat = @($pack.config_schema | Where-Object { $_.key -eq 'chat_id' })
+          if ($chat.Count -ne 1 -or -not $chat[0].required) { throw 'Telegram chat ID must remain explicitly required' }
+          if ($chat[0].PSObject.Properties.Name -contains 'default') { throw 'public beta must not prefill a Telegram destination' }
+
+          $provider = @($pack.config_schema | Where-Object { $_.key -eq 'ai_provider' })
+          if ($provider.Count -ne 1 -or $provider[0].type -ne 'select' -or $provider[0].default -ne 'none') {
+            throw 'AI commentary must default to the none select option'
+          }
+          $options = @($provider[0].options)
+          if ($options.Count -ne 3 -or $options[0] -ne 'none' -or $options[1] -ne 'openai' -or $options[2] -ne 'deepseek') {
+            throw 'AI commentary select options changed unexpectedly'
+          }
+
+      - name: Build and verify release payload
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release-artifact | Out-Null
+          .\scripts\build-daily-business-report.ps1 `
+            -OutputDirectory (Resolve-Path release-artifact).Path `
+            -Commit '${{ github.sha }}'
+          if (-not (Test-Path -LiteralPath (Join-Path release-artifact $env:RELEASE_BUNDLE))) {
+            throw 'release bundle was not produced'
+          }
+
+          Copy-Item examples/packs/daily-business-report/sample-source.json release-artifact/daily-business-report-sample.json
+          Remove-Item release-artifact/UNSIGNED-PILOT-BETA.txt -ErrorAction SilentlyContinue
+
+          @(
+            'Goflow Daily Business Report — Windows Public Beta'
+            ''
+            '1. Verify SHA256SUMS.txt.'
+            '2. Extract Goflow-Daily-Business-Report-Windows-amd64.zip.'
+            '3. Read INSTALL.md.'
+            '4. Run goflow.exe from the extracted folder.'
+            '5. Leave the prefilled sample source URL in place for the first test.'
+            '6. Enter your own Telegram chat ID and bot token.'
+            '7. Leave AI commentary at none, then Run now.'
+            '8. After one report arrives, replace the sample URL with your real endpoint.'
+            ''
+            'This is an unsigned public beta and may trigger Windows SmartScreen.'
+          ) | Set-Content -LiteralPath release-artifact/START-HERE.txt -Encoding utf8
+
+          @(
+            'UNSIGNED-PUBLIC-BETA'
+            "commit=${{ github.sha }}"
+            'target=windows-amd64'
+            'pack_id=official.daily-business-report'
+            'pack_version=0.9.0'
+            "tag=$env:RELEASE_TAG"
+          ) | Set-Content -LiteralPath release-artifact/UNSIGNED-PUBLIC-BETA.txt -Encoding ascii
+
+          $publicAssets = @(
+            $env:RELEASE_BUNDLE,
+            'INSTALL.md',
+            'CHANGELOG.md',
+            'START-HERE.txt',
+            'UNSIGNED-PUBLIC-BETA.txt',
+            'daily-business-report-sample.json'
+          )
+          $checksumLines = foreach ($name in $publicAssets) {
+            $path = Join-Path release-artifact $name
+            if (-not (Test-Path -LiteralPath $path)) { throw "public release asset missing: $name" }
+            $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
+            "$digest  $name"
+          }
+          $checksumLines | Sort-Object | Set-Content -LiteralPath release-artifact/SHA256SUMS.txt -Encoding ascii
+
+          $bundleDigest = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path release-artifact $env:RELEASE_BUNDLE)).Hash.ToLowerInvariant()
+          if (-not ((Get-Content release-artifact/SHA256SUMS.txt) | Where-Object { $_ -eq "$bundleDigest  $env:RELEASE_BUNDLE" })) {
+            throw 'SHA256SUMS.txt does not contain the public release bundle digest'
+          }
+
+          Copy-Item docs/DAILY_BUSINESS_REPORT_RELEASE_NOTES.md release-notes.md
+          Add-Content release-notes.md ""
+          Add-Content release-notes.md "### Verified release identity"
+          Add-Content release-notes.md ""
+          Add-Content release-notes.md "- Commit: ``${{ github.sha }}``"
+          Add-Content release-notes.md "- Bundle SHA-256: ``$bundleDigest``"
+          Add-Content release-notes.md "- Tag: ``$env:RELEASE_TAG``"
+          "BUNDLE_SHA256=$bundleDigest" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Refuse to mutate an existing public beta
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "release $env:RELEASE_TAG already exists; refusing to replace public assets"
+          }
+          exit 0
+
+      - name: Publish immutable prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:RELEASE_TAG `
+            --repo $env:GITHUB_REPOSITORY `
+            --target '${{ github.sha }}' `
+            --title $env:RELEASE_TITLE `
+            --notes-file release-notes.md `
+            --prerelease `
+            "release-artifact/$env:RELEASE_BUNDLE" `
+            "release-artifact/SHA256SUMS.txt" `
+            "release-artifact/INSTALL.md" `
+            "release-artifact/CHANGELOG.md" `
+            "release-artifact/START-HERE.txt" `
+            "release-artifact/UNSIGNED-PUBLIC-BETA.txt" `
+            "release-artifact/daily-business-report-sample.json"
+
+      - name: Verify published release metadata and assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $release = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isPrerelease,tagName,url,targetCommitish,assets | ConvertFrom-Json
+          if (-not $release.isPrerelease -or $release.tagName -ne $env:RELEASE_TAG) {
+            throw 'published release metadata is not the expected prerelease'
+          }
+          $names = @($release.assets | ForEach-Object { $_.name })
+          foreach ($required in @($env:RELEASE_BUNDLE,'SHA256SUMS.txt','INSTALL.md','CHANGELOG.md','START-HERE.txt','UNSIGNED-PUBLIC-BETA.txt','daily-business-report-sample.json')) {
+            if ($names -notcontains $required) { throw "published release is missing asset $required" }
+          }
+          Write-Output 'PUBLIC_BETA_RELEASE PASS'
+          Write-Output "release_url=$($release.url)"
+          Write-Output "bundle_sha256=$env:BUNDLE_SHA256"
