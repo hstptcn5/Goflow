@@ -22,15 +22,18 @@ on:
 
 env:
   GOFLOW_CHECKPOINT_G_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+  RELEASE_TAG: daily-business-report-v0.9.0-beta.1
+  RELEASE_TITLE: Daily Business Report v0.9.0 — Public Beta 1
+  RELEASE_BUNDLE: Goflow-Daily-Business-Report-Windows-amd64.zip
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   windows-pilot:
     name: Windows flagship artifact
     runs-on: windows-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - name: Checkout exact commit
         uses: actions/checkout@v4
@@ -73,3 +76,153 @@ jobs:
           path: checkpoint-g-artifact/**
           if-no-files-found: error
           retention-days: 14
+
+      - name: Check immutable public beta state
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'agent/checkpoint-h-public-distribution' && github.event.pull_request.head.repo.full_name == github.repository }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $null = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output "Public beta $env:RELEASE_TAG already exists; it will not be mutated."
+            'GOFLOW_PUBLISH_PUBLIC_BETA=false' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+            'GOFLOW_PUBLISH_PUBLIC_BETA=true' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+
+      - name: Validate public onboarding contract
+        if: ${{ env.GOFLOW_PUBLISH_PUBLIC_BETA == 'true' }}
+        shell: pwsh
+        run: |
+          $sample = Get-Content -Raw examples/packs/daily-business-report/sample-source.json | ConvertFrom-Json
+          foreach ($field in @('report_date','timezone','revenue','order_count','cancelled_refunded_count','low_stock_summary','comparison_summary')) {
+            if ($null -eq $sample.$field) { throw "public sample is missing $field" }
+          }
+          if ($sample.order_count -lt 0 -or $sample.cancelled_refunded_count -lt 0) {
+            throw 'public sample counts must be non-negative'
+          }
+
+          $pack = Get-Content -Raw examples/packs/daily-business-report/pack.json | ConvertFrom-Json
+          if ($pack.id -ne 'official.daily-business-report' -or $pack.version -ne '0.9.0') {
+            throw 'public release pack identity mismatch'
+          }
+
+          $source = @($pack.config_schema | Where-Object { $_.key -eq 'source_url' })
+          if ($source.Count -ne 1) { throw 'source_url setup field is missing or duplicated' }
+          $expected = "https://raw.githubusercontent.com/hstptcn5/Goflow/$env:RELEASE_TAG/examples/packs/daily-business-report/sample-source.json"
+          if ($source[0].default -ne $expected) { throw 'source_url default is not pinned to this public beta tag' }
+
+          $chat = @($pack.config_schema | Where-Object { $_.key -eq 'chat_id' })
+          if ($chat.Count -ne 1 -or -not $chat[0].required) { throw 'Telegram chat ID must remain explicitly required' }
+          if ($chat[0].PSObject.Properties.Name -contains 'default') { throw 'public beta must not prefill a Telegram destination' }
+
+          $provider = @($pack.config_schema | Where-Object { $_.key -eq 'ai_provider' })
+          if ($provider.Count -ne 1 -or $provider[0].type -ne 'select' -or $provider[0].default -ne 'none') {
+            throw 'AI commentary must default to the none select option'
+          }
+          $options = @($provider[0].options)
+          if ($options.Count -ne 3 -or $options[0] -ne 'none' -or $options[1] -ne 'openai' -or $options[2] -ne 'deepseek') {
+            throw 'AI commentary select options changed unexpectedly'
+          }
+
+      - name: Prepare public beta assets
+        if: ${{ env.GOFLOW_PUBLISH_PUBLIC_BETA == 'true' }}
+        shell: pwsh
+        run: |
+          Copy-Item examples/packs/daily-business-report/sample-source.json checkpoint-g-artifact/daily-business-report-sample.json
+          Remove-Item checkpoint-g-artifact/UNSIGNED-PILOT-BETA.txt -ErrorAction SilentlyContinue
+
+          @(
+            'Goflow Daily Business Report — Windows Public Beta'
+            ''
+            '1. Verify SHA256SUMS.txt.'
+            '2. Extract Goflow-Daily-Business-Report-Windows-amd64.zip.'
+            '3. Read INSTALL.md.'
+            '4. Run goflow.exe from the extracted folder.'
+            '5. Leave the prefilled sample source URL in place for the first test.'
+            '6. Enter your own Telegram chat ID and bot token.'
+            '7. Leave AI commentary at none, then Run now.'
+            '8. After one report arrives, replace the sample URL with your real endpoint.'
+            ''
+            'This is an unsigned public beta and may trigger Windows SmartScreen.'
+          ) | Set-Content -LiteralPath checkpoint-g-artifact/START-HERE.txt -Encoding utf8
+
+          @(
+            'UNSIGNED-PUBLIC-BETA'
+            "commit=$env:GOFLOW_CHECKPOINT_G_COMMIT"
+            'target=windows-amd64'
+            'pack_id=official.daily-business-report'
+            'pack_version=0.9.0'
+            "tag=$env:RELEASE_TAG"
+          ) | Set-Content -LiteralPath checkpoint-g-artifact/UNSIGNED-PUBLIC-BETA.txt -Encoding ascii
+
+          $publicAssets = @(
+            $env:RELEASE_BUNDLE,
+            'INSTALL.md',
+            'CHANGELOG.md',
+            'START-HERE.txt',
+            'UNSIGNED-PUBLIC-BETA.txt',
+            'daily-business-report-sample.json'
+          )
+          $checksumLines = foreach ($name in $publicAssets) {
+            $path = Join-Path checkpoint-g-artifact $name
+            if (-not (Test-Path -LiteralPath $path)) { throw "public release asset missing: $name" }
+            $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
+            "$digest  $name"
+          }
+          $checksumLines | Sort-Object | Set-Content -LiteralPath checkpoint-g-artifact/SHA256SUMS.txt -Encoding ascii
+
+          $bundleDigest = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path checkpoint-g-artifact $env:RELEASE_BUNDLE)).Hash.ToLowerInvariant()
+          if (-not ((Get-Content checkpoint-g-artifact/SHA256SUMS.txt) | Where-Object { $_ -eq "$bundleDigest  $env:RELEASE_BUNDLE" })) {
+            throw 'SHA256SUMS.txt does not contain the public release bundle digest'
+          }
+
+          Copy-Item docs/DAILY_BUSINESS_REPORT_RELEASE_NOTES.md release-notes.md
+          Add-Content release-notes.md ''
+          Add-Content release-notes.md '### Verified release identity'
+          Add-Content release-notes.md ''
+          Add-Content release-notes.md "- Commit: ``$env:GOFLOW_CHECKPOINT_G_COMMIT``"
+          Add-Content release-notes.md "- Bundle SHA-256: ``$bundleDigest``"
+          Add-Content release-notes.md "- Tag: ``$env:RELEASE_TAG``"
+          "BUNDLE_SHA256=$bundleDigest" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Publish immutable prerelease
+        if: ${{ env.GOFLOW_PUBLISH_PUBLIC_BETA == 'true' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:RELEASE_TAG `
+            --repo $env:GITHUB_REPOSITORY `
+            --target $env:GOFLOW_CHECKPOINT_G_COMMIT `
+            --title $env:RELEASE_TITLE `
+            --notes-file release-notes.md `
+            --prerelease `
+            "checkpoint-g-artifact/$env:RELEASE_BUNDLE" `
+            'checkpoint-g-artifact/SHA256SUMS.txt' `
+            'checkpoint-g-artifact/INSTALL.md' `
+            'checkpoint-g-artifact/CHANGELOG.md' `
+            'checkpoint-g-artifact/START-HERE.txt' `
+            'checkpoint-g-artifact/UNSIGNED-PUBLIC-BETA.txt' `
+            'checkpoint-g-artifact/daily-business-report-sample.json'
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub prerelease publication failed' }
+
+      - name: Verify public beta release
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'agent/checkpoint-h-public-distribution' && github.event.pull_request.head.repo.full_name == github.repository }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $release = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isPrerelease,tagName,url,targetCommitish,assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'public beta release is not readable after publication' }
+          if (-not $release.isPrerelease -or $release.tagName -ne $env:RELEASE_TAG) {
+            throw 'published release metadata is not the expected prerelease'
+          }
+          $names = @($release.assets | ForEach-Object { $_.name })
+          foreach ($required in @($env:RELEASE_BUNDLE,'SHA256SUMS.txt','INSTALL.md','CHANGELOG.md','START-HERE.txt','UNSIGNED-PUBLIC-BETA.txt','daily-business-report-sample.json')) {
+            if ($names -notcontains $required) { throw "published release is missing asset $required" }
+          }
+          Write-Output 'PUBLIC_BETA_RELEASE PASS'
+          Write-Output "release_url=$($release.url)"
+          if ($env:BUNDLE_SHA256) { Write-Output "bundle_sha256=$env:BUNDLE_SHA256" }
