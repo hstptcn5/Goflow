@@ -31,6 +31,6 @@ The Windows binary is **unsigned public beta software** and may trigger SmartScr
 
 ## Feedback
 
-Use the **Daily Business Report feedback** issue template in this repository. Do not paste Telegram bot tokens, AI API keys, master keys or other secrets into an issue.
+Open a GitHub issue in the Goflow repository with a title beginning `[Daily Business Report]` and describe the failing stage plus any redacted diagnostics. Do not paste Telegram bot tokens, AI API keys, master keys or other secrets into an issue.
 
 This beta does not include payment/licensing, a signed installer or a hosted Goflow control plane.
