@@ -26,9 +26,15 @@ func ApplyBindings(workflow client.Workflow, manifest pack.Manifest, config map[
 		if !ok {
 			return client.Workflow{}, fmt.Errorf("pack setup: binding target node %q does not exist", binding.Target.NodeID)
 		}
-		value, err := bindingValue(binding.Source, config, credentials)
+		value, present, err := bindingValue(binding.Source, manifest, config, credentials)
 		if err != nil {
 			return client.Workflow{}, err
+		}
+		if !present {
+			// Optional credential slots deliberately leave the pack-authored default
+			// in place until the user assigns that credential. This lets workflows
+			// safely branch around optional integrations without making setup fail.
+			continue
 		}
 		nodeList[nodePos].Params[binding.Target.Param] = value
 	}
@@ -41,25 +47,29 @@ func ApplyBindings(workflow client.Workflow, manifest pack.Manifest, config map[
 	return cloned, nil
 }
 
-func bindingValue(source string, config map[string]interface{}, credentials map[string]CredentialSlot) (interface{}, error) {
+func bindingValue(source string, manifest pack.Manifest, config map[string]interface{}, credentials map[string]CredentialSlot) (interface{}, bool, error) {
 	kind, key, ok := splitBindingSource(source)
 	if !ok {
-		return nil, fmt.Errorf("pack setup: binding source %q is invalid", source)
+		return nil, false, fmt.Errorf("pack setup: binding source %q is invalid", source)
 	}
 	switch kind {
 	case "config":
 		value, exists := config[key]
 		if !exists {
-			return nil, fmt.Errorf("pack setup: config source %q is missing", key)
+			return nil, false, fmt.Errorf("pack setup: config source %q is missing", key)
 		}
-		return value, nil
+		return value, true, nil
 	case "credential":
 		slot, exists := credentials[key]
-		if !exists {
-			return nil, fmt.Errorf("pack setup: credential source %q is missing", key)
+		if exists {
+			return slot.CredentialID, true, nil
 		}
-		return slot.CredentialID, nil
+		requirement, declared := credentialRequirementByKey(manifest, key)
+		if declared && !requirement.Required {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("pack setup: credential source %q is missing", key)
 	default:
-		return nil, fmt.Errorf("pack setup: binding source %q is invalid", source)
+		return nil, false, fmt.Errorf("pack setup: binding source %q is invalid", source)
 	}
 }
