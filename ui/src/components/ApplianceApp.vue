@@ -422,7 +422,7 @@ onBeforeUnmount(stopPolling);
       </div>
       <div class="appliance-meta" aria-label="Pack identity">
         <span class="badge badge-muted">Goflow {{ app.version || 'development' }}</span>
-        <span class="badge badge-warning">Unsigned pilot beta</span>
+        <span class="badge badge-warning">Unsigned public beta</span>
         <span class="badge badge-muted">{{ pack.version || '0.0.0' }}</span>
         <span class="badge" :class="`badge-status-${String(status?.state || 'loading').toLowerCase()}`">
           {{ status?.state || 'LOADING' }}
@@ -460,8 +460,19 @@ onBeforeUnmount(stopPolling);
             <div v-if="(setup?.config_schema || []).length === 0" class="muted-copy">No configuration is required.</div>
             <div v-for="field in setup?.config_schema || []" :key="field.key" class="form-group">
               <label :for="fieldId(field.key)">{{ field.label || field.key }}</label>
+              <select
+                v-if="field.type === 'select'"
+                :id="fieldId(field.key)"
+                :value="configValues[field.key]"
+                class="form-input"
+                :aria-invalid="Boolean(configErrors[field.key])"
+                :aria-describedby="configErrors[field.key] ? `${fieldId(field.key)}-error` : undefined"
+                @change="updateConfigValue(field.key, $event.target.value)"
+              >
+                <option v-for="option in field.options || []" :key="option" :value="option">{{ option }}</option>
+              </select>
               <input
-                v-if="field.type !== 'boolean'"
+                v-else-if="field.type !== 'boolean'"
                 :id="fieldId(field.key)"
                 :value="configValues[field.key]"
                 class="form-input"
@@ -499,7 +510,7 @@ onBeforeUnmount(stopPolling);
                 <strong>{{ req.label || req.key }}</strong>
                 <p>{{ req.description || req.type }}</p>
                 <span class="badge" :class="req.assigned ? 'badge-success' : 'badge-muted'">
-                  {{ req.assigned ? 'Assigned' : 'Required' }}
+                  {{ req.assigned ? 'Assigned' : (req.required ? 'Required' : 'Optional') }}
                 </span>
               </div>
               <div class="credential-controls">
@@ -584,7 +595,7 @@ onBeforeUnmount(stopPolling);
           <div class="panel-heading">
             <div>
               <div class="shell-kicker">Dashboard</div>
-              <h2 id="dashboard-title">DailyOps report</h2>
+              <h2 id="dashboard-title">{{ pack.name || 'Managed report' }}</h2>
             </div>
             <button class="btn btn-secondary" type="button" @click="reopenSetup">Reconfigure</button>
           </div>
@@ -657,7 +668,7 @@ onBeforeUnmount(stopPolling);
 
       <aside class="appliance-side">
         <section class="appliance-panel compact">
-          <h2>Local pilot summary</h2>
+          <h2>Local diagnostics</h2>
           <div class="toolbar-actions">
             <button class="btn btn-secondary" type="button" @click="loadDiagnostics">Refresh</button>
             <button class="btn btn-secondary" type="button" @click="copyDiagnostics">Copy diagnostics</button>
