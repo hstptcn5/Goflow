@@ -195,7 +195,7 @@ try {
         throw 'verified bundle is missing PACK_INFO.json'
     }
     $PackInfo = Get-Content -Raw -LiteralPath $PackInfoPath | ConvertFrom-Json
-    if ($PackInfo.id -ne $PackID -or $PackInfo.version -ne $PackVersion) {
+    if ($PackInfo.pack_id -ne $PackID -or $PackInfo.pack_version -ne $PackVersion) {
         throw "verified bundle identity mismatch: expected $PackID@$PackVersion"
     }
 
