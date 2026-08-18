@@ -119,7 +119,7 @@ test('appliance first-run setup and run flow hides submitted secrets', async ({ 
   await expect(page.getByText('OK')).toBeVisible();
   await page.getByRole('button', { name: 'Complete setup' }).click();
 
-  await expect(page.getByRole('heading', { name: 'DailyOps report' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Example Appliance' })).toBeVisible();
   await page.getByRole('button', { name: 'Run now' }).click();
   await expect(page.getByLabel('Latest execution').getByText('SUCCESS')).toBeVisible();
   await page.getByRole('button', { name: 'Refresh' }).click();
