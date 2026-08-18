@@ -5,6 +5,7 @@ import { useExecutionStore } from '@/stores/executionStore';
 import { wsClient } from '@/services/websocket';
 import { applianceApi } from '@/services/applianceApi';
 import ApplianceApp from '@/components/ApplianceApp.vue';
+import ApplianceActivationProbe from '@/components/ApplianceActivationProbe.vue';
 import AppShell from '@/components/AppShell.vue';
 import StateBlock from '@/components/StateBlock.vue';
 
@@ -49,7 +50,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <ApplianceApp v-if="applianceBootstrap" :bootstrap="applianceBootstrap" />
+  <template v-if="applianceBootstrap">
+    <ApplianceApp :bootstrap="applianceBootstrap" />
+    <ApplianceActivationProbe :bootstrap="applianceBootstrap" />
+  </template>
   <AppShell v-else>
     <div v-if="initialLoading" class="app-loading" aria-live="polite">
       <div class="spinner"></div>
