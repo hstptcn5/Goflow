@@ -82,7 +82,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json tagName,isPrerelease,url *> $null
-          if ($LASTEXITCODE -eq 0) {
+          $releaseExists = ($LASTEXITCODE -eq 0)
+          $global:LASTEXITCODE = 0
+          if ($releaseExists) {
             Write-Output "Public beta $env:RELEASE_TAG already exists; it will not be mutated."
             'GOFLOW_PUBLISH_PUBLIC_BETA=false' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
             $remote = (git ls-remote origin "refs/tags/$env:RELEASE_TAG" | Select-Object -First 1)
@@ -92,6 +94,7 @@ jobs:
               throw "immutable release tag points to $tagCommit instead of $env:GOFLOW_RELEASE_COMMIT"
             }
           } else {
+            Write-Output "Public beta $env:RELEASE_TAG does not exist yet; publication is armed."
             'GOFLOW_PUBLISH_PUBLIC_BETA=true' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           }
 
@@ -141,14 +144,7 @@ jobs:
             "tag=$env:RELEASE_TAG"
           ) | Set-Content checkpoint-i-artifact/UNSIGNED-PUBLIC-BETA.txt -Encoding ascii
 
-          $publicAssets = @(
-            $env:RELEASE_BUNDLE,
-            'INSTALL.md',
-            'CHANGELOG.md',
-            'START-HERE.txt',
-            'UNSIGNED-PUBLIC-BETA.txt',
-            'daily-business-report-sample.json'
-          )
+          $publicAssets = @($env:RELEASE_BUNDLE,'INSTALL.md','CHANGELOG.md','START-HERE.txt','UNSIGNED-PUBLIC-BETA.txt','daily-business-report-sample.json')
           $checksumLines = foreach ($name in $publicAssets) {
             $path = Join-Path checkpoint-i-artifact $name
             if (-not (Test-Path $path)) { throw "public release asset missing: $name" }
