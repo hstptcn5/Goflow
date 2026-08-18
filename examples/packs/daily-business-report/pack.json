@@ -48,7 +48,7 @@
     {
       "key": "ai_provider",
       "label": "AI commentary",
-      "description": "Use none for deterministic reporting, or enter/select openai or deepseek after saving the matching optional API key.",
+      "description": "Use none for deterministic reporting, or choose openai or deepseek for optional AI commentary.",
       "type": "select",
       "required": true,
       "default": "none",
