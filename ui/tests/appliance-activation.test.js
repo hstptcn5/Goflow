@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-const activationSource = readFileSync(new URL('../src/components/ApplianceActivationProbe.vue', import.meta.url), 'utf8');
-const appSource = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8');
+const activationSource = readFileSync(resolve(process.cwd(), 'src/components/ApplianceActivationProbe.vue'), 'utf8');
+const appSource = readFileSync(resolve(process.cwd(), 'src/App.vue'), 'utf8');
 
 describe('first-customer activation surface', () => {
   it('mounts only alongside appliance mode', () => {
