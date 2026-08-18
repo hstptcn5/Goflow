@@ -137,7 +137,7 @@ Only the DeepSeek branch executes.
 
 ## Support and feedback
 
-Use the **Daily Business Report feedback** issue template in the Goflow repository for installation failures, unclear setup steps, source-contract problems or report-delivery issues.
+Open a GitHub issue in the Goflow repository with a title beginning `[Daily Business Report]`. Include the stage that failed, the exact non-secret error message, and redacted diagnostics if useful.
 
 Before posting diagnostics, use the appliance diagnostics panel and keep the payload redacted. **Never post Telegram bot tokens, OpenAI keys, DeepSeek keys, master keys or other secrets in a GitHub issue.**
 
