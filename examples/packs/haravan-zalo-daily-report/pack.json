@@ -15,8 +15,7 @@
       "label": "Haravan orders URL",
       "description": "Haravan Admin API orders endpoint. You can add supported query parameters to narrow the reporting window.",
       "type": "url",
-      "required": true,
-      "default": "https://apis.haravan.com/com/orders.json?limit=50&order=created_at%20desc"
+      "required": true
     },
     {
       "key": "zalo_delivery_url",

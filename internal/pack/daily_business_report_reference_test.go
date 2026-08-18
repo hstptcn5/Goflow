@@ -31,7 +31,7 @@ func TestDailyBusinessReportPackDeclaresProductSetup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load pack: %v", err)
 	}
-	if loaded.Manifest.ID != "official.daily-business-report" || loaded.Manifest.Version != "0.9.0" {
+	if loaded.Manifest.ID != "official.daily-business-report" || loaded.Manifest.Version != "0.10.0" {
 		t.Fatalf("unexpected pack identity: %s@%s", loaded.Manifest.ID, loaded.Manifest.Version)
 	}
 	fields := map[string]pack.ConfigField{}
@@ -40,6 +40,10 @@ func TestDailyBusinessReportPackDeclaresProductSetup(t *testing.T) {
 	}
 	if fields["source_url"].TestKind != "http_json_contract" {
 		t.Fatalf("source_url must declare contract testing")
+	}
+	language := fields["output_language"]
+	if language.Type != "select" || fmt.Sprint(language.Default) != "en" || len(language.Options) != 2 {
+		t.Fatalf("unexpected output language setup: %#v", language)
 	}
 	ai := fields["ai_provider"]
 	if ai.Type != "select" || fmt.Sprint(ai.Default) != "none" || len(ai.Options) != 3 {
@@ -65,7 +69,7 @@ func TestDailyBusinessReportPackDeclaresProductSetup(t *testing.T) {
 }
 
 func TestDailyBusinessReportDefaultPathNeedsNoAIAndSendsOnce(t *testing.T) {
-	result := executeDailyBusinessReportPack(t, "none")
+	result := executeDailyBusinessReportPack(t, "none", "en")
 	if result.execution.Status != "SUCCESS" {
 		t.Fatalf("expected SUCCESS, got %s error=%s logs=%s", result.execution.Status, result.execution.ErrorMessage, result.execution.LogsJSON)
 	}
@@ -82,8 +86,23 @@ func TestDailyBusinessReportDefaultPathNeedsNoAIAndSendsOnce(t *testing.T) {
 	}
 }
 
+func TestDailyBusinessReportVietnameseDefaultPathSendsLocalizedReport(t *testing.T) {
+	result := executeDailyBusinessReportPack(t, "none", "vi")
+	if result.execution.Status != "SUCCESS" || result.telegramRequests != 1 {
+		t.Fatalf("unexpected Vietnamese path result: status=%s telegram=%d error=%s", result.execution.Status, result.telegramRequests, result.execution.ErrorMessage)
+	}
+	if result.openAICalls != 0 || result.deepSeekCalls != 0 {
+		t.Fatalf("Vietnamese deterministic path must not call AI, openai=%d deepseek=%d", result.openAICalls, result.deepSeekCalls)
+	}
+	for _, want := range []string{"Báo cáo kinh doanh mỗi ngày", "Doanh thu", "Đơn hàng", "Hủy/hoàn", "Sắp hết hàng"} {
+		if !strings.Contains(result.telegramBody, want) {
+			t.Fatalf("Vietnamese Telegram body missing %q: %s", want, result.telegramBody)
+		}
+	}
+}
+
 func TestDailyBusinessReportOpenAIPathCallsOnlyOpenAI(t *testing.T) {
-	result := executeDailyBusinessReportPack(t, "openai")
+	result := executeDailyBusinessReportPack(t, "openai", "en")
 	if result.execution.Status != "SUCCESS" || result.telegramRequests != 1 {
 		t.Fatalf("unexpected OpenAI path result: status=%s telegram=%d error=%s", result.execution.Status, result.telegramRequests, result.execution.ErrorMessage)
 	}
@@ -96,7 +115,7 @@ func TestDailyBusinessReportOpenAIPathCallsOnlyOpenAI(t *testing.T) {
 }
 
 func TestDailyBusinessReportDeepSeekPathCallsOnlyDeepSeek(t *testing.T) {
-	result := executeDailyBusinessReportPack(t, "deepseek")
+	result := executeDailyBusinessReportPack(t, "deepseek", "en")
 	if result.execution.Status != "SUCCESS" || result.telegramRequests != 1 {
 		t.Fatalf("unexpected DeepSeek path result: status=%s telegram=%d error=%s", result.execution.Status, result.telegramRequests, result.execution.ErrorMessage)
 	}
@@ -142,7 +161,7 @@ type dailyBusinessReportResult struct {
 	deepSeekCalls    int32
 }
 
-func executeDailyBusinessReportPack(t *testing.T, provider string) dailyBusinessReportResult {
+func executeDailyBusinessReportPack(t *testing.T, provider, language string) dailyBusinessReportResult {
 	t.Helper()
 	loaded, err := pack.Load(dailyBusinessReportPackDir)
 	if err != nil {
@@ -179,9 +198,10 @@ func executeDailyBusinessReportPack(t *testing.T, provider string) dailyBusiness
 
 	dataDir := t.TempDir()
 	cfg, err := packsetup.SaveConfig(dataDir, loaded.Manifest, map[string]interface{}{
-		"source_url":  source.URL,
-		"chat_id":     "@daily_business_report_test",
-		"ai_provider": provider,
+		"source_url":      source.URL,
+		"chat_id":         "@daily_business_report_test",
+		"output_language": language,
+		"ai_provider":     provider,
 	})
 	if err != nil {
 		t.Fatalf("save config: %v", err)
