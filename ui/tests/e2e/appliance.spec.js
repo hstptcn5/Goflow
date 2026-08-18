@@ -12,21 +12,11 @@ const bootstrap = {
 };
 
 async function fulfill(route, body, status = 200) {
-  await route.fulfill({
-    status,
-    contentType: 'application/json',
-    body: JSON.stringify(body),
-  });
+  await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
 async function mockAppliance(page, initial = {}) {
-  const state = {
-    configSaved: false,
-    credentialAssigned: false,
-    completed: false,
-    runStarted: false,
-    ...initial,
-  };
+  const state = { configSaved: false, credentialAssigned: false, completed: false, runStarted: false, ...initial };
   await page.route('**/api/appliance/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -61,15 +51,10 @@ async function mockAppliance(page, initial = {}) {
       });
     }
     if (url.pathname === '/api/appliance/executions/latest') {
-      return fulfill(route, {
-        execution: state.runStarted ? { id: 'exec-1', status: 'SUCCESS', duration_ms: 88, started_at: '2026-08-09T00:00:00Z' } : null,
-      });
+      return fulfill(route, { execution: state.runStarted ? { id: 'exec-1', status: 'SUCCESS', duration_ms: 88, started_at: '2026-08-09T00:00:00Z' } : null });
     }
     if (url.pathname === '/api/appliance/executions') {
-      return fulfill(route, {
-        limit: 10,
-        executions: state.runStarted ? [{ id: 'exec-1', status: 'SUCCESS', duration_ms: 88, started_at: '2026-08-09T00:00:00Z' }] : [],
-      });
+      return fulfill(route, { limit: 10, executions: state.runStarted ? [{ id: 'exec-1', status: 'SUCCESS', duration_ms: 88, started_at: '2026-08-09T00:00:00Z' }] : [] });
     }
     if (url.pathname === '/api/appliance/setup/config') {
       state.configSaved = true;
@@ -89,12 +74,7 @@ async function mockAppliance(page, initial = {}) {
       return fulfill(route, { execution_id: 'exec-1', workflow_id: 'wf-1', status: 'RUNNING' }, 202);
     }
     if (url.pathname === '/api/appliance/diagnostics') {
-      return fulfill(route, {
-        pack: bootstrap.pack,
-        state: 'READY',
-        latest_execution: { id: 'exec-1', status: 'SUCCESS', duration_ms: 88 },
-        secrets_hidden: true,
-      });
+      return fulfill(route, { pack: bootstrap.pack, state: 'READY', latest_execution: { id: 'exec-1', status: 'SUCCESS', duration_ms: 88 }, secrets_hidden: true });
     }
     return fulfill(route, {});
   });
@@ -105,21 +85,21 @@ test('appliance first-run setup and run flow hides submitted secrets', async ({ 
   await mockAppliance(page);
   await page.goto('/workflows/wf-1');
 
-  await expect(page.getByRole('heading', { name: 'Example Appliance' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Example Appliance', level: 1 })).toBeVisible();
   await expect(page.getByText('Unsigned pack integrity')).toBeVisible();
 
   await page.getByLabel('Source URL').fill('https://example.test/feed.json');
   await page.getByRole('button', { name: 'Save configuration' }).click();
   await page.locator('input[type="password"]').fill('123:secret-canary');
   await page.getByRole('button', { name: 'Create' }).click();
-  await expect(page.getByText('Credential saved')).toBeVisible();
+  await expect(page.getByText('Credential saved', { exact: true })).toBeVisible();
   await expect(page.locator('body')).not.toContainText('secret-canary');
 
-  await page.getByRole('button', { name: 'Test' }).click();
-  await expect(page.getByText('OK')).toBeVisible();
+  await page.getByRole('button', { name: 'Test Telegram' }).click();
+  await expect(page.getByText('Valid', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Complete setup' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Example Appliance' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Example Appliance', level: 2 })).toBeVisible();
   await page.getByRole('button', { name: 'Run now' }).click();
   await expect(page.getByLabel('Latest execution').getByText('SUCCESS')).toBeVisible();
   await page.getByRole('button', { name: 'Refresh' }).click();
