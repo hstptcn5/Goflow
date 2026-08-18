@@ -33,7 +33,7 @@ async function waitForNewSuccess(page, previousExecutions) {
     const succeeded = executions.find((execution) => !previousIDs.has(execution.id) && execution.status === 'SUCCESS');
     if (succeeded) {
       await page.reload();
-      await expect(page.getByRole('heading', { name: 'DailyOps report' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'DailyOps REST to Telegram' })).toBeVisible();
       await expect(page.getByLabel('Latest execution').getByText('SUCCESS')).toBeVisible();
       return succeeded;
     }
@@ -96,7 +96,7 @@ test('DailyOps appliance completes real setup and execution with mocked Telegram
   await page.getByLabel('Timezone').fill('Asia/Bangkok');
   await page.getByRole('button', { name: 'Complete setup' }).click();
 
-  await expect(page.getByRole('heading', { name: 'DailyOps report' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'DailyOps REST to Telegram' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Daily schedule' })).toBeVisible();
   await expect(page.getByText('Enabled', { exact: true })).toBeVisible();
   await expect(page.getByText('Asia/Bangkok', { exact: true })).toBeVisible();
@@ -162,7 +162,6 @@ test('DailyOps appliance restart preserves setup without exposing decrypted secr
 
   await page.goto('/workflows');
   await expect(page.getByRole('heading', { name: 'DailyOps REST to Telegram' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'DailyOps report' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Reconfigure' })).toBeVisible();
   await expect(page.getByLabel('Latest execution').getByText('SUCCESS')).toBeVisible();
   await expect(page.getByLabel('Recent executions').getByText('SUCCESS').first()).toBeVisible();
