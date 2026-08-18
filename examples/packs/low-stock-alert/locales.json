@@ -1,0 +1,25 @@
+{
+  "default_locale": "vi",
+  "locales": {
+    "vi": {
+      "name": "Cảnh báo tồn kho",
+      "description": "Kiểm tra tồn kho và chỉ gửi cảnh báo khi có sản phẩm cần chú ý.",
+      "config": {
+        "source_url": { "label": "Nguồn dữ liệu tồn kho", "description": "Đường dẫn JSON chứa số lượng sản phẩm sắp hết và phần tóm tắt." },
+        "chat_id": { "label": "Chat ID Telegram", "description": "Chat, nhóm hoặc kênh nhận cảnh báo." },
+        "output_language": { "label": "Ngôn ngữ cảnh báo", "options": { "vi": "Tiếng Việt", "en": "Tiếng Anh" } }
+      },
+      "credentials": { "telegram": { "label": "Bot token Telegram", "description": "Token được mã hóa và chỉ dùng trong Goflow chạy cục bộ." } }
+    },
+    "en": {
+      "name": "Low Stock Alert",
+      "description": "Check inventory and notify only when products need attention.",
+      "config": {
+        "source_url": { "label": "Inventory data URL", "description": "JSON endpoint containing low-stock count and summary." },
+        "chat_id": { "label": "Telegram chat ID", "description": "Chat, group, or channel that receives alerts." },
+        "output_language": { "label": "Alert language", "options": { "vi": "Vietnamese", "en": "English" } }
+      },
+      "credentials": { "telegram": { "label": "Telegram bot token", "description": "Encrypted token used only by the local Goflow runtime." } }
+    }
+  }
+}

@@ -2,21 +2,12 @@
   "schema_version": 1,
   "id": "official.daily-business-report",
   "name": "Daily Business Report",
-  "version": "0.9.0",
-  "description": "Fetch a normalized daily business snapshot and deliver one Telegram report, with optional OpenAI or DeepSeek commentary.",
+  "version": "0.10.0",
+  "description": "Fetch a normalized daily business snapshot and deliver one Telegram report in English or Vietnamese, with optional OpenAI or DeepSeek commentary.",
   "entry_workflow": "workflows/main.json",
   "required_credentials": [],
-  "supported_platforms": [
-    "windows-amd64",
-    "linux-amd64",
-    "linux-arm64",
-    "darwin-amd64",
-    "darwin-arm64"
-  ],
-  "assets": [
-    "README.md",
-    "CHANGELOG.md"
-  ],
+  "supported_platforms": ["windows-amd64", "linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64"],
+  "assets": ["README.md", "CHANGELOG.md", "locales.json"],
   "required_capabilities": [
     "goflow.pack.v1",
     "goflow.setup.bindings.v1",
@@ -29,11 +20,11 @@
     {
       "key": "source_url",
       "label": "Business data URL",
-      "description": "Absolute HTTP(S) endpoint returning the Daily Business Report JSON contract. The default public sample is safe to use for your first test.",
+      "description": "Absolute HTTP(S) endpoint returning the Daily Business Report JSON contract. The public sample is safe for your first test.",
       "type": "url",
       "required": true,
       "test_kind": "http_json_contract",
-      "default": "https://raw.githubusercontent.com/hstptcn5/Goflow/daily-business-report-v0.9.0-beta.1/examples/packs/daily-business-report/sample-source.json"
+      "default": "https://raw.githubusercontent.com/hstptcn5/Goflow/daily-business-report-v0.10.0-beta.1/examples/packs/daily-business-report/sample-source.json"
     },
     {
       "key": "chat_id",
@@ -43,6 +34,15 @@
       "required": true,
       "min_length": 1,
       "max_length": 120
+    },
+    {
+      "key": "output_language",
+      "label": "Report language",
+      "description": "Choose the language used in the delivered report.",
+      "type": "select",
+      "required": true,
+      "default": "en",
+      "options": ["en", "vi"]
     },
     {
       "key": "ai_provider",
@@ -80,15 +80,26 @@
   ],
   "bindings": [
     { "source": "config.source_url", "target": { "node_id": "fetch_business", "param": "url" } },
-    { "source": "config.ai_provider", "target": { "node_id": "use_ai", "param": "field" } },
-    { "source": "config.ai_provider", "target": { "node_id": "use_openai", "param": "field" } },
-    { "source": "config.chat_id", "target": { "node_id": "send_plain", "param": "chat_id" } },
-    { "source": "config.chat_id", "target": { "node_id": "send_openai", "param": "chat_id" } },
-    { "source": "config.chat_id", "target": { "node_id": "send_deepseek", "param": "chat_id" } },
-    { "source": "credential.telegram", "target": { "node_id": "send_plain", "param": "credential_id" } },
-    { "source": "credential.telegram", "target": { "node_id": "send_openai", "param": "credential_id" } },
-    { "source": "credential.telegram", "target": { "node_id": "send_deepseek", "param": "credential_id" } },
-    { "source": "credential.openai", "target": { "node_id": "openai_summary", "param": "credential_id" } },
-    { "source": "credential.deepseek", "target": { "node_id": "deepseek_summary", "param": "credential_id" } }
+    { "source": "config.output_language", "target": { "node_id": "locale_vi", "param": "field" } },
+    { "source": "config.ai_provider", "target": { "node_id": "use_ai_en", "param": "field" } },
+    { "source": "config.ai_provider", "target": { "node_id": "use_openai_en", "param": "field" } },
+    { "source": "config.ai_provider", "target": { "node_id": "use_ai_vi", "param": "field" } },
+    { "source": "config.ai_provider", "target": { "node_id": "use_openai_vi", "param": "field" } },
+    { "source": "config.chat_id", "target": { "node_id": "send_plain_en", "param": "chat_id" } },
+    { "source": "config.chat_id", "target": { "node_id": "send_openai_en", "param": "chat_id" } },
+    { "source": "config.chat_id", "target": { "node_id": "send_deepseek_en", "param": "chat_id" } },
+    { "source": "config.chat_id", "target": { "node_id": "send_plain_vi", "param": "chat_id" } },
+    { "source": "config.chat_id", "target": { "node_id": "send_openai_vi", "param": "chat_id" } },
+    { "source": "config.chat_id", "target": { "node_id": "send_deepseek_vi", "param": "chat_id" } },
+    { "source": "credential.telegram", "target": { "node_id": "send_plain_en", "param": "credential_id" } },
+    { "source": "credential.telegram", "target": { "node_id": "send_openai_en", "param": "credential_id" } },
+    { "source": "credential.telegram", "target": { "node_id": "send_deepseek_en", "param": "credential_id" } },
+    { "source": "credential.telegram", "target": { "node_id": "send_plain_vi", "param": "credential_id" } },
+    { "source": "credential.telegram", "target": { "node_id": "send_openai_vi", "param": "credential_id" } },
+    { "source": "credential.telegram", "target": { "node_id": "send_deepseek_vi", "param": "credential_id" } },
+    { "source": "credential.openai", "target": { "node_id": "openai_summary_en", "param": "credential_id" } },
+    { "source": "credential.openai", "target": { "node_id": "openai_summary_vi", "param": "credential_id" } },
+    { "source": "credential.deepseek", "target": { "node_id": "deepseek_summary_en", "param": "credential_id" } },
+    { "source": "credential.deepseek", "target": { "node_id": "deepseek_summary_vi", "param": "credential_id" } }
   ]
 }

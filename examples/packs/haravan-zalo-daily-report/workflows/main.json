@@ -1,0 +1,61 @@
+{
+  "name": "Haravan to Zalo Daily Report",
+  "description": "Read authorized Haravan order data, summarize it locally, and deliver the summary through an authorized Zalo OA adapter.",
+  "is_active": false,
+  "max_concurrent_runs": 1,
+  "concurrency_policy": "reject",
+  "nodes": [
+    {
+      "id": "fetch_orders",
+      "type": "httpRequest",
+      "name": "Fetch Haravan orders",
+      "params": {
+        "method": "GET",
+        "url": "https://apis.haravan.com/com/orders.json?limit=50&order=created_at%20desc",
+        "headers": "{}",
+        "credential_id": "",
+        "credential_header": "Authorization",
+        "credential_prefix": "Bearer "
+      }
+    },
+    {
+      "id": "aggregate",
+      "type": "jsCodeRunner",
+      "name": "Summarize recent orders",
+      "params": {
+        "input": "vi",
+        "timeout": "3",
+        "code": "const payload = outputs.fetch_orders && outputs.fetch_orders.data ? outputs.fetch_orders.data : {};\nconst orders = Array.isArray(payload.orders) ? payload.orders : [];\nlet revenue = 0;\nlet cancelled = 0;\nfor (const order of orders) {\n  const total = Number(order.total_price || order.total_price_usd || 0);\n  if (Number.isFinite(total)) revenue += total;\n  const status = String(order.cancel_reason || order.cancelled_status || order.financial_status || '').toLowerCase();\n  if (status.includes('cancel') || status.includes('refund')) cancelled += 1;\n}\nconst language = String(input || 'vi').toLowerCase();\nconst amount = Math.round(revenue * 100) / 100;\nconst message = language === 'en'\n  ? `Haravan daily report | Orders fetched: ${orders.length} | Order value: ${amount} | Cancel/refund signals: ${cancelled}`\n  : `Báo cáo Haravan | Đơn đã lấy: ${orders.length} | Tổng giá trị đơn: ${amount} | Tín hiệu hủy/hoàn: ${cancelled}`;\nreturn { order_count: orders.length, order_value: amount, cancelled_refunded_signals: cancelled, message };"
+      }
+    },
+    {
+      "id": "build_delivery",
+      "type": "jsCodeRunner",
+      "name": "Build Zalo adapter payload",
+      "params": {
+        "input": "recipient-placeholder",
+        "timeout": "2",
+        "code": "const recipient = String(input || '').trim();\nif (!recipient) throw new Error('Zalo recipient is required');\nconst message = String(outputs.aggregate && outputs.aggregate.message ? outputs.aggregate.message : '');\nreturn { body: JSON.stringify({ recipient_id: recipient, message }) };"
+      }
+    },
+    {
+      "id": "send_zalo",
+      "type": "httpRequest",
+      "name": "Send through Zalo OA adapter",
+      "params": {
+        "method": "POST",
+        "url": "https://example.test/zalo-oa-delivery",
+        "headers": "{}",
+        "body": "{{build_delivery.body}}",
+        "credential_id": "",
+        "credential_header": "Authorization",
+        "credential_prefix": "Bearer "
+      }
+    }
+  ],
+  "edges": [
+    { "id": "fetch_to_aggregate", "source": "fetch_orders", "target": "aggregate" },
+    { "id": "aggregate_to_delivery", "source": "aggregate", "target": "build_delivery" },
+    { "id": "delivery_to_zalo", "source": "build_delivery", "target": "send_zalo" }
+  ]
+}

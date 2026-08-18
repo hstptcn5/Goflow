@@ -30,12 +30,7 @@ type HTTPRequestExecutor struct {
 }
 
 func NewHTTPRequestExecutor() *HTTPRequestExecutor {
-	return &HTTPRequestExecutor{
-		client: &http.Client{
-			Timeout:       30 * time.Second,
-			CheckRedirect: sourceprobe.SafeRedirect,
-		},
-	}
+	return &HTTPRequestExecutor{client: &http.Client{Timeout: 30 * time.Second, CheckRedirect: sourceprobe.SafeRedirect}}
 }
 
 func NewHTTPRequestExecutorWithClient(client *http.Client) *HTTPRequestExecutor {
@@ -72,17 +67,13 @@ func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 	if bodyStr != "" && (method == "POST" || method == "PUT" || method == "PATCH") {
 		reqBody = bytes.NewBufferString(bodyStr)
 	}
-
 	req, err := http.NewRequestWithContext(ctx.Context, method, urlStr, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-
-	// Default Content-Type n???u c?? body
 	if reqBody != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-
 	if headersMapStr != "" {
 		var headers map[string]string
 		if err := json.Unmarshal([]byte(headersMapStr), &headers); err != nil {
@@ -97,6 +88,9 @@ func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 			}
 			req.Header.Set(k, v)
 		}
+	}
+	if err := applyHTTPRequestCredential(ctx, node, req); err != nil {
+		return nil, err
 	}
 
 	resp, err := e.client.Do(req)
@@ -137,15 +131,34 @@ func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 		}
 		jsonResult = result.Data
 	} else if err := json.Unmarshal(respBytes, &jsonResult); err != nil {
-		// Tr??? v??? d???ng string n???u kh??ng ph???i JSON
 		jsonResult = string(respBytes)
 	}
 
-	return map[string]interface{}{
-		"status_code": resp.StatusCode,
-		"headers":     resp.Header,
-		"data":        jsonResult,
-	}, nil
+	return map[string]interface{}{"status_code": resp.StatusCode, "headers": resp.Header, "data": jsonResult}, nil
+}
+
+func applyHTTPRequestCredential(ctx *ExecutionContext, node *Node, req *http.Request) error {
+	credID, _ := node.Params["credential_id"].(string)
+	if strings.TrimSpace(credID) == "" {
+		return nil
+	}
+	secret, ok := ctx.Credentials[credID]
+	if !ok || strings.TrimSpace(secret) == "" {
+		return fmt.Errorf("HTTP credential is not available")
+	}
+	header, _ := node.Params["credential_header"].(string)
+	if strings.TrimSpace(header) == "" {
+		header = "Authorization"
+	}
+	prefix, _ := node.Params["credential_prefix"].(string)
+	if prefix == "" {
+		prefix = "Bearer "
+	}
+	if err := validateHTTPHeader(header, prefix+secret); err != nil {
+		return err
+	}
+	req.Header.Set(header, prefix+secret)
+	return nil
 }
 
 func (e *HTTPRequestExecutor) Validate(node *Node) error {
@@ -163,59 +176,26 @@ func (e *HTTPRequestExecutor) Validate(node *Node) error {
 			return err
 		}
 	}
+	if header, ok := node.Params["credential_header"].(string); ok && strings.TrimSpace(header) != "" {
+		if err := validateHTTPHeader(header, "placeholder"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func (e *HTTPRequestExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
-		Type:        TypeHTTPRequest,
-		Name:        "HTTP Request",
-		Description: "Sends HTTP API requests such as GET, POST, PUT, and DELETE",
-		Icon:        "Globe",
-		Category:    "ACTION",
-		Retryable:   true,
+		Type: TypeHTTPRequest, Name: "HTTP Request", Description: "Sends HTTP API requests such as GET, POST, PUT, and DELETE", Icon: "Globe", Category: "ACTION", Retryable: true,
 		Params: []ParamDefinition{
-			{
-				Name:        "method",
-				Label:       "HTTP Method",
-				Type:        "select",
-				Default:     "GET",
-				Options:     []string{"GET", "POST", "PUT", "DELETE", "PATCH"},
-				Required:    true,
-				Description: "HTTP method",
-			},
-			{
-				Name:        "url",
-				Label:       "Target URL",
-				Type:        "text",
-				Default:     "https://api.github.com",
-				Required:    true,
-				Description: "Target request URL",
-			},
-			{
-				Name:        "headers",
-				Label:       "Headers (JSON)",
-				Type:        "json",
-				Default:     "{}",
-				Required:    false,
-				Description: "Custom headers as a JSON object",
-			},
-			{
-				Name:        "body",
-				Label:       "Request Body",
-				Type:        "textarea",
-				Default:     "",
-				Required:    false,
-				Description: "Request body for POST, PUT, or PATCH",
-			},
-			{
-				Name:        "response_contract",
-				Label:       "JSON Response Contract",
-				Type:        "json",
-				Default:     "",
-				Required:    false,
-				Description: "Optional required JSON fields and type constraints",
-			},
+			{Name: "method", Label: "HTTP Method", Type: "select", Default: "GET", Options: []string{"GET", "POST", "PUT", "DELETE", "PATCH"}, Required: true, Description: "HTTP method"},
+			{Name: "url", Label: "Target URL", Type: "text", Default: "https://api.github.com", Required: true, Description: "Target request URL"},
+			{Name: "headers", Label: "Headers (JSON)", Type: "json", Default: "{}", Required: false, Description: "Custom non-secret headers as a JSON object"},
+			{Name: "body", Label: "Request Body", Type: "textarea", Default: "", Required: false, Description: "Request body for POST, PUT, or PATCH"},
+			{Name: "credential_id", Label: "Bearer/API Credential", Type: "credential", Default: "", Required: false, Description: "Encrypted credential injected into a request header at runtime"},
+			{Name: "credential_header", Label: "Credential Header", Type: "text", Default: "Authorization", Required: false, Description: "Header that receives the encrypted credential"},
+			{Name: "credential_prefix", Label: "Credential Prefix", Type: "text", Default: "Bearer ", Required: false, Description: "Prefix placed before the encrypted credential"},
+			{Name: "response_contract", Label: "JSON Response Contract", Type: "json", Default: "", Required: false, Description: "Optional required JSON fields and type constraints"},
 		},
 	}
 }

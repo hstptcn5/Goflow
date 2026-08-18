@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "official.low-stock-alert",
+  "name": "Low Stock Alert",
+  "version": "0.1.0",
+  "description": "Check a normalized inventory snapshot and notify Telegram only when stock needs attention, with Vietnamese or English output.",
+  "entry_workflow": "workflows/main.json",
+  "required_credentials": [],
+  "supported_platforms": ["windows-amd64", "linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64"],
+  "assets": ["README.md", "CHANGELOG.md", "locales.json", "sample-source.json"],
+  "required_capabilities": ["goflow.pack.v1", "goflow.setup.bindings.v1", "goflow.setup.connection-tests.v1", "goflow.schedule.daily.v1"],
+  "config_schema": [
+    { "key": "source_url", "label": "Inventory data URL", "description": "HTTP(S) JSON endpoint returning checked_at, store_name, low_stock_count and items_summary.", "type": "url", "required": true, "test_kind": "http_json_contract" },
+    { "key": "chat_id", "label": "Telegram chat ID", "description": "Chat, group, or channel that receives low-stock alerts.", "type": "string", "required": true, "min_length": 1, "max_length": 120 },
+    { "key": "output_language", "label": "Alert language", "description": "Language used in the alert.", "type": "select", "required": true, "default": "vi", "options": ["vi", "en"] }
+  ],
+  "credential_requirements": [
+    { "key": "telegram", "label": "Telegram bot token", "description": "Encrypted bot token used to deliver low-stock alerts.", "type": "TELEGRAM_BOT", "required": true, "test_kind": "telegram_get_me" }
+  ],
+  "bindings": [
+    { "source": "config.source_url", "target": { "node_id": "fetch_stock", "param": "url" } },
+    { "source": "config.output_language", "target": { "node_id": "locale_vi", "param": "field" } },
+    { "source": "config.chat_id", "target": { "node_id": "send_vi", "param": "chat_id" } },
+    { "source": "config.chat_id", "target": { "node_id": "send_en", "param": "chat_id" } },
+    { "source": "credential.telegram", "target": { "node_id": "send_vi", "param": "credential_id" } },
+    { "source": "credential.telegram", "target": { "node_id": "send_en", "param": "credential_id" } }
+  ]
+}

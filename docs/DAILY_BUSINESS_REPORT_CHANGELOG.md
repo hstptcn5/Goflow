@@ -1,8 +1,16 @@
 # Daily Business Report — Product Changelog
 
-## 0.9.0 — Checkpoint G pilot
+## 0.10.0 — Bilingual public beta
 
-First productized pilot of `official.daily-business-report`.
+- Added one Pack, two report languages: English and Vietnamese.
+- Added persistent English/Tiếng Việt appliance UI switcher.
+- Added Vietnamese deterministic, OpenAI and DeepSeek report paths.
+- Added validated localization metadata and stable locale-neutral config values.
+- Kept AI disabled by default and preserved the same normalized source contract.
+
+## 0.9.0 — Checkpoint G/H public beta
+
+First productized public beta of `official.daily-business-report`.
 
 ### Product
 
@@ -23,14 +31,14 @@ First productized pilot of `official.daily-business-report`.
 
 ### Distribution
 
-- Native Windows amd64 unsigned pilot artifact.
+- Native Windows amd64 unsigned public beta artifact.
 - Deterministic pack build verification.
 - SHA-256 checksum manifest.
 - Portable artifact state/secret scan.
 - Install guide and product changelog included with the artifact.
 
-### Known pilot limits
+### Known beta limits
 
 - Artifact is unsigned and may trigger Windows SmartScreen.
-- The normalized source endpoint is supplied by the user; Checkpoint G does not yet bundle vendor-specific sales adapters.
-- Public payment/licensing is intentionally out of scope until the install/run path is validated with external users.
+- The normalized source endpoint is supplied by the user; vendor adapters remain separate preview Packs.
+- Public payment/licensing remains out of scope for this checkpoint.
