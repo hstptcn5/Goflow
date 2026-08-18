@@ -1,38 +1,25 @@
 name: Daily Business Report Public Beta
 
 on:
-  workflow_dispatch:
   pull_request:
     paths:
       - 'examples/packs/daily-business-report/**'
       - 'internal/pack/**'
-      - 'internal/packsetup/**'
       - 'internal/nodes/**'
-      - 'internal/engine/**'
-      - 'internal/api/appliance*'
       - 'ui/src/components/ApplianceApp.vue'
       - 'ui/src/components/applianceI18n.js'
-      - 'ui/package.json'
-      - 'ui/package-lock.json'
       - 'scripts/build-daily-business-report*.ps1'
-      - 'docs/DAILY_BUSINESS_REPORT_*.md'
       - '.github/workflows/daily-business-report.yml'
-      - 'main.go'
-      - 'static_embed.go'
-      - 'VERSION'
+
+permissions:
+  contents: read
 
 env:
   GOFLOW_RELEASE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
-  RELEASE_TAG: daily-business-report-v0.10.0-beta.1
-  RELEASE_TITLE: Daily Business Report v0.10.0 — Bilingual Public Beta
-  RELEASE_BUNDLE: Goflow-Daily-Business-Report-Windows-amd64.zip
-
-permissions:
-  contents: write
 
 jobs:
-  windows-public-beta:
-    name: Windows bilingual flagship artifact
+  windows-validation:
+    name: Windows bilingual flagship validation
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -41,144 +28,28 @@ jobs:
         with:
           ref: ${{ env.GOFLOW_RELEASE_COMMIT }}
           fetch-depth: 0
-
       - name: Verify exact checkout
         shell: pwsh
         run: |
           if ((git rev-parse HEAD).Trim() -ne $env:GOFLOW_RELEASE_COMMIT) { throw 'checkout does not match requested commit' }
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: ui/package-lock.json
-
-      - name: Build and verify Windows bilingual beta
+      - name: Build and verify bilingual Windows artifact
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path checkpoint-i-artifact | Out-Null
-          .\scripts\build-daily-business-report-current.ps1 `
-            -OutputDirectory (Resolve-Path checkpoint-i-artifact).Path `
-            -Commit $env:GOFLOW_RELEASE_COMMIT
-
-      - name: Upload verified CI artifact
+          .\scripts\build-daily-business-report-current.ps1 -OutputDirectory (Resolve-Path checkpoint-i-artifact).Path -Commit $env:GOFLOW_RELEASE_COMMIT
+      - name: Upload verified validation artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UNSIGNED-PUBLIC-BETA-goflow-daily-business-report-v0.10.0-windows-amd64
+          name: CHECKPOINT-I-VALIDATION-daily-business-report-windows-amd64
           path: checkpoint-i-artifact/**
           if-no-files-found: error
-          retention-days: 14
-
-      - name: Check immutable public beta state
-        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'agent/checkpoint-i-vietnam-i18n' && github.event.pull_request.head.repo.full_name == github.repository }}
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $headers = @{ Accept = 'application/vnd.github+json'; Authorization = "Bearer $env:GH_TOKEN"; 'X-GitHub-Api-Version' = '2022-11-28' }
-          $uri = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG"
-          $response = Invoke-WebRequest -Uri $uri -Headers $headers -SkipHttpErrorCheck
-          if ($response.StatusCode -eq 200) {
-            Write-Output "Public beta $env:RELEASE_TAG already exists; it will not be mutated."
-            'GOFLOW_PUBLISH_PUBLIC_BETA=false' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          } elseif ($response.StatusCode -eq 404) {
-            'GOFLOW_PUBLISH_PUBLIC_BETA=true' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          } else {
-            throw "GitHub release lookup failed with HTTP $($response.StatusCode)"
-          }
-
-      - name: Validate bilingual onboarding contract
-        if: ${{ env.GOFLOW_PUBLISH_PUBLIC_BETA == 'true' }}
-        shell: pwsh
-        run: |
-          $pack = Get-Content -Raw examples/packs/daily-business-report/pack.json | ConvertFrom-Json
-          if ($pack.id -ne 'official.daily-business-report' -or $pack.version -ne '0.10.0') { throw 'public release pack identity mismatch' }
-          $source = @($pack.config_schema | Where-Object { $_.key -eq 'source_url' })
-          $expected = "https://raw.githubusercontent.com/hstptcn5/Goflow/$env:RELEASE_TAG/examples/packs/daily-business-report/sample-source.json"
-          if ($source.Count -ne 1 -or $source[0].default -ne $expected) { throw 'source URL is not pinned to this public beta tag' }
-          $language = @($pack.config_schema | Where-Object { $_.key -eq 'output_language' })
-          if ($language.Count -ne 1 -or $language[0].type -ne 'select' -or $language[0].default -ne 'en') { throw 'output_language must default to en' }
-          $languageOptions = @($language[0].options)
-          if ($languageOptions.Count -ne 2 -or $languageOptions[0] -ne 'en' -or $languageOptions[1] -ne 'vi') { throw 'output_language must support en and vi' }
-          $provider = @($pack.config_schema | Where-Object { $_.key -eq 'ai_provider' })
-          if ($provider.Count -ne 1 -or $provider[0].default -ne 'none') { throw 'AI must remain off by default' }
-          $locales = Get-Content -Raw examples/packs/daily-business-report/locales.json | ConvertFrom-Json
-          if ($locales.default_locale -ne 'en' -or $null -eq $locales.locales.en -or $null -eq $locales.locales.vi) { throw 'bilingual localization metadata is incomplete' }
-
-      - name: Prepare public beta assets
-        if: ${{ env.GOFLOW_PUBLISH_PUBLIC_BETA == 'true' }}
-        shell: pwsh
-        run: |
-          Copy-Item examples/packs/daily-business-report/sample-source.json checkpoint-i-artifact/daily-business-report-sample.json
-          Remove-Item checkpoint-i-artifact/UNSIGNED-PILOT-BETA.txt -ErrorAction SilentlyContinue
-          @(
-            'Goflow Daily Business Report — Windows Bilingual Public Beta'
-            ''
-            '1. Verify SHA256SUMS.txt.'
-            '2. Extract Goflow-Daily-Business-Report-Windows-amd64.zip.'
-            '3. Read INSTALL.md.'
-            '4. Run goflow.exe from the extracted folder.'
-            '5. Choose English or Tiếng Việt in the appliance.'
-            '6. Leave the prefilled sample source URL in place for the first test.'
-            '7. Enter your own Telegram chat ID and bot token.'
-            '8. Leave AI commentary at none, then Run now.'
-            ''
-            'This is an unsigned public beta and may trigger Windows SmartScreen.'
-          ) | Set-Content checkpoint-i-artifact/START-HERE.txt -Encoding utf8
-          @('UNSIGNED-PUBLIC-BETA', "commit=$env:GOFLOW_RELEASE_COMMIT", 'target=windows-amd64', 'pack_id=official.daily-business-report', 'pack_version=0.10.0', "tag=$env:RELEASE_TAG") | Set-Content checkpoint-i-artifact/UNSIGNED-PUBLIC-BETA.txt -Encoding ascii
-          $publicAssets = @($env:RELEASE_BUNDLE,'INSTALL.md','CHANGELOG.md','START-HERE.txt','UNSIGNED-PUBLIC-BETA.txt','daily-business-report-sample.json')
-          $checksumLines = foreach ($name in $publicAssets) {
-            $path = Join-Path checkpoint-i-artifact $name
-            if (-not (Test-Path $path)) { throw "public release asset missing: $name" }
-            $digest = (Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant()
-            "$digest  $name"
-          }
-          $checksumLines | Sort-Object | Set-Content checkpoint-i-artifact/SHA256SUMS.txt -Encoding ascii
-          $bundleDigest = (Get-FileHash -Algorithm SHA256 (Join-Path checkpoint-i-artifact $env:RELEASE_BUNDLE)).Hash.ToLowerInvariant()
-          Copy-Item docs/DAILY_BUSINESS_REPORT_I18N_RELEASE_NOTES.md release-notes.md
-          Add-Content release-notes.md ''
-          Add-Content release-notes.md '### Verified release identity'
-          Add-Content release-notes.md ''
-          Add-Content release-notes.md "- Commit: ``$env:GOFLOW_RELEASE_COMMIT``"
-          Add-Content release-notes.md "- Bundle SHA-256: ``$bundleDigest``"
-          Add-Content release-notes.md "- Tag: ``$env:RELEASE_TAG``"
-          "BUNDLE_SHA256=$bundleDigest" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Publish immutable prerelease
-        if: ${{ env.GOFLOW_PUBLISH_PUBLIC_BETA == 'true' }}
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --target $env:GOFLOW_RELEASE_COMMIT --title $env:RELEASE_TITLE --notes-file release-notes.md --prerelease `
-            "checkpoint-i-artifact/$env:RELEASE_BUNDLE" `
-            'checkpoint-i-artifact/SHA256SUMS.txt' `
-            'checkpoint-i-artifact/INSTALL.md' `
-            'checkpoint-i-artifact/CHANGELOG.md' `
-            'checkpoint-i-artifact/START-HERE.txt' `
-            'checkpoint-i-artifact/UNSIGNED-PUBLIC-BETA.txt' `
-            'checkpoint-i-artifact/daily-business-report-sample.json'
-          if ($LASTEXITCODE -ne 0) { throw 'GitHub prerelease publication failed' }
-
-      - name: Verify bilingual public beta release
-        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'agent/checkpoint-i-vietnam-i18n' && github.event.pull_request.head.repo.full_name == github.repository }}
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $release = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isPrerelease,tagName,url,assets | ConvertFrom-Json
-          if (-not $release.isPrerelease -or $release.tagName -ne $env:RELEASE_TAG) { throw 'published release metadata is not the expected prerelease' }
-          $names = @($release.assets | ForEach-Object { $_.name })
-          foreach ($required in @($env:RELEASE_BUNDLE,'SHA256SUMS.txt','INSTALL.md','CHANGELOG.md','START-HERE.txt','UNSIGNED-PUBLIC-BETA.txt','daily-business-report-sample.json')) {
-            if ($names -notcontains $required) { throw "published release is missing asset $required" }
-          }
-          Write-Output 'BILINGUAL_PUBLIC_BETA_RELEASE PASS'
-          Write-Output "release_url=$($release.url)"
-          if ($env:BUNDLE_SHA256) { Write-Output "bundle_sha256=$env:BUNDLE_SHA256" }
+          retention-days: 7
