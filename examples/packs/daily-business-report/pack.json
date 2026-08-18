@@ -29,11 +29,11 @@
     {
       "key": "source_url",
       "label": "Business data URL",
-      "description": "Absolute HTTP(S) endpoint returning the Daily Business Report JSON contract.",
+      "description": "Absolute HTTP(S) endpoint returning the Daily Business Report JSON contract. The default public sample is safe to use for your first test.",
       "type": "url",
       "required": true,
       "test_kind": "http_json_contract",
-      "default": "https://example.test/daily-business-report.json"
+      "default": "https://raw.githubusercontent.com/hstptcn5/Goflow/daily-business-report-v0.9.0-beta.1/examples/packs/daily-business-report/sample-source.json"
     },
     {
       "key": "chat_id",
@@ -48,7 +48,7 @@
     {
       "key": "ai_provider",
       "label": "AI commentary",
-      "description": "Use none for deterministic reporting, or choose openai or deepseek for optional AI commentary.",
+      "description": "Leave this at none for the first run. Choose openai or deepseek only after the deterministic report works.",
       "type": "select",
       "required": true,
       "default": "none",
@@ -66,14 +66,14 @@
     },
     {
       "key": "openai",
-      "label": "OpenAI API key",
+      "label": "OpenAI API key (optional)",
       "description": "Optional. Add this only when AI commentary is set to openai.",
       "type": "OPENAI_API_KEY",
       "required": false
     },
     {
       "key": "deepseek",
-      "label": "DeepSeek API key",
+      "label": "DeepSeek API key (optional)",
       "description": "Optional. Add this only when AI commentary is set to deepseek.",
       "type": "DEEPSEEK_API_KEY",
       "required": false

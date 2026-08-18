@@ -1,32 +1,44 @@
-# Daily Business Report — Windows Pilot Guide
+# Daily Business Report — Public Beta Guide
 
-This guide covers the first productized Goflow workflow: **Daily Business Report** (`official.daily-business-report`, pack version `0.9.0`).
+This guide covers **Daily Business Report** (`official.daily-business-report`, pack version `0.9.0`).
 
-The shortest successful path takes about **5–10 minutes** and does not require an AI provider.
+The shortest successful path takes about **5–10 minutes** and does not require an AI provider. Public beta distribution is Windows-first and remains unsigned, so Windows SmartScreen may warn before launch.
 
 ## What you need
 
 - Windows 10/11 on amd64.
-- A reachable HTTP(S) JSON endpoint containing the daily business snapshot.
 - A Telegram bot token from BotFather.
 - A Telegram chat, group, or channel ID the bot can access.
+- A reachable HTTP(S) JSON endpoint containing the daily business snapshot, **or use the public sample already filled into the first-run form**.
 
 Optional after the deterministic report works:
 
 - OpenAI API key for OpenAI commentary.
 - DeepSeek API key for DeepSeek commentary.
 
-## 1. Extract and start
+## 1. Download, verify, extract
 
-Extract the complete Windows artifact to a normal writable folder. Keep the files together.
+Download `Goflow-Daily-Business-Report-Windows-amd64.zip` from the official Daily Business Report GitHub prerelease.
+
+Download `SHA256SUMS.txt` from the same release and verify the ZIP before running it. Do not use a ZIP re-hosted by an unknown third party.
+
+Extract the complete ZIP to a normal writable folder. Keep the files together.
 
 Run `goflow.exe` inside the extracted application directory. Goflow starts a loopback-only local web UI and opens the Daily Business Report appliance.
 
 The portable bundle does not keep runtime state inside itself. Setup state, encrypted credential bindings, schedule state and execution history are stored under the Goflow application-data location for this pack.
 
-## 2. Prepare the business data endpoint
+## 2. Use the public sample for the fastest first run
 
-The endpoint must return JSON matching this contract:
+The first-run form is prefilled with a version-pinned public sample URL:
+
+`https://raw.githubusercontent.com/hstptcn5/Goflow/daily-business-report-v0.9.0-beta.1/examples/packs/daily-business-report/sample-source.json`
+
+Leave this URL unchanged for the first test and select **Test source**. The sample contains demo-only values and exists only to prove that the install, source validation and Telegram delivery path works without making you host JSON first.
+
+After the first successful report, replace it with your own endpoint.
+
+Your real endpoint must return JSON matching this contract:
 
 ```json
 {
@@ -50,8 +62,6 @@ Required field rules:
 - `low_stock_summary`: string.
 - `comparison_summary`: string.
 
-Paste the absolute HTTP(S) URL into **Business data URL**, save the configuration, then select **Test source**. Do not continue until the source is marked valid.
-
 ## 3. Connect Telegram
 
 Enter the target Telegram chat ID.
@@ -66,14 +76,11 @@ If Telegram reports that the chat is inaccessible:
 
 ## 4. Keep AI commentary off for the first run
 
-The default `AI commentary` value is `none`.
+Leave **AI commentary** at `none` for the first successful run. The workflow skips every LLM node and builds the report deterministically from the seven validated source fields.
 
-Leave it at `none` for the first successful run. The workflow then skips every LLM node and builds the report deterministically from the seven validated source fields.
+The core product therefore requires only the business-data endpoint and Telegram.
 
-This means the core product requires only:
-
-- the business-data endpoint; and
-- Telegram.
+OpenAI and DeepSeek credentials are optional. Add only the provider you choose later.
 
 ## 5. Configure the daily schedule
 
@@ -92,18 +99,15 @@ Select **Complete setup** only after the current source and Telegram destination
 
 Then select **Run now**.
 
-A successful deterministic message contains:
+A successful deterministic message contains the report date/timezone, revenue, order count, cancelled/refunded count, low-stock summary and comparison summary. Confirm exactly one Telegram message arrived.
 
-- report date and timezone;
-- revenue;
-- order count;
-- cancelled/refunded count;
-- low-stock summary; and
-- comparison/trend summary.
+## 7. Replace the sample with your data
 
-Check the Telegram destination and confirm exactly one message arrived.
+Reopen setup and replace **Business data URL** with your real endpoint. Run **Test source** again before completing setup.
 
-## 7. Verify restart persistence
+The sample URL is intentionally version-pinned to the public beta release so its contract cannot silently change underneath an installed beta build.
+
+## 8. Verify restart persistence
 
 Close the process cleanly and start `goflow.exe` again from the same extracted application directory.
 
@@ -114,53 +118,31 @@ The appliance should reopen without requiring the source URL, Telegram credentia
 After the deterministic report succeeds:
 
 1. Create the optional **OpenAI API key** credential.
-2. Change `AI commentary` to `openai`.
-3. Save configuration and complete/revalidate setup if requested.
+2. Change **AI commentary** to `openai`.
+3. Save/revalidate setup if requested.
 4. Run the report again.
 
-Only the OpenAI branch executes. The DeepSeek branch and deterministic-only send branch are skipped.
-
-AI commentary is instructed to stay concise and factual and not invent numbers or causes absent from the source data.
+Only the OpenAI branch executes. AI commentary is instructed to stay concise and factual and not invent numbers or causes absent from the source data.
 
 ## Optional: DeepSeek commentary
 
 After the deterministic report succeeds:
 
 1. Create the optional **DeepSeek API key** credential.
-2. Change `AI commentary` to `deepseek`.
-3. Save configuration and complete/revalidate setup if requested.
+2. Change **AI commentary** to `deepseek`.
+3. Save/revalidate setup if requested.
 4. Run the report again.
 
-Only the DeepSeek branch executes. The OpenAI branch and deterministic-only send branch are skipped.
+Only the DeepSeek branch executes.
 
-## Troubleshooting
+## Support and feedback
 
-### Source test fails
+Use the **Daily Business Report feedback** issue template in the Goflow repository for installation failures, unclear setup steps, source-contract problems or report-delivery issues.
 
-Confirm the URL is reachable from the machine and returns all seven required fields with the correct JSON types.
+Before posting diagnostics, use the appliance diagnostics panel and keep the payload redacted. **Never post Telegram bot tokens, OpenAI keys, DeepSeek keys, master keys or other secrets in a GitHub issue.**
 
-### Telegram token is invalid
+## Public beta boundary
 
-Create/copy the token again from BotFather and replace the saved Telegram credential.
+This Windows package is an **unsigned public beta**. Verify the official SHA-256 checksum before running it.
 
-### Telegram chat is inaccessible
-
-Make sure the bot can access the target destination and verify the chat ID.
-
-### Run now says a report is already running
-
-Daily Business Report allows one active run at a time. Wait for the current execution to finish; the appliance tracks it on the dashboard.
-
-### Scheduled run needs attention
-
-Open the appliance, inspect the schedule state, re-test the current source and Telegram destination if setup changed, and save the schedule again if required.
-
-### Need diagnostics
-
-Use the appliance diagnostics panel to refresh, copy or download the redacted diagnostic payload. Secrets and credential IDs are not included in the public diagnostic view.
-
-## Pilot boundary
-
-The Windows package produced by Checkpoint G is an **unsigned pilot artifact**. Windows may display a SmartScreen warning. Verify the published SHA-256 checksums before running it.
-
-No runtime database, master key, saved setup file or credential binding file should be distributed inside the portable artifact.
+No runtime database, master key, saved setup file or credential binding file is distributed inside the portable artifact. Payment/licensing and signed installers remain outside this beta.
