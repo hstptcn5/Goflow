@@ -28,30 +28,46 @@ func (e *JSCodeRunnerExecutor) Execute(ctx *ExecutionContext, node *Node) (inter
 	if timeoutVal, ok := node.Params["timeout"]; ok {
 		switch value := timeoutVal.(type) {
 		case string:
-			if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 { timeoutSeconds = parsed }
+			if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+				timeoutSeconds = parsed
+			}
 		case float64:
-			if value > 0 { timeoutSeconds = int(value) }
+			if value > 0 {
+				timeoutSeconds = int(value)
+			}
 		case int:
-			if value > 0 { timeoutSeconds = value }
+			if value > 0 {
+				timeoutSeconds = value
+			}
 		}
 	}
 
 	vm := goja.New()
 	ctx.mu.RLock()
 	outputsCopy := make(map[string]interface{}, len(ctx.Outputs))
-	for key, value := range ctx.Outputs { outputsCopy[key] = value }
+	for key, value := range ctx.Outputs {
+		outputsCopy[key] = value
+	}
 	ctx.mu.RUnlock()
 	_ = vm.Set("outputs", outputsCopy)
 	_ = vm.Set("input", node.Params["input"])
-	if trigger, ok := outputsCopy["$trigger"]; ok { _ = vm.Set("trigger", trigger) }
+	if trigger, ok := outputsCopy["$trigger"]; ok {
+		_ = vm.Set("trigger", trigger)
+	}
 
 	scriptToRun := codeStr
-	if strings.Contains(codeStr, "return") { scriptToRun = fmt.Sprintf("(function(){\n%s\n})()", codeStr) }
+	if strings.Contains(codeStr, "return") {
+		scriptToRun = fmt.Sprintf("(function(){\n%s\n})()", codeStr)
+	}
 	timer := time.AfterFunc(time.Duration(timeoutSeconds)*time.Second, func() { vm.Interrupt("timeout") })
 	defer timer.Stop()
 	val, err := vm.RunString(scriptToRun)
-	if err != nil { return nil, fmt.Errorf("JS evaluation error: %w", err) }
-	if val == nil { return nil, nil }
+	if err != nil {
+		return nil, fmt.Errorf("JS evaluation error: %w", err)
+	}
+	if val == nil {
+		return nil, nil
+	}
 	return val.Export(), nil
 }
 

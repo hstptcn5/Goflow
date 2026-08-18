@@ -54,7 +54,7 @@ func TestLoadLocalizationRejectsUnknownSetupKey(t *testing.T) {
 func TestLoadLocalizationRejectsUnknownSelectOption(t *testing.T) {
 	root := t.TempDir()
 	manifest := Manifest{
-		Assets: []string{LocalizationAsset},
+		Assets:       []string{LocalizationAsset},
 		ConfigSchema: []ConfigField{{Key: "language", Label: "Language", Type: "select", Required: true, Options: []interface{}{"en", "vi"}}},
 	}
 	content := `{"default_locale":"en","locales":{"en":{"config":{"language":{"options":{"jp":"Japanese"}}}}}}`
