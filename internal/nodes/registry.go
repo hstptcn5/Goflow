@@ -10,6 +10,35 @@ type PluginRegistry struct {
 	mu        sync.RWMutex
 }
 
+type credentialDefinitionOverrideExecutor struct {
+	NodeExecutor
+	paramName string
+	kinds     []string
+	providers []string
+}
+
+func (e *credentialDefinitionOverrideExecutor) GetDefinition() NodeDefinition {
+	def := e.NodeExecutor.GetDefinition()
+	for i := range def.Params {
+		if def.Params[i].Name != e.paramName {
+			continue
+		}
+		def.Params[i].CredentialKinds = append([]string(nil), e.kinds...)
+		def.Params[i].CredentialProviders = append([]string(nil), e.providers...)
+		break
+	}
+	return def
+}
+
+func withCredentialCompatibility(executor NodeExecutor, paramName string, kinds, providers []string) NodeExecutor {
+	return &credentialDefinitionOverrideExecutor{
+		NodeExecutor: executor,
+		paramName:    paramName,
+		kinds:        append([]string(nil), kinds...),
+		providers:    append([]string(nil), providers...),
+	}
+}
+
 func NewPluginRegistry() *PluginRegistry {
 	return &PluginRegistry{
 		executors: make(map[NodeType]NodeExecutor),
@@ -39,7 +68,12 @@ func NewBuiltinRegistryWithTelegramExecutor(telegramExecutor NodeExecutor) *Plug
 	_ = registry.Register(NewDelaySleepExecutor())
 	_ = registry.Register(NewOpenAIGPTExecutor())
 	_ = registry.Register(NewDeepSeekAIExecutor())
-	_ = registry.Register(NewAIExtractExecutor())
+	_ = registry.Register(withCredentialCompatibility(
+		NewAIExtractExecutor(),
+		"credential_id",
+		[]string{"API_KEY"},
+		[]string{"openai"},
+	))
 	_ = registry.Register(NewDiscordBotExecutor())
 	_ = registry.Register(NewSlackBotExecutor())
 	_ = registry.Register(NewJSCodeRunnerExecutor())
