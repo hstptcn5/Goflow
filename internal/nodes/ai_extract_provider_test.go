@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -27,6 +28,7 @@ func TestProviderAIExtractDeepSeekText(t *testing.T) {
 	executor := NewProviderAIExtractExecutorWithClients(nil, server.Client(), server.URL)
 	ctx := NewExecutionContext("wf", "exec")
 	ctx.Credentials["deepseek-cred"] = "ds-secret"
+	ctx.CredentialMetadata["deepseek-cred"] = CredentialMetadata{Kind: "API_KEY", Provider: "deepseek", Type: "deepseek"}
 	node := &Node{
 		ID:   "extract",
 		Type: NewAIExtractExecutor().GetDefinition().Type,
@@ -69,16 +71,87 @@ func TestProviderAIExtractDeepSeekRejectsNonText(t *testing.T) {
 		ID:   "extract",
 		Type: NewAIExtractExecutor().GetDefinition().Type,
 		Params: map[string]interface{}{
-			"provider":    "deepseek",
-			"model":       "auto",
-			"input_type":  "image_url",
-			"input":       "https://example.com/image.png",
-			"json_schema": "{\"type\":\"object\",\"properties\":{},\"required\":[],\"additionalProperties\":false}",
-			"schema_name": "image",
+			"provider":      "deepseek",
+			"model":         "auto",
+			"input_type":    "image_url",
+			"input":         "https://example.com/image.png",
+			"json_schema":   "{\"type\":\"object\",\"properties\":{},\"required\":[],\"additionalProperties\":false}",
+			"schema_name":   "image",
+			"credential_id": "deepseek-cred",
 		},
 	}
-	if err := executor.Validate(node); err == nil {
-		t.Fatal("expected DeepSeek non-text input validation error")
+	if err := executor.Validate(node); err == nil || !strings.Contains(err.Error(), "input_type=text") {
+		t.Fatalf("expected DeepSeek non-text input validation error, got %v", err)
+	}
+}
+
+func TestProviderAIExtractSerializesStructuredTextInput(t *testing.T) {
+	node := &Node{
+		ID: "extract",
+		Params: map[string]interface{}{
+			"provider":      "openai",
+			"model":         "auto",
+			"input_type":    "text",
+			"input":         map[string]interface{}{"price": 2654.25, "symbol": "XAUUSD"},
+			"credential_id": "openai-cred",
+		},
+	}
+	prepared, err := prepareProviderAIExtractNode(node, "openai")
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	input, ok := prepared.Params["input"].(string)
+	if !ok {
+		t.Fatalf("structured input was not serialized: %#v", prepared.Params["input"])
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal([]byte(input), &decoded); err != nil {
+		t.Fatalf("serialized input is not JSON: %v", err)
+	}
+	if decoded["symbol"] != "XAUUSD" || decoded["price"] != 2654.25 {
+		t.Fatalf("unexpected serialized input: %#v", decoded)
+	}
+}
+
+func TestProviderAIExtractRejectsPlaintextAPIKey(t *testing.T) {
+	node := &Node{
+		ID: "extract",
+		Params: map[string]interface{}{
+			"provider":      "openai",
+			"input_type":    "text",
+			"input":         "hello",
+			"api_key":       "sk-plaintext-should-not-live-in-workflows",
+			"credential_id": "openai-cred",
+		},
+	}
+	_, err := prepareProviderAIExtractNode(node, "openai")
+	if err == nil || !strings.Contains(err.Error(), "plaintext api_key") {
+		t.Fatalf("expected plaintext api_key rejection, got %v", err)
+	}
+}
+
+func TestProviderAIExtractRejectsMismatchedCredentialProvider(t *testing.T) {
+	ctx := NewExecutionContext("wf", "exec")
+	ctx.Credentials["wrong-cred"] = "secret"
+	ctx.CredentialMetadata["wrong-cred"] = CredentialMetadata{Kind: "API_KEY", Provider: "openai", Type: "openai"}
+	node := &Node{
+		ID: "extract",
+		Params: map[string]interface{}{
+			"provider":      "deepseek",
+			"credential_id": "wrong-cred",
+		},
+	}
+	if err := validateAIExtractCredentialCompatibility(ctx, node, "deepseek"); err == nil || !strings.Contains(err.Error(), "registered for openai") {
+		t.Fatalf("expected provider mismatch error, got %v", err)
+	}
+}
+
+func TestProviderAIExtractRejectsCredentialWithoutMetadata(t *testing.T) {
+	ctx := NewExecutionContext("wf", "exec")
+	ctx.Credentials["unknown-cred"] = "secret"
+	node := &Node{ID: "extract", Params: map[string]interface{}{"credential_id": "unknown-cred"}}
+	if err := validateAIExtractCredentialCompatibility(ctx, node, "openai"); err == nil || !strings.Contains(err.Error(), "metadata is unavailable") {
+		t.Fatalf("expected missing credential metadata error, got %v", err)
 	}
 }
 
@@ -89,10 +162,15 @@ func TestProviderAIExtractDefinitionSupportsBothProviders(t *testing.T) {
 	}
 	var credential ParamDefinition
 	for _, param := range def.Params {
+		if param.Name == "api_key" {
+			t.Fatal("plaintext api_key must not be exposed by the provider-aware definition")
+		}
 		if param.Name == "credential_id" {
 			credential = param
-			break
 		}
+	}
+	if !credential.Required {
+		t.Fatal("AI Extract credential must be required")
 	}
 	if len(credential.CredentialProviders) != 2 || credential.CredentialProviders[0] != "openai" || credential.CredentialProviders[1] != "deepseek" {
 		t.Fatalf("unexpected providers: %#v", credential.CredentialProviders)
