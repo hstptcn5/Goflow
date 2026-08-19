@@ -15,6 +15,7 @@ const (
 	TypeHTTPRequest          NodeType = "httpRequest"
 	TypeNormalizedHTTPSource NodeType = "normalizedHttpSource"
 	TypeRSSFeedSource        NodeType = "rssFeedSource"
+	TypeSourcePolicy         NodeType = "sourcePolicy"
 	TypeTelegramBot          NodeType = "telegramBot"
 	TypeJSONTransform        NodeType = "jsonTransform"
 	TypeConditionIF          NodeType = "conditionIf"
