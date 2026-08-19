@@ -111,7 +111,12 @@ function installHandleOrientationObserver() {
   };
 
   const observer = new MutationObserver(scheduleRefresh);
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['data-handlepos'],
+  });
   scheduleRefresh();
 }
 
