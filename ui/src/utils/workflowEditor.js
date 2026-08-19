@@ -224,8 +224,8 @@ export function validateWorkflowGraph(nodes, edges, nodeDefinitions) {
     (def.params || []).forEach((param) => {
       const value = node.data?.params?.[param.name];
       const missing = value === undefined || value === null || String(value).trim() === '';
-      if (param.type === 'credential' && (param.required || missing)) {
-        if (missing) {
+      if (param.type === 'credential') {
+        if (param.required && missing) {
           issues.push({
             type: 'missing_credential',
             nodeId: node.id,
@@ -243,7 +243,7 @@ export function validateWorkflowGraph(nodes, edges, nodeDefinitions) {
           message: `${node.data?.name || def.name} is missing ${param.label || param.name}.`,
         });
       }
-      const fieldError = param.type === 'credential' ? '' : validateParamValue(param, value, []);
+      const fieldError = validateParamValue(param, value, []);
       if (fieldError && !missing) {
         issues.push({
           type: fieldValidationIssueType(param, fieldError),
