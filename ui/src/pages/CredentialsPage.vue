@@ -156,13 +156,13 @@ function credentialProvider(credential) {
     />
 
     <section v-else class="table-panel" aria-label="Credential list">
-      <div class="table-row table-head">
+      <div class="table-row table-head credential-table-row">
         <span>Name</span>
         <span>Provider</span>
         <span>Auth kind</span>
         <span>Actions</span>
       </div>
-      <div v-for="credential in workflowStore.credentials" :key="credential.id" class="table-row">
+      <div v-for="credential in workflowStore.credentials" :key="credential.id" class="table-row credential-table-row">
         <span>{{ credential.name }}</span>
         <span class="badge badge-muted">{{ credentialProvider(credential) }}</span>
         <span class="badge badge-muted">{{ credentialKind(credential) }}</span>
@@ -171,3 +171,9 @@ function credentialProvider(credential) {
     </section>
   </div>
 </template>
+
+<style scoped>
+.credential-table-row {
+  grid-template-columns: minmax(180px, 1fr) minmax(110px, 0.45fr) minmax(150px, 0.55fr) auto;
+}
+</style>
