@@ -1,17 +1,19 @@
-/* Directional workflow connectors for the brutalist canvas.
+/* Workflow connectors for the brutalist canvas.
  * Presentation-only: edge JSON, source/target ids and execution behavior stay unchanged.
  * Runtime handle orientation is visual geometry only; saved workflow handles are not rewritten.
  */
 .vue-flow__edge-path,
 .vue-flow__connection-path {
-  marker-end: url(#goflow-workflow-arrow) !important;
+  marker-start: none !important;
+  marker-end: none !important;
   stroke-linecap: square !important;
   stroke-linejoin: miter !important;
 }
 
 .vue-flow__edge.selected .vue-flow__edge-path,
 .vue-flow__edge:hover .vue-flow__edge-path {
-  marker-end: url(#goflow-workflow-arrow) !important;
+  marker-start: none !important;
+  marker-end: none !important;
 }
 
 /* The workflow reads left-to-right: inputs enter on the left, outputs leave on the right. */
