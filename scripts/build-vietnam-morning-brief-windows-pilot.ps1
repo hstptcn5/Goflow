@@ -144,6 +144,7 @@ if (Test-Path -LiteralPath $OutputDirectory) {
 New-Item -ItemType Directory -Path $TempRoot | Out-Null
 
 $previousCGO = $env:CGO_ENABLED
+$previousPilotAppDir = $env:GOFLOW_MORNING_BRIEF_APP_DIR
 try {
     Push-Location $RepoRoot
     $head = (git rev-parse HEAD).Trim()
@@ -205,8 +206,9 @@ try {
     Test-ForbiddenFiles -Root $Extracted
 
     # Exercise the extracted Pack on native Windows using controlled RSS and Telegram seams.
-    # This proves the no-AI first-run path, source-linked Telegram output, and persisted setup across restart.
-    Invoke-Checked -Command go -Arguments @('run', './internal/testharness/morningbriefpilot', '--app-dir', $Extracted)
+    # The test proves the no-AI first-run path, source-linked Telegram output, and persisted setup across restart.
+    $env:GOFLOW_MORNING_BRIEF_APP_DIR = $Extracted
+    Invoke-Checked -Command go -Arguments @('test', './internal/testharness/morningbriefpilot', '-run', '^TestNativeWindowsPilot$', '-count=1', '-v')
 
     $PortableDirectory = Join-Path $OutputDirectory $ArtifactDirectoryName
     New-Item -ItemType Directory -Path $PortableDirectory | Out-Null
@@ -262,6 +264,7 @@ try {
 } finally {
     Pop-Location
     $env:CGO_ENABLED = $previousCGO
+    $env:GOFLOW_MORNING_BRIEF_APP_DIR = $previousPilotAppDir
     if (Test-Path -LiteralPath $TempRoot) {
         $resolvedTemp = [System.IO.Path]::GetFullPath($TempRoot)
         if ($resolvedTemp.StartsWith($SystemTemp, [System.StringComparison]::OrdinalIgnoreCase)) {
