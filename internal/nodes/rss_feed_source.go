@@ -18,11 +18,11 @@ import (
 )
 
 const (
-	maxRSSFeeds           = 12
-	maxRSSFeedBytes int64 = 2 << 20
-	maxRSSItems           = 200
-	maxRSSPerFeedItems    = 100
-	maxRSSLookbackHours   = 168
+	maxRSSFeeds               = 12
+	maxRSSFeedBytes     int64 = 2 << 20
+	maxRSSItems               = 200
+	maxRSSPerFeedItems        = 100
+	maxRSSLookbackHours       = 168
 )
 
 var (
@@ -80,7 +80,7 @@ type feedXMLDocument struct {
 	Channel struct {
 		Items []rssXMLItem `xml:"item"`
 	} `xml:"channel"`
-	Items   []rssXMLItem  `xml:"item"`
+	Items   []rssXMLItem   `xml:"item"`
 	Entries []atomXMLEntry `xml:"entry"`
 }
 
