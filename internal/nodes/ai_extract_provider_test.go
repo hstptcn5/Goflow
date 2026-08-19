@@ -146,6 +146,22 @@ func TestProviderAIExtractRejectsMismatchedCredentialProvider(t *testing.T) {
 	}
 }
 
+func TestProviderAIExtractRejectsWrongCredentialKind(t *testing.T) {
+	ctx := NewExecutionContext("wf", "exec")
+	ctx.Credentials["wrong-kind"] = "secret"
+	ctx.CredentialMetadata["wrong-kind"] = CredentialMetadata{Kind: "BEARER_TOKEN", Provider: "deepseek", Type: "bearer_token"}
+	node := &Node{
+		ID: "extract",
+		Params: map[string]interface{}{
+			"provider":      "deepseek",
+			"credential_id": "wrong-kind",
+		},
+	}
+	if err := validateAIExtractCredentialCompatibility(ctx, node, "deepseek"); err == nil || !strings.Contains(err.Error(), "must use kind API_KEY") {
+		t.Fatalf("expected API_KEY kind rejection, got %v", err)
+	}
+}
+
 func TestProviderAIExtractRejectsCredentialWithoutMetadata(t *testing.T) {
 	ctx := NewExecutionContext("wf", "exec")
 	ctx.Credentials["unknown-cred"] = "secret"
