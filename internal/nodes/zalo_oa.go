@@ -197,7 +197,7 @@ func (e *ZaloOAExecutor) GetDefinition() NodeDefinition {
 		Params: []ParamDefinition{
 			{Name: "access_token", Label: "OA Access Token", Type: "text", Default: "", Required: false, Description: "Prefer an encrypted credential instead of pasting a token"},
 			{Name: "credential_id", Label: "OA Access Token Credential", Type: "credential", Default: "", Required: false},
-			{Name: "user_id", Label: "Recipient Zalo User ID", Type: "text", Required: true, Description: "Recipient must satisfy the current Zalo OA messaging, interaction, and quota rules"},
+			{Name: "user_id", Label: "Recipient Zalo User ID (from OA webhook/callback)", Type: "text", Required: true, Description: "The Zalo user_id returned for a user interacting with your OA. This is not a phone number, OA ID, or App ID. The recipient must also satisfy current Zalo OA messaging, interaction, and quota rules."},
 			{Name: "message", Label: "Message", Type: "textarea", Required: true, Description: "Plain text, maximum 2,000 characters"},
 			{Name: "endpoint", Label: "OA Message Endpoint", Type: "text", Default: defaultZaloOAMessageEndpoint, Required: true, Description: "Advanced override for future OA OpenAPI endpoint changes or controlled testing"},
 		},
