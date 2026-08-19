@@ -7,13 +7,13 @@ import (
 )
 
 const (
-	CredentialKindAPIKey          = "API_KEY"
-	CredentialKindBearerToken     = "BEARER_TOKEN"
-	CredentialKindBasicAuth       = "BASIC_AUTH"
-	CredentialKindOAuth2          = "OAUTH2"
+	CredentialKindAPIKey           = "API_KEY"
+	CredentialKindBearerToken      = "BEARER_TOKEN"
+	CredentialKindBasicAuth        = "BASIC_AUTH"
+	CredentialKindOAuth2           = "OAUTH2"
 	CredentialKindUsernamePassword = "USERNAME_PASSWORD"
-	CredentialKindServiceAccount  = "SERVICE_ACCOUNT"
-	CredentialKindCustom          = "CUSTOM"
+	CredentialKindServiceAccount   = "SERVICE_ACCOUNT"
+	CredentialKindCustom           = "CUSTOM"
 )
 
 func init() {
