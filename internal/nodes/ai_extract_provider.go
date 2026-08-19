@@ -78,11 +78,110 @@ func normalizeAIExtractModel(node *Node, provider string) *Node {
 	return clone
 }
 
+func prepareProviderAIExtractNode(node *Node, provider string) (*Node, error) {
+	clone := normalizeAIExtractModel(node, provider)
+	if directKey, _ := clone.Params["api_key"].(string); strings.TrimSpace(directKey) != "" {
+		return nil, fmt.Errorf("AI Extract does not allow plaintext api_key parameters; create an encrypted credential and set credential_id")
+	}
+	credentialID, _ := clone.Params["credential_id"].(string)
+	if strings.TrimSpace(credentialID) == "" {
+		return nil, fmt.Errorf("AI Extract requires an encrypted %s credential", provider)
+	}
+
+	inputType, _ := clone.Params["input_type"].(string)
+	inputType = strings.TrimSpace(inputType)
+	if inputType == "" {
+		inputType = "text"
+		clone.Params["input_type"] = inputType
+	}
+	rawInput, exists := clone.Params["input"]
+	if !exists || rawInput == nil {
+		return clone, nil
+	}
+	if inputType != "text" {
+		if _, ok := rawInput.(string); !ok {
+			return nil, fmt.Errorf("AI Extract %s input must resolve to a string", inputType)
+		}
+		return clone, nil
+	}
+
+	switch typed := rawInput.(type) {
+	case string:
+		clone.Params["input"] = typed
+	case []byte:
+		clone.Params["input"] = string(typed)
+	default:
+		encoded, err := json.Marshal(typed)
+		if err != nil {
+			return nil, fmt.Errorf("AI Extract text input could not be serialized to JSON: %w", err)
+		}
+		clone.Params["input"] = string(encoded)
+	}
+	return clone, nil
+}
+
+func canonicalAIExtractCredentialProvider(metadata CredentialMetadata) string {
+	if provider := strings.ToLower(strings.TrimSpace(metadata.Provider)); provider != "" {
+		return provider
+	}
+	switch strings.ToLower(strings.TrimSpace(metadata.Type)) {
+	case "openai", "openai_api_key":
+		return "openai"
+	case "deepseek", "deepseek_api_key":
+		return "deepseek"
+	default:
+		return "custom"
+	}
+}
+
+func canonicalAIExtractCredentialKind(metadata CredentialMetadata) string {
+	if kind := strings.ToUpper(strings.TrimSpace(metadata.Kind)); kind != "" {
+		return kind
+	}
+	switch strings.ToLower(strings.TrimSpace(metadata.Type)) {
+	case "openai", "openai_api_key", "deepseek", "deepseek_api_key", "api_key":
+		return "API_KEY"
+	default:
+		return "CUSTOM"
+	}
+}
+
+func validateAIExtractCredentialCompatibility(ctx *ExecutionContext, node *Node, provider string) error {
+	credentialID, _ := node.Params["credential_id"].(string)
+	credentialID = strings.TrimSpace(credentialID)
+	if credentialID == "" {
+		return fmt.Errorf("AI Extract requires an encrypted %s credential", provider)
+	}
+	metadata, ok := ctx.CredentialMetadata[credentialID]
+	if !ok {
+		return fmt.Errorf("AI Extract credential metadata is unavailable for %q", credentialID)
+	}
+	if kind := canonicalAIExtractCredentialKind(metadata); kind != "API_KEY" {
+		return fmt.Errorf("AI Extract credential %q must use kind API_KEY, got %s", credentialID, kind)
+	}
+	actualProvider := canonicalAIExtractCredentialProvider(metadata)
+	if actualProvider != provider {
+		return fmt.Errorf("AI Extract provider %s requires a %s credential, but credential %q is registered for %s", provider, provider, credentialID, actualProvider)
+	}
+	return nil
+}
+
 func (e *ProviderAIExtractExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
 	provider := aiExtractProvider(node)
+	if provider != "openai" && provider != "deepseek" {
+		return nil, fmt.Errorf("AI Extract provider must be openai or deepseek")
+	}
+	prepared, err := prepareProviderAIExtractNode(node, provider)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateAIExtractCredentialCompatibility(ctx, prepared, provider); err != nil {
+		return nil, err
+	}
+
 	switch provider {
 	case "openai":
-		result, err := e.openai.Execute(ctx, normalizeAIExtractModel(node, provider))
+		result, err := e.openai.Execute(ctx, prepared)
 		if err != nil {
 			return nil, err
 		}
@@ -91,7 +190,7 @@ func (e *ProviderAIExtractExecutor) Execute(ctx *ExecutionContext, node *Node) (
 		}
 		return result, nil
 	case "deepseek":
-		return e.executeDeepSeek(ctx, normalizeAIExtractModel(node, provider))
+		return e.executeDeepSeek(ctx, prepared)
 	default:
 		return nil, fmt.Errorf("AI Extract provider must be openai or deepseek")
 	}
@@ -102,8 +201,12 @@ func (e *ProviderAIExtractExecutor) Validate(node *Node) error {
 	if provider != "openai" && provider != "deepseek" {
 		return fmt.Errorf("AI Extract provider must be openai or deepseek")
 	}
+	prepared, err := prepareProviderAIExtractNode(node, provider)
+	if err != nil {
+		return err
+	}
 	if provider == "deepseek" {
-		inputType, _ := node.Params["input_type"].(string)
+		inputType, _ := prepared.Params["input_type"].(string)
 		if strings.TrimSpace(inputType) == "" {
 			inputType = "text"
 		}
@@ -111,24 +214,24 @@ func (e *ProviderAIExtractExecutor) Validate(node *Node) error {
 			return fmt.Errorf("AI Extract DeepSeek provider currently supports input_type=text only")
 		}
 	}
-	_, err := parseAIExtractRequest(normalizeAIExtractModel(node, provider))
+	_, err = parseAIExtractRequest(prepared)
 	return err
 }
 
 func aiExtractProviderAPIKey(ctx *ExecutionContext, node *Node, provider string) (string, error) {
-	apiKey, _ := node.Params["api_key"].(string)
+	if directKey, _ := node.Params["api_key"].(string); strings.TrimSpace(directKey) != "" {
+		return "", fmt.Errorf("AI Extract does not allow plaintext api_key parameters; use an encrypted credential")
+	}
 	credentialID, _ := node.Params["credential_id"].(string)
-	if strings.TrimSpace(credentialID) != "" {
-		secret, ok := ctx.Credentials[strings.TrimSpace(credentialID)]
-		if !ok || strings.TrimSpace(secret) == "" {
-			return "", fmt.Errorf("AI Extract %s credential is not available", provider)
-		}
-		apiKey = secret
+	credentialID = strings.TrimSpace(credentialID)
+	if credentialID == "" {
+		return "", fmt.Errorf("AI Extract requires a %s credential", provider)
 	}
-	if strings.TrimSpace(apiKey) == "" {
-		return "", fmt.Errorf("AI Extract requires a %s API key or credential", provider)
+	secret, ok := ctx.Credentials[credentialID]
+	if !ok || strings.TrimSpace(secret) == "" {
+		return "", fmt.Errorf("AI Extract %s credential is not available", provider)
 	}
-	return strings.TrimSpace(apiKey), nil
+	return strings.TrimSpace(secret), nil
 }
 
 func (e *ProviderAIExtractExecutor) executeDeepSeek(ctx *ExecutionContext, node *Node) (interface{}, error) {
@@ -276,7 +379,6 @@ func validateAIExtractSchemaValue(schema map[string]interface{}, value interface
 				if err := validateAIExtractSchemaValue(itemSchema, item, fmt.Sprintf("%s[%d]", path, index), false); err != nil {
 					return err
 				}
-			}
 		}
 	case "string":
 		if _, ok := value.(string); !ok {
@@ -305,9 +407,9 @@ func validateAIExtractSchemaValue(schema map[string]interface{}, value interface
 
 func (e *ProviderAIExtractExecutor) GetDefinition() NodeDefinition {
 	def := e.openai.GetDefinition()
-	def.Description = "Extracts structured JSON with OpenAI or DeepSeek. OpenAI supports text, images, documents and audio/video speech; DeepSeek currently supports text extraction."
+	def.Description = "Extracts structured JSON with OpenAI or DeepSeek using encrypted provider-bound credentials. OpenAI supports text, images, documents and audio/video speech; DeepSeek currently supports text extraction."
 
-	params := make([]ParamDefinition, 0, len(def.Params)+1)
+	params := make([]ParamDefinition, 0, len(def.Params))
 	params = append(params, ParamDefinition{
 		Name:        "provider",
 		Label:       "AI Provider",
@@ -324,15 +426,16 @@ func (e *ProviderAIExtractExecutor) GetDefinition() NodeDefinition {
 			param.Default = "auto"
 			param.Description = "Use auto for gpt-5 with OpenAI or deepseek-v4-flash with DeepSeek, or enter an explicit provider model ID."
 		case "input_type":
-			param.Description = "OpenAI supports all listed input types. DeepSeek currently supports text only."
+			param.Description = "OpenAI supports all listed input types. DeepSeek currently supports text only. Structured object/array expressions are serialized to JSON when input_type=text."
 		case "api_key":
-			param.Label = "Provider API Key"
-			param.Description = "Optional direct key. Prefer an encrypted credential."
+			// Plaintext provider secrets must never be persisted in workflow params.
+			continue
 		case "credential_id":
 			param.Label = "AI Provider Credential"
+			param.Required = true
 			param.CredentialKinds = []string{"API_KEY"}
 			param.CredentialProviders = []string{"openai", "deepseek"}
-			param.Description = "Choose an API-key credential matching the selected provider."
+			param.Description = "Required encrypted API-key credential. Runtime rejects credentials whose provider metadata does not match the selected AI provider."
 		}
 		params = append(params, param)
 	}
