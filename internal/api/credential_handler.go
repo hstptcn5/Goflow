@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"goflow/internal/storage"
 
@@ -31,9 +32,11 @@ func (h *CredentialHandler) ListCredentials(w http.ResponseWriter, r *http.Reque
 
 func (h *CredentialHandler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name string `json:"name"`
-		Type string `json:"type"`
-		Data string `json:"data"`
+		Name     string `json:"name"`
+		Type     string `json:"type"` // legacy request field
+		Kind     string `json:"kind"`
+		Provider string `json:"provider"`
+		Data     string `json:"data"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -41,18 +44,26 @@ func (h *CredentialHandler) CreateCredential(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if req.Name == "" || req.Data == "" {
+	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Data) == "" {
 		http.Error(w, "Name and Data are required", http.StatusBadRequest)
 		return
 	}
 
-	cred, err := h.credStore.Create(req.Name, req.Type, req.Data)
+	var (
+		cred *storage.Credential
+		err  error
+	)
+	if strings.TrimSpace(req.Kind) != "" || strings.TrimSpace(req.Provider) != "" {
+		cred, err = h.credStore.CreateWithMetadata(strings.TrimSpace(req.Name), req.Kind, req.Provider, req.Data)
+	} else {
+		cred, err = h.credStore.Create(strings.TrimSpace(req.Name), req.Type, req.Data)
+	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Đảm bảo không trả về cipher data ở response
+	// Never return encrypted secret material to the client.
 	cred.DataEncrypted = ""
 	renderJSON(w, http.StatusCreated, cred)
 }

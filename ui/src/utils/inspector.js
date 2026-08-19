@@ -245,12 +245,75 @@ export function orderedUpstreamNodes(selectedNodeId, nodes = [], edges = []) {
 }
 
 export function credentialsForParam(credentials, param, nodeType = '') {
-  const hint = String(param.credential_type || param.credentialType || param.type_hint || nodeType || '').toLowerCase();
+  const requestedKinds = normalizeStringList(param?.credential_kinds || param?.credentialKinds).map((value) => value.toUpperCase());
+  const requestedProviders = normalizeStringList(param?.credential_providers || param?.credentialProviders).map((value) => value.toLowerCase());
+
+  if (requestedKinds.length || requestedProviders.length) {
+    return credentials.filter((cred) => {
+      const kind = canonicalCredentialKind(cred);
+      const provider = canonicalCredentialProvider(cred);
+      if (requestedKinds.length && !requestedKinds.includes(kind)) return false;
+      if (requestedProviders.length && !requestedProviders.includes(provider)) return false;
+      return true;
+    });
+  }
+
+  // Legacy nodes may not declare canonical metadata yet. Keep the old hint path so
+  // existing workflows remain compatible while new nodes can be provider-agnostic.
+  const hint = String(param?.credential_type || param?.credentialType || param?.type_hint || nodeType || '').toLowerCase();
   if (!hint) return credentials;
   return credentials.filter((cred) => {
     const type = String(cred.type || '').toLowerCase();
-    return hint.includes(type) || type.includes(hint) || credentialAliasMatch(type, hint);
+    const provider = canonicalCredentialProvider(cred);
+    return hint.includes(type) || type.includes(hint) || hint.includes(provider) || provider.includes(hint) || credentialAliasMatch(type, hint);
   });
+}
+
+function normalizeStringList(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean);
+  if (typeof value === 'string' && value.trim()) return value.split(',').map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
+function canonicalCredentialKind(cred) {
+  const declared = String(cred?.kind || '').trim().toUpperCase();
+  if (declared) return declared;
+  switch (String(cred?.type || '').trim().toLowerCase()) {
+    case 'openai':
+    case 'deepseek':
+    case 'telegram_bot':
+    case 'api_key':
+    case 'openai_api_key':
+    case 'deepseek_api_key':
+      return 'API_KEY';
+    case 'bearer_token':
+      return 'BEARER_TOKEN';
+    case 'basic_auth':
+      return 'BASIC_AUTH';
+    case 'oauth2':
+      return 'OAUTH2';
+    case 'google_service_account':
+      return 'SERVICE_ACCOUNT';
+    default:
+      return 'CUSTOM';
+  }
+}
+
+function canonicalCredentialProvider(cred) {
+  const declared = String(cred?.provider || '').trim().toLowerCase();
+  if (declared) return declared;
+  switch (String(cred?.type || '').trim().toLowerCase()) {
+    case 'openai':
+    case 'openai_api_key':
+      return 'openai';
+    case 'deepseek':
+    case 'deepseek_api_key':
+      return 'deepseek';
+    case 'telegram_bot':
+      return 'telegram';
+    default:
+      return 'custom';
+  }
 }
 
 function credentialAliasMatch(type, hint) {

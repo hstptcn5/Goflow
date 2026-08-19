@@ -118,13 +118,15 @@ func (ctx *ExecutionContext) GetOutputs() map[string]interface{} {
 
 // ParamDefinition describes one configurable UI parameter.
 type ParamDefinition struct {
-	Name        string   `json:"name"`
-	Label       string   `json:"label"`
-	Type        string   `json:"type"`
-	Default     any      `json:"default,omitempty"`
-	Options     []string `json:"options,omitempty"`
-	Required    bool     `json:"required"`
-	Description string   `json:"description,omitempty"`
+	Name                string   `json:"name"`
+	Label               string   `json:"label"`
+	Type                string   `json:"type"`
+	Default             any      `json:"default,omitempty"`
+	Options             []string `json:"options,omitempty"`
+	Required            bool     `json:"required"`
+	Description         string   `json:"description,omitempty"`
+	CredentialKinds     []string `json:"credential_kinds,omitempty"`
+	CredentialProviders []string `json:"credential_providers,omitempty"`
 }
 
 // NodeDefinition contains UI metadata for a node type.

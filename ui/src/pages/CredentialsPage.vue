@@ -1,15 +1,45 @@
 <script setup>
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { api } from '@/services/api';
 import StateBlock from '@/components/StateBlock.vue';
 
 const workflowStore = useWorkflowStore();
 const name = ref('');
-const type = ref('API_KEY');
+const template = ref('zalo');
+const provider = ref('zalo');
+const kind = ref('BEARER_TOKEN');
 const data = ref('');
 const saving = ref(false);
 const pageError = ref('');
+
+const templates = [
+  { id: 'zalo', label: 'Zalo OA', provider: 'zalo', kind: 'BEARER_TOKEN', secretLabel: 'OA access token' },
+  { id: 'telegram', label: 'Telegram Bot', provider: 'telegram', kind: 'API_KEY', secretLabel: 'Bot token' },
+  { id: 'openai', label: 'OpenAI', provider: 'openai', kind: 'API_KEY', secretLabel: 'API key' },
+  { id: 'deepseek', label: 'DeepSeek', provider: 'deepseek', kind: 'API_KEY', secretLabel: 'API key' },
+  { id: 'github', label: 'GitHub', provider: 'github', kind: 'BEARER_TOKEN', secretLabel: 'Personal access token' },
+  { id: 'custom', label: 'Custom / other provider', provider: 'custom', kind: 'API_KEY', secretLabel: 'Secret value' },
+];
+
+const kinds = [
+  { value: 'API_KEY', label: 'API Key' },
+  { value: 'BEARER_TOKEN', label: 'Bearer / access token' },
+  { value: 'BASIC_AUTH', label: 'Basic Auth payload' },
+  { value: 'SERVICE_ACCOUNT', label: 'Service account payload' },
+  { value: 'CUSTOM', label: 'Custom secret payload' },
+];
+
+const selectedTemplate = computed(() => templates.find((item) => item.id === template.value) || templates[templates.length - 1]);
+const secretLabel = computed(() => template.value === 'custom' ? 'Secret value' : selectedTemplate.value.secretLabel);
+const isCustom = computed(() => template.value === 'custom');
+
+watch(template, (value) => {
+  const picked = templates.find((item) => item.id === value);
+  if (!picked) return;
+  provider.value = picked.provider;
+  kind.value = picked.kind;
+});
 
 onMounted(refresh);
 
@@ -20,11 +50,16 @@ async function refresh() {
 }
 
 async function createCredential() {
-  if (!name.value.trim() || !data.value.trim()) return;
+  if (!name.value.trim() || !data.value.trim() || !provider.value.trim() || !kind.value) return;
   saving.value = true;
   pageError.value = '';
   try {
-    await api.createCredential({ name: name.value.trim(), type: type.value, data: data.value });
+    await api.createCredential({
+      name: name.value.trim(),
+      provider: provider.value.trim().toLowerCase(),
+      kind: kind.value,
+      data: data.value,
+    });
     name.value = '';
     data.value = '';
     await workflowStore.fetchCredentials();
@@ -45,6 +80,14 @@ async function deleteCredential(id) {
     pageError.value = err.message;
   }
 }
+
+function credentialKind(credential) {
+  return credential.kind || credential.type || 'CUSTOM';
+}
+
+function credentialProvider(credential) {
+  return credential.provider || 'custom';
+}
 </script>
 
 <template>
@@ -52,7 +95,7 @@ async function deleteCredential(id) {
     <section class="page-toolbar">
       <div>
         <h2>Credentials</h2>
-        <p>Store encrypted credentials for workflow nodes. Plaintext secrets are never displayed after save.</p>
+        <p>Store encrypted secrets by generic authentication kind. Provider is metadata/template information, not a new credential type.</p>
       </div>
       <button class="btn btn-secondary" type="button" @click="refresh">Retry</button>
     </section>
@@ -71,24 +114,36 @@ async function deleteCredential(id) {
       <div class="credential-form">
         <label>
           Name
-          <input v-model="name" class="form-input" placeholder="Internal API key" />
+          <input v-model="name" class="form-input" placeholder="My Zalo OA token" />
         </label>
+
         <label>
-          Type
-          <select v-model="type" class="form-select">
-            <option value="API_KEY">API Key</option>
-            <option value="BEARER_TOKEN">Bearer Token</option>
-            <option value="BASIC_AUTH">Basic Auth</option>
-            <option value="TELEGRAM_BOT">Telegram Bot Token</option>
-            <option value="OpenAI">OpenAI API Key</option>
-            <option value="DeepSeek">DeepSeek API Key</option>
+          Provider template
+          <select v-model="template" class="form-select">
+            <option v-for="item in templates" :key="item.id" :value="item.id">{{ item.label }}</option>
           </select>
         </label>
-        <label>
-          Secret value
-          <input v-model="data" class="form-input" type="password" placeholder="Stored encrypted" />
+
+        <label v-if="isCustom">
+          Provider ID
+          <input v-model="provider" class="form-input" placeholder="e.g. haravan, notion, internal-crm" />
+          <small>Lowercase letters, numbers, dot, dash, and underscore. Adding a new provider does not require a new credential enum.</small>
         </label>
-        <button class="btn btn-primary" type="button" :disabled="saving || !name.trim() || !data.trim()" @click="createCredential">
+
+        <label v-if="isCustom">
+          Authentication kind
+          <select v-model="kind" class="form-select">
+            <option v-for="item in kinds" :key="item.value" :value="item.value">{{ item.label }}</option>
+          </select>
+        </label>
+
+        <label>
+          {{ secretLabel }}
+          <input v-model="data" class="form-input" type="password" placeholder="Stored encrypted" />
+          <small v-if="kind === 'BASIC_AUTH' || kind === 'SERVICE_ACCOUNT' || kind === 'CUSTOM'">For complex credentials, store the provider payload as one encrypted value (for example JSON). Nodes decide how to interpret it.</small>
+        </label>
+
+        <button class="btn btn-primary" type="button" :disabled="saving || !name.trim() || !data.trim() || !provider.trim()" @click="createCredential">
           Save credential
         </button>
       </div>
@@ -97,18 +152,20 @@ async function deleteCredential(id) {
     <StateBlock
       v-if="!workflowStore.loading && workflowStore.credentials.length === 0"
       title="No credentials saved"
-      message="Create a credential when a node needs an API key, token, or password. Secret plaintext will not appear in this list."
+      message="Create a credential when a node needs an API key, token, account payload, or other secret. Secret plaintext will not appear in this list."
     />
 
     <section v-else class="table-panel" aria-label="Credential list">
       <div class="table-row table-head">
         <span>Name</span>
-        <span>Type</span>
+        <span>Provider</span>
+        <span>Auth kind</span>
         <span>Actions</span>
       </div>
       <div v-for="credential in workflowStore.credentials" :key="credential.id" class="table-row">
         <span>{{ credential.name }}</span>
-        <span class="badge badge-muted">{{ credential.type }}</span>
+        <span class="badge badge-muted">{{ credentialProvider(credential) }}</span>
+        <span class="badge badge-muted">{{ credentialKind(credential) }}</span>
         <button class="btn btn-danger" type="button" @click="deleteCredential(credential.id)">Delete</button>
       </div>
     </section>
