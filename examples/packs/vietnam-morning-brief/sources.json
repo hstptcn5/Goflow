@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "reviewed_at": "2026-08-19",
+  "distribution_status": "personal_noncommercial_pilot",
+  "sources": [
+    {
+      "id": "vnexpress-latest",
+      "publisher": "VnExpress",
+      "feed_url": "https://vnexpress.net/rss/tin-moi-nhat.rss",
+      "rss_directory": "https://vnexpress.net/rss",
+      "collection_method": "publisher_rss",
+      "article_body_fetch": false,
+      "republish_full_text": false,
+      "attribution_required": true,
+      "link_to_original": true,
+      "commercial_status": "not_cleared"
+    },
+    {
+      "id": "tuoitre-home",
+      "publisher": "Tuổi Trẻ",
+      "feed_url": "https://tuoitre.vn/home.rss",
+      "rss_directory": "https://tuoitre.vn/rss.htm",
+      "collection_method": "publisher_rss",
+      "article_body_fetch": false,
+      "republish_full_text": false,
+      "attribution_required": true,
+      "link_to_original": true,
+      "commercial_status": "not_cleared"
+    },
+    {
+      "id": "thanhnien-home",
+      "publisher": "Thanh Niên",
+      "feed_url": "https://thanhnien.vn/rss/home.rss",
+      "rss_directory": "https://thanhnien.vn/rss.html",
+      "collection_method": "publisher_rss",
+      "article_body_fetch": false,
+      "republish_full_text": false,
+      "attribution_required": true,
+      "link_to_original": true,
+      "commercial_status": "not_cleared"
+    }
+  ]
+}
