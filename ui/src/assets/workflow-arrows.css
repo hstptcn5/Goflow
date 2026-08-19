@@ -1,5 +1,6 @@
 /* Directional workflow connectors for the brutalist canvas.
  * Presentation-only: edge JSON, source/target ids and execution behavior stay unchanged.
+ * Runtime handle orientation is visual geometry only; saved workflow handles are not rewritten.
  */
 .vue-flow__edge-path,
 .vue-flow__connection-path {
