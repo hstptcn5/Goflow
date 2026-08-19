@@ -204,6 +204,10 @@ try {
 
     Test-ForbiddenFiles -Root $Extracted
 
+    # Exercise the extracted Pack on native Windows using controlled RSS and Telegram seams.
+    # This proves the no-AI first-run path, source-linked Telegram output, and persisted setup across restart.
+    Invoke-Checked -Command go -Arguments @('run', './internal/testharness/morningbriefpilot', '--app-dir', $Extracted)
+
     $PortableDirectory = Join-Path $OutputDirectory $ArtifactDirectoryName
     New-Item -ItemType Directory -Path $PortableDirectory | Out-Null
     Copy-Item -Path (Join-Path $Extracted '*') -Destination $PortableDirectory -Recurse
@@ -220,6 +224,7 @@ try {
         "pack_id=$PackID"
         "pack_version=$PackVersion"
         'distribution=personal_noncommercial_pilot'
+        'native_e2e=rss-to-telegram-restart-pass'
         "bundle=$BundleFileName"
         "built_at=$([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))"
     ) | Set-Content -LiteralPath $MarkerPath -Encoding ascii
@@ -250,6 +255,7 @@ try {
     $ArtifactDigest = (Get-FileHash -Algorithm SHA256 -LiteralPath $ChecksumPath).Hash.ToLowerInvariant()
     Write-Output 'VIETNAM_MORNING_BRIEF_WINDOWS_PILOT PASS'
     Write-Output 'artifact_name=UNSIGNED-PERSONAL-PILOT-goflow-vietnam-morning-brief-windows-amd64'
+    Write-Output 'native_e2e=rss-to-telegram-restart-pass'
     Write-Output "bundle_file=$BundleFileName"
     Write-Output "bundle_sha256=$BundleDigest"
     Write-Output "checksums_sha256=$ArtifactDigest"
