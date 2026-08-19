@@ -38,6 +38,7 @@ func NewBuiltinRegistryWithTelegramExecutor(telegramExecutor NodeExecutor) *Plug
 	_ = registry.Register(NewDelaySleepExecutor())
 	_ = registry.Register(NewOpenAIGPTExecutor())
 	_ = registry.Register(NewDeepSeekAIExecutor())
+	_ = registry.Register(NewAIExtractExecutor())
 	_ = registry.Register(NewDiscordBotExecutor())
 	_ = registry.Register(NewSlackBotExecutor())
 	_ = registry.Register(NewJSCodeRunnerExecutor())
