@@ -20,7 +20,7 @@ func TestProviderAIExtractDeepSeekText(t *testing.T) {
 			t.Fatalf("decode request: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"ds-1","choices":[{"message":{"content":"{\"company\":\"ABC\",\"revenue\":48500000}"}}]}`))
+		_, _ = w.Write([]byte("{\"id\":\"ds-1\",\"choices\":[{\"message\":{\"content\":\"{\\\"company\\\":\\\"ABC\\\",\\\"revenue\\\":48500000}\"}}]}"))
 	}))
 	defer server.Close()
 
@@ -37,7 +37,7 @@ func TestProviderAIExtractDeepSeekText(t *testing.T) {
 			"input_type":    "text",
 			"input":         "ABC đạt doanh thu 48.500.000 đồng.",
 			"instructions":  "Extract company and revenue as JSON.",
-			"json_schema":   `{"type":"object","properties":{"company":{"type":"string"},"revenue":{"type":"integer"}},"required":["company","revenue"],"additionalProperties":false}`,
+			"json_schema":   "{\"type\":\"object\",\"properties\":{\"company\":{\"type\":\"string\"},\"revenue\":{\"type\":\"integer\"}},\"required\":[\"company\",\"revenue\"],\"additionalProperties\":false}",
 			"schema_name":   "sales",
 			"credential_id": "deepseek-cred",
 		},
@@ -73,7 +73,7 @@ func TestProviderAIExtractDeepSeekRejectsNonText(t *testing.T) {
 			"model":       "auto",
 			"input_type":  "image_url",
 			"input":       "https://example.com/image.png",
-			"json_schema": `{"type":"object","properties":{},"required":[],"additionalProperties":false}`,
+			"json_schema": "{\"type\":\"object\",\"properties\":{},\"required\":[],\"additionalProperties\":false}",
 			"schema_name": "image",
 		},
 	}
