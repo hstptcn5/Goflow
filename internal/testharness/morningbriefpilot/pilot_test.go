@@ -111,8 +111,8 @@ func assertNativeCounts(state *mockState, rss, getMe, getChat, sendMessage int) 
 	}
 	if len(state.rssCalls) != rss || state.getMe != getMe || state.getChat != getChat || state.sendMessage != sendMessage {
 		return &nativeCountError{
-			message: "mock call counts mismatch",
-			counts:  [4]int{len(state.rssCalls), state.getMe, state.getChat, state.sendMessage},
+			message:  "mock call counts mismatch",
+			counts:   [4]int{len(state.rssCalls), state.getMe, state.getChat, state.sendMessage},
 			expected: [4]int{rss, getMe, getChat, sendMessage},
 		}
 	}
