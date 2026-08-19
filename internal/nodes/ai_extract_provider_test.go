@@ -40,7 +40,7 @@ func TestProviderAIExtractDeepSeekText(t *testing.T) {
 			"json_schema":   `{"type":"object","properties":{"company":{"type":"string"},"revenue":{"type":"integer"}},"required":["company","revenue"],"additionalProperties":false}`,
 			"schema_name":   "sales",
 			"credential_id": "deepseek-cred",
-		}
+		},
 	}
 
 	result, err := executor.Execute(ctx, node)
@@ -75,7 +75,7 @@ func TestProviderAIExtractDeepSeekRejectsNonText(t *testing.T) {
 			"input":       "https://example.com/image.png",
 			"json_schema": `{"type":"object","properties":{},"required":[],"additionalProperties":false}`,
 			"schema_name": "image",
-		}
+		},
 	}
 	if err := executor.Validate(node); err == nil {
 		t.Fatal("expected DeepSeek non-text input validation error")
