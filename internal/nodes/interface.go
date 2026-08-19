@@ -59,14 +59,24 @@ type Edge struct {
 	TargetHandle string `json:"targetHandle,omitempty"`
 }
 
+// CredentialMetadata carries non-secret credential classification data alongside
+// decrypted credential values. Executors can use this to fail closed when a
+// workflow references a credential for the wrong provider.
+type CredentialMetadata struct {
+	Kind     string
+	Provider string
+	Type     string
+}
+
 // ExecutionContext carries workflow state, node outputs, and decrypted credentials.
 type ExecutionContext struct {
-	Context     context.Context
-	WorkflowID  string
-	ExecutionID string
-	Outputs     map[string]interface{}
-	Credentials map[string]string
-	mu          sync.RWMutex
+	Context            context.Context
+	WorkflowID         string
+	ExecutionID        string
+	Outputs            map[string]interface{}
+	Credentials        map[string]string
+	CredentialMetadata map[string]CredentialMetadata
+	mu                 sync.RWMutex
 
 	// ExecuteWorkflow runs a child workflow without importing the engine package here.
 	ExecuteWorkflow func(workflowID string, payload interface{}) (interface{}, error)
@@ -84,11 +94,12 @@ func NewExecutionContextWithContext(parent context.Context, workflowID, executio
 		parent = context.Background()
 	}
 	return &ExecutionContext{
-		Context:     parent,
-		WorkflowID:  workflowID,
-		ExecutionID: executionID,
-		Outputs:     make(map[string]interface{}),
-		Credentials: make(map[string]string),
+		Context:            parent,
+		WorkflowID:         workflowID,
+		ExecutionID:        executionID,
+		Outputs:            make(map[string]interface{}),
+		Credentials:        make(map[string]string),
+		CredentialMetadata: make(map[string]CredentialMetadata),
 	}
 }
 
