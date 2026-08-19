@@ -41,12 +41,15 @@ describe('credential compatibility metadata', () => {
     expect(credentialsForParam(credentials, param, 'telegramBot').map((cred) => cred.id)).toContain('legacy-telegram');
   });
 
-  it('shows only OpenAI API keys for AI Extract when canonical metadata is declared', () => {
+  it('shows OpenAI and DeepSeek API keys for provider-aware AI Extract', () => {
     const param = {
       type: 'credential',
       credential_kinds: ['API_KEY'],
-      credential_providers: ['openai'],
+      credential_providers: ['openai', 'deepseek'],
     };
-    expect(credentialsForParam(credentials, param, 'aiExtract').map((cred) => cred.id)).toEqual(['openai']);
+    expect(credentialsForParam(credentials, param, 'aiExtract').map((cred) => cred.id)).toEqual([
+      'openai',
+      'deepseek',
+    ]);
   });
 });
