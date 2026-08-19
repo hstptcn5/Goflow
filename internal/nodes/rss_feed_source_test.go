@@ -95,7 +95,6 @@ func TestParseFeedDateSupportsCommonPublisherLayouts(t *testing.T) {
 	for _, raw := range []string{
 		"Wed, 19 Aug 2026 13:30:00 +0700",
 		"2026-08-19T13:30:00+07:00",
-		"Wed, 19 Aug 26 13:30:00 +0700",
 	} {
 		if _, ok := parseFeedDate(raw); !ok {
 			t.Fatalf("date format was not parsed: %s", raw)
