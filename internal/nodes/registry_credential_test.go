@@ -20,7 +20,7 @@ func TestBuiltinRegistryDeclaresAIExtractCredentialCompatibility(t *testing.T) {
 		if !reflect.DeepEqual(param.CredentialKinds, []string{"API_KEY"}) {
 			t.Fatalf("unexpected AI Extract credential kinds: %#v", param.CredentialKinds)
 		}
-		if !reflect.DeepEqual(param.CredentialProviders, []string{"openai"}) {
+		if !reflect.DeepEqual(param.CredentialProviders, []string{"openai", "deepseek"}) {
 			t.Fatalf("unexpected AI Extract credential providers: %#v", param.CredentialProviders)
 		}
 		return
