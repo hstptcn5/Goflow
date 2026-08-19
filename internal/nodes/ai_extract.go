@@ -165,9 +165,9 @@ func parseAIExtractRequest(node *Node) (aiExtractRequest, error) {
 	if request.Input == "" {
 		return request, fmt.Errorf("AI Extract requires input")
 	}
-	allowedTypes := map[string]bool{"text": true, "image_url": true, "file_url": true, "file_data": true, "media_url": true, "media_data": true}
+	allowedTypes := map[string]bool{"text": true, "image_url": true, "image_data": true, "file_url": true, "file_data": true, "media_url": true, "media_data": true}
 	if !allowedTypes[request.InputType] {
-		return request, fmt.Errorf("AI Extract input_type must be text, image_url, file_url, file_data, media_url, or media_data")
+		return request, fmt.Errorf("AI Extract input_type must be text, image_url, image_data, file_url, file_data, media_url, or media_data")
 	}
 	if len(request.Input) > maxAIExtractInlineChars && request.InputType != "media_url" && request.InputType != "file_url" && request.InputType != "image_url" {
 		return request, fmt.Errorf("AI Extract inline input exceeds %d character limit", maxAIExtractInlineChars)
@@ -176,6 +176,13 @@ func parseAIExtractRequest(node *Node) (aiExtractRequest, error) {
 		if err := validateHTTPURL(request.Input); err != nil {
 			return request, fmt.Errorf("AI Extract %s: %w", request.InputType, err)
 		}
+	}
+	if request.InputType == "image_data" {
+		normalized, err := normalizeImageData(request.Input, request.Filename)
+		if err != nil {
+			return request, err
+		}
+		request.Input = normalized
 	}
 	if (request.InputType == "file_data" || request.InputType == "media_data") && request.Filename == "" {
 		return request, fmt.Errorf("AI Extract filename is required for %s", request.InputType)
@@ -246,7 +253,7 @@ func aiExtractSourcePolicy(ctx *ExecutionContext, nodeID string) (interface{}, e
 func aiExtractContent(inputType, instructions, input, filename string) []map[string]interface{} {
 	content := []map[string]interface{}{{"type": "input_text", "text": instructions}}
 	switch inputType {
-	case "image_url":
+	case "image_url", "image_data":
 		content = append(content, map[string]interface{}{"type": "input_image", "image_url": input, "detail": "auto"})
 	case "file_url":
 		content = append(content, map[string]interface{}{"type": "input_file", "file_url": input})
@@ -256,6 +263,58 @@ func aiExtractContent(inputType, instructions, input, filename string) []map[str
 		content = append(content, map[string]interface{}{"type": "input_text", "text": input})
 	}
 	return content
+}
+
+func normalizeImageData(input, filename string) (string, error) {
+	if strings.HasPrefix(input, "data:image/") {
+		parts := strings.SplitN(input, ",", 2)
+		if len(parts) != 2 || !strings.HasSuffix(parts[0], ";base64") {
+			return "", fmt.Errorf("AI Extract image_data must be a base64 image data URL")
+		}
+		mimeType := strings.TrimPrefix(strings.TrimSuffix(parts[0], ";base64"), "data:")
+		if !supportedImageMIME(mimeType) {
+			return "", fmt.Errorf("AI Extract image_data supports PNG, JPEG, WEBP, or GIF")
+		}
+		if _, err := base64.StdEncoding.DecodeString(parts[1]); err != nil {
+			return "", fmt.Errorf("AI Extract image_data is not valid base64")
+		}
+		return input, nil
+	}
+	if filename == "" {
+		return "", fmt.Errorf("AI Extract filename is required for raw image_data")
+	}
+	mimeType := imageMIMEFromFilename(filename)
+	if mimeType == "" {
+		return "", fmt.Errorf("AI Extract image filename must use png, jpg, jpeg, webp, or gif")
+	}
+	if _, err := base64.StdEncoding.DecodeString(input); err != nil {
+		return "", fmt.Errorf("AI Extract image_data is not valid base64")
+	}
+	return "data:" + mimeType + ";base64," + input, nil
+}
+
+func supportedImageMIME(mimeType string) bool {
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "image/png", "image/jpeg", "image/webp", "image/gif":
+		return true
+	default:
+		return false
+	}
+}
+
+func imageMIMEFromFilename(filename string) string {
+	switch strings.ToLower(strings.TrimPrefix(path.Ext(filename), ".")) {
+	case "png":
+		return "image/png"
+	case "jpg", "jpeg":
+		return "image/jpeg"
+	case "webp":
+		return "image/webp"
+	case "gif":
+		return "image/gif"
+	default:
+		return ""
+	}
 }
 
 func normalizeFileData(input string) string {
@@ -517,9 +576,9 @@ func (e *AIExtractExecutor) GetDefinition() NodeDefinition {
 		Retryable:   true,
 		Params: []ParamDefinition{
 			{Name: "model", Label: "Extraction Model", Type: "text", Default: "gpt-5", Required: true},
-			{Name: "input_type", Label: "Input Type", Type: "select", Default: "text", Options: []string{"text", "image_url", "file_url", "file_data", "media_url", "media_data"}, Required: true, Description: "media_* transcribes the audio track first; video frames are not analyzed in this version"},
+			{Name: "input_type", Label: "Input Type", Type: "select", Default: "text", Options: []string{"text", "image_url", "image_data", "file_url", "file_data", "media_url", "media_data"}, Required: true, Description: "media_* transcribes the audio track first; video frames are not analyzed in this version"},
 			{Name: "input", Label: "Input / URL / Base64", Type: "textarea", Required: true},
-			{Name: "filename", Label: "Filename", Type: "text", Default: "", Required: false, Description: "Required for file_data/media_data. media supports flac/mp3/mp4/mpeg/mpga/m4a/ogg/wav/webm."},
+			{Name: "filename", Label: "Filename", Type: "text", Default: "", Required: false, Description: "Required for raw image_data, file_data, and media_data. Image data supports PNG/JPEG/WEBP/GIF; media supports flac/mp3/mp4/mpeg/mpga/m4a/ogg/wav/webm."},
 			{Name: "instructions", Label: "Extraction Instructions", Type: "textarea", Default: "Extract the important factual information.", Required: true},
 			{Name: "json_schema", Label: "Output JSON Schema", Type: "json", Default: defaultSchema, Required: true},
 			{Name: "schema_name", Label: "Schema Name", Type: "text", Default: "extracted_data", Required: true},

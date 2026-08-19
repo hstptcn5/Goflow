@@ -1,6 +1,7 @@
 package nodes
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -67,6 +68,39 @@ func TestAIExtractTextUsesResponsesStructuredOutputAndSourcePolicy(t *testing.T)
 	policy := output["source_policy"].(map[string]interface{})
 	if policy["source_id"] != "source-a" {
 		t.Fatalf("source policy was not propagated: %#v", policy)
+	}
+}
+
+func TestAIExtractImageDataUsesInputImage(t *testing.T) {
+	imageBytes := []byte("fake-image")
+	imageBase64 := base64.StdEncoding.EncodeToString(imageBytes)
+	var sawImage bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		encoded, _ := json.Marshal(payload)
+		sawImage = strings.Contains(string(encoded), `"type":"input_image"`) && strings.Contains(string(encoded), "data:image/png;base64,"+imageBase64)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"resp_image","output":[{"type":"message","content":[{"type":"output_text","text":"{\"summary\":\"Image\",\"facts\":[]}"}]}]}`)
+	}))
+	defer server.Close()
+
+	executor := NewAIExtractExecutorWithClients(server.Client(), server.Client(), server.URL, true)
+	node := &Node{Params: map[string]interface{}{
+		"api_key":     "test-key",
+		"model":       "gpt-test",
+		"input_type":  "image_data",
+		"input":       imageBase64,
+		"filename":    "scan.png",
+		"json_schema": `{"type":"object","properties":{"summary":{"type":"string"},"facts":{"type":"array","items":{"type":"string"}}},"required":["summary","facts"],"additionalProperties":false}`,
+	}}
+	if _, err := executor.Execute(NewExecutionContext("wf", "exec"), node); err != nil {
+		t.Fatalf("Execute image_data failed: %v", err)
+	}
+	if !sawImage {
+		t.Fatal("image_data was not converted to Responses input_image data URL")
 	}
 }
 
