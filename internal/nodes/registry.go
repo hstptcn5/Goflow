@@ -30,6 +30,7 @@ func NewBuiltinRegistryWithTelegramExecutor(telegramExecutor NodeExecutor) *Plug
 	_ = registry.Register(NewHTTPRequestExecutor())
 	_ = registry.Register(NewNormalizedHTTPSourceExecutor())
 	_ = registry.Register(NewRSSFeedSourceExecutor())
+	_ = registry.Register(NewSourcePolicyExecutor())
 	_ = registry.Register(telegramExecutor)
 	_ = registry.Register(NewJSONTransformExecutor())
 	_ = registry.Register(NewConditionIFExecutor())
