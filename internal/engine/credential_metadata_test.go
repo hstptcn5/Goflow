@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"goflow/internal/crypto"
@@ -33,7 +34,8 @@ func (p *credentialMetadataProbe) GetDefinition() nodes.NodeDefinition {
 }
 
 func TestEngineHydratesCredentialMetadataForReferencedCredential(t *testing.T) {
-	db, err := storage.NewDB(":memory:")
+	dbPath := filepath.Join(t.TempDir(), "goflow.db")
+	db, err := storage.NewDB(dbPath)
 	if err != nil {
 		t.Fatalf("NewDB: %v", err)
 	}
