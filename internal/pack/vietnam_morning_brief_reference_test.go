@@ -81,12 +81,12 @@ func TestVietnamMorningBriefSourceManifestFailsCommerciallyOpenByDefault(t *test
 	var manifest struct {
 		DistributionStatus string `json:"distribution_status"`
 		Sources            []struct {
-			ID               string `json:"id"`
-			CollectionMethod string `json:"collection_method"`
-			ArticleBodyFetch bool   `json:"article_body_fetch"`
-			RepublishFullText bool  `json:"republish_full_text"`
-			LinkToOriginal   bool   `json:"link_to_original"`
-			CommercialStatus string `json:"commercial_status"`
+			ID                string `json:"id"`
+			CollectionMethod  string `json:"collection_method"`
+			ArticleBodyFetch  bool   `json:"article_body_fetch"`
+			RepublishFullText bool   `json:"republish_full_text"`
+			LinkToOriginal    bool   `json:"link_to_original"`
+			CommercialStatus  string `json:"commercial_status"`
 		} `json:"sources"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
