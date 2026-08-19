@@ -36,11 +36,11 @@ func TestAIExtractTextUsesResponsesStructuredOutputAndSourcePolicy(t *testing.T)
 	ctx := NewExecutionContext("wf", "exec")
 	ctx.SetOutput("policy", map[string]interface{}{"allowed": true, "policy_enforced": true, "source_id": "source-a"})
 	node := &Node{Params: map[string]interface{}{
-		"api_key":              "test-key",
-		"model":                "gpt-test",
-		"input_type":           "text",
-		"input":                "Hello source",
-		"instructions":         "Extract title and facts",
+		"api_key":               "test-key",
+		"model":                 "gpt-test",
+		"input_type":            "text",
+		"input":                 "Hello source",
+		"instructions":          "Extract title and facts",
 		"source_policy_node_id": "policy",
 		"json_schema": map[string]interface{}{
 			"type": "object",
@@ -117,14 +117,14 @@ func TestAIExtractMediaURLTranscribesBeforeStructuredExtraction(t *testing.T) {
 
 	executor := NewAIExtractExecutorWithClients(apiServer.Client(), mediaServer.Client(), apiServer.URL, true)
 	node := &Node{Params: map[string]interface{}{
-		"api_key":      "test-key",
-		"model":        "gpt-test",
-		"input_type":   "media_url",
-		"input":        mediaServer.URL + "/clip.mp4",
-		"filename":     "clip.mp4",
-		"language":     "vi",
+		"api_key":         "test-key",
+		"model":           "gpt-test",
+		"input_type":      "media_url",
+		"input":           mediaServer.URL + "/clip.mp4",
+		"filename":        "clip.mp4",
+		"language":        "vi",
 		"max_media_bytes": 1024,
-		"json_schema": `{"type":"object","properties":{"summary":{"type":"string"},"facts":{"type":"array","items":{"type":"string"}}},"required":["summary","facts"],"additionalProperties":false}`,
+		"json_schema":     `{"type":"object","properties":{"summary":{"type":"string"},"facts":{"type":"array","items":{"type":"string"}}},"required":["summary","facts"],"additionalProperties":false}`,
 	}}
 	result, err := executor.Execute(NewExecutionContext("wf", "exec"), node)
 	if err != nil {
@@ -143,9 +143,9 @@ func TestAIExtractRequiresAllowedSourcePolicyWhenConfigured(t *testing.T) {
 	ctx := NewExecutionContext("wf", "exec")
 	ctx.Credentials["openai"] = "secret"
 	node := &Node{Params: map[string]interface{}{
-		"credential_id":        "openai",
-		"input_type":           "text",
-		"input":                "hello",
+		"credential_id":         "openai",
+		"input_type":            "text",
+		"input":                 "hello",
 		"source_policy_node_id": "missing",
 		"json_schema":           `{"type":"object","properties":{},"additionalProperties":false}`,
 	}}
@@ -157,8 +157,8 @@ func TestAIExtractRequiresAllowedSourcePolicyWhenConfigured(t *testing.T) {
 func TestAIExtractRejectsInvalidSchemaAndPrivateMediaLiteral(t *testing.T) {
 	executor := NewAIExtractExecutor()
 	invalidSchema := &Node{Params: map[string]interface{}{
-		"input_type": "text",
-		"input":      "hello",
+		"input_type":  "text",
+		"input":       "hello",
 		"json_schema": `{"type":"array"}`,
 	}}
 	if err := executor.Validate(invalidSchema); err == nil {
@@ -166,10 +166,10 @@ func TestAIExtractRejectsInvalidSchemaAndPrivateMediaLiteral(t *testing.T) {
 	}
 
 	privateMedia := &Node{Params: map[string]interface{}{
-		"api_key":        "key",
-		"input_type":     "media_url",
-		"input":          "http://127.0.0.1/clip.mp4",
-		"filename":       "clip.mp4",
+		"api_key":         "key",
+		"input_type":      "media_url",
+		"input":           "http://127.0.0.1/clip.mp4",
+		"filename":        "clip.mp4",
 		"max_media_bytes": 1024,
 		"json_schema":     `{"type":"object","properties":{},"additionalProperties":false}`,
 	}}

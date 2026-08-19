@@ -80,8 +80,8 @@ func (e *AIExtractExecutor) Execute(ctx *ExecutionContext, node *Node) (interfac
 	}
 
 	payload := map[string]interface{}{
-		"model": request.Model,
-		"store": false,
+		"model":        request.Model,
+		"store":        false,
 		"instructions": "Extract only facts supported by the supplied input. Do not invent missing values. Return data that follows the requested JSON schema.",
 		"input": []map[string]interface{}{
 			{
@@ -108,11 +108,11 @@ func (e *AIExtractExecutor) Execute(ctx *ExecutionContext, node *Node) (interfac
 		return nil, fmt.Errorf("AI Extract returned non-JSON structured output: %w", err)
 	}
 	output := map[string]interface{}{
-		"data":         structured,
-		"raw_text":     rawText,
-		"model_used":   request.Model,
-		"input_type":   request.InputType,
-		"response_id":  result["id"],
+		"data":          structured,
+		"raw_text":      rawText,
+		"model_used":    request.Model,
+		"input_type":    request.InputType,
+		"response_id":   result["id"],
 		"source_policy": policy,
 	}
 	if transcript != "" {
@@ -127,17 +127,17 @@ func (e *AIExtractExecutor) Validate(node *Node) error {
 }
 
 type aiExtractRequest struct {
-	Model               string
-	InputType           string
-	Input               string
-	Filename            string
-	Instructions        string
-	SchemaName          string
-	Schema              map[string]interface{}
-	SourcePolicyNodeID  string
-	TranscriptionModel  string
-	Language            string
-	MaxMediaBytes       int64
+	Model              string
+	InputType          string
+	Input              string
+	Filename           string
+	Instructions       string
+	SchemaName         string
+	Schema             map[string]interface{}
+	SourcePolicyNodeID string
+	TranscriptionModel string
+	Language           string
+	MaxMediaBytes      int64
 }
 
 func parseAIExtractRequest(node *Node) (aiExtractRequest, error) {
@@ -151,7 +151,7 @@ func parseAIExtractRequest(node *Node) (aiExtractRequest, error) {
 	}
 
 	request := aiExtractRequest{
-		Model:              stringParam("model", "gpt-5.6-luna"),
+		Model:              stringParam("model", "gpt-5"),
 		InputType:          stringParam("input_type", "text"),
 		Input:              stringParam("input", ""),
 		Filename:           stringParam("filename", ""),
@@ -516,7 +516,7 @@ func (e *AIExtractExecutor) GetDefinition() NodeDefinition {
 		Category:    "AI & LLM",
 		Retryable:   true,
 		Params: []ParamDefinition{
-			{Name: "model", Label: "Extraction Model", Type: "text", Default: "gpt-5.6-luna", Required: true},
+			{Name: "model", Label: "Extraction Model", Type: "text", Default: "gpt-5", Required: true},
 			{Name: "input_type", Label: "Input Type", Type: "select", Default: "text", Options: []string{"text", "image_url", "file_url", "file_data", "media_url", "media_data"}, Required: true, Description: "media_* transcribes the audio track first; video frames are not analyzed in this version"},
 			{Name: "input", Label: "Input / URL / Base64", Type: "textarea", Required: true},
 			{Name: "filename", Label: "Filename", Type: "text", Default: "", Required: false, Description: "Required for file_data/media_data. media supports flac/mp3/mp4/mpeg/mpga/m4a/ogg/wav/webm."},

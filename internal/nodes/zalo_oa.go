@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	defaultZaloOAMessageEndpoint = "https://openapi.zalo.me/v3.0/oa/message/cs"
-	maxZaloOAResponseBytes int64 = 256 << 10
+	defaultZaloOAMessageEndpoint       = "https://openapi.zalo.me/v3.0/oa/message/cs"
+	maxZaloOAResponseBytes       int64 = 256 << 10
+	maxZaloOATextCharacters            = 2000
 )
 
 type ZaloOAExecutor struct {
@@ -86,10 +87,10 @@ func (e *ZaloOAExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}
 	}
 
 	return map[string]interface{}{
-		"ok":        true,
-		"user_id":   userID,
+		"ok":         true,
+		"user_id":    userID,
 		"message_id": zaloOAMessageID(result),
-		"response":  result,
+		"response":   result,
 	}, nil
 }
 
@@ -132,8 +133,8 @@ func zaloOARequestParams(ctx *ExecutionContext, node *Node, defaultEndpoint stri
 	if message == "" {
 		return "", "", "", "", fmt.Errorf("Zalo OA requires message")
 	}
-	if len(message) > 5000 {
-		return "", "", "", "", fmt.Errorf("Zalo OA message exceeds Goflow 5000 character safety limit")
+	if len([]rune(message)) > maxZaloOATextCharacters {
+		return "", "", "", "", fmt.Errorf("Zalo OA text message exceeds %d character limit", maxZaloOATextCharacters)
 	}
 	parsed, err := url.Parse(endpoint)
 	if err != nil || !parsed.IsAbs() || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
@@ -189,15 +190,15 @@ func (e *ZaloOAExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type:        TypeZaloOA,
 		Name:        "Zalo OA",
-		Description: "Sends a text message through a Zalo Official Account OpenAPI endpoint",
+		Description: "Sends a text message through the Zalo Official Account OpenAPI customer-service endpoint",
 		Icon:        "MessageCircle",
 		Category:    "COMMUNICATION",
 		Retryable:   false,
 		Params: []ParamDefinition{
 			{Name: "access_token", Label: "OA Access Token", Type: "text", Default: "", Required: false, Description: "Prefer an encrypted credential instead of pasting a token"},
 			{Name: "credential_id", Label: "OA Access Token Credential", Type: "credential", Default: "", Required: false},
-			{Name: "user_id", Label: "Recipient Zalo User ID", Type: "text", Required: true, Description: "Recipient must satisfy the current Zalo OA messaging/interaction rules"},
-			{Name: "message", Label: "Message", Type: "textarea", Required: true},
+			{Name: "user_id", Label: "Recipient Zalo User ID", Type: "text", Required: true, Description: "Recipient must satisfy the current Zalo OA messaging, interaction, and quota rules"},
+			{Name: "message", Label: "Message", Type: "textarea", Required: true, Description: "Plain text, maximum 2,000 characters"},
 			{Name: "endpoint", Label: "OA Message Endpoint", Type: "text", Default: defaultZaloOAMessageEndpoint, Required: true, Description: "Advanced override for future OA OpenAPI endpoint changes or controlled testing"},
 		},
 	}

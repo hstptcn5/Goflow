@@ -65,10 +65,6 @@ func buildSourcePolicy(node *Node) (map[string]interface{}, []string, error) {
 	if publisher == "" {
 		return nil, nil, fmt.Errorf("source policy requires publisher")
 	}
-	parsed, err := url.Parse(sourceURL)
-	if err != nil || !parsed.IsAbs() || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return nil, nil, fmt.Errorf("source policy requires an absolute http/https source_url")
-	}
 
 	allowedMethods := map[string]bool{
 		"official_api":  true,
@@ -80,9 +76,23 @@ func buildSourcePolicy(node *Node) (map[string]interface{}, []string, error) {
 	if !allowedMethods[collectionMethod] {
 		return nil, nil, fmt.Errorf("unsupported source collection_method %q", collectionMethod)
 	}
+
+	canonicalHost := ""
+	if sourceURL == "" {
+		if collectionMethod != "manual_upload" {
+			return nil, nil, fmt.Errorf("source policy requires source_url unless collection_method=manual_upload")
+		}
+	} else {
+		parsed, err := url.Parse(sourceURL)
+		if err != nil || !parsed.IsAbs() || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return nil, nil, fmt.Errorf("source policy requires an absolute http/https source_url")
+		}
+		canonicalHost = strings.ToLower(parsed.Hostname())
+	}
+
 	allowedUsage := map[string]bool{
-		"personal_noncommercial": true,
-		"internal_business":      true,
+		"personal_noncommercial":  true,
+		"internal_business":       true,
 		"commercial_distribution": true,
 	}
 	if !allowedUsage[usageContext] {
@@ -154,23 +164,23 @@ func buildSourcePolicy(node *Node) (map[string]interface{}, []string, error) {
 	}
 
 	return map[string]interface{}{
-		"source_id":                sourceID,
-		"publisher":                publisher,
-		"source_url":               sourceURL,
-		"canonical_host":           strings.ToLower(parsed.Hostname()),
-		"collection_method":        collectionMethod,
-		"usage_context":            usageContext,
-		"policy_status":            policyStatus,
-		"terms_checked":            termsChecked,
-		"robots_checked":           robotsChecked,
-		"attribution_required":     attributionRequired,
-		"link_to_original":         linkToOriginal,
-		"republish_full_text":      republishFullText,
-		"republish_images":         republishImages,
-		"article_body_fetch":       articleBodyFetch,
+		"source_id":               sourceID,
+		"publisher":               publisher,
+		"source_url":              sourceURL,
+		"canonical_host":          canonicalHost,
+		"collection_method":       collectionMethod,
+		"usage_context":           usageContext,
+		"policy_status":           policyStatus,
+		"terms_checked":           termsChecked,
+		"robots_checked":          robotsChecked,
+		"attribution_required":    attributionRequired,
+		"link_to_original":        linkToOriginal,
+		"republish_full_text":     republishFullText,
+		"republish_images":        republishImages,
+		"article_body_fetch":      articleBodyFetch,
 		"max_requests_per_minute": maxRequests,
-		"policy_note":              policyNote,
-		"enforcement":              enforcement,
+		"policy_note":             policyNote,
+		"enforcement":             enforcement,
 	}, warnings, nil
 }
 
@@ -206,7 +216,7 @@ func (e *SourcePolicyExecutor) GetDefinition() NodeDefinition {
 		Params: []ParamDefinition{
 			{Name: "source_id", Label: "Source ID", Type: "text", Required: true, Description: "Stable identifier for this source"},
 			{Name: "publisher", Label: "Publisher / Owner", Type: "text", Required: true},
-			{Name: "source_url", Label: "Canonical Source URL", Type: "text", Required: true},
+			{Name: "source_url", Label: "Canonical Source URL", Type: "text", Required: false, Description: "Required except for manual_upload sources"},
 			{Name: "collection_method", Label: "Collection Method", Type: "select", Default: "publisher_rss", Options: []string{"official_api", "publisher_rss", "public_web", "public_file", "manual_upload"}, Required: true},
 			{Name: "usage_context", Label: "Usage Context", Type: "select", Default: "personal_noncommercial", Options: []string{"personal_noncommercial", "internal_business", "commercial_distribution"}, Required: true},
 			{Name: "policy_status", Label: "Policy Review Status", Type: "select", Default: sourcePolicyReviewRequired, Options: []string{sourcePolicyCleared, sourcePolicyPilotOnly, sourcePolicyReviewRequired, sourcePolicyBlocked}, Required: true},

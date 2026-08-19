@@ -5,21 +5,21 @@ import "testing"
 func TestSourcePolicyAllowsReviewedPersonalSourceWithWarnings(t *testing.T) {
 	executor := NewSourcePolicyExecutor()
 	node := &Node{Params: map[string]interface{}{
-		"source_id":                "publisher-rss",
-		"publisher":                "Publisher",
-		"source_url":               "https://example.com/rss",
-		"collection_method":        "publisher_rss",
-		"usage_context":            "personal_noncommercial",
-		"policy_status":            "review_required",
-		"terms_checked":            false,
-		"robots_checked":           false,
-		"attribution_required":     true,
-		"link_to_original":         true,
-		"republish_full_text":      false,
-		"republish_images":         false,
-		"article_body_fetch":       false,
+		"source_id":               "publisher-rss",
+		"publisher":               "Publisher",
+		"source_url":              "https://example.com/rss",
+		"collection_method":       "publisher_rss",
+		"usage_context":           "personal_noncommercial",
+		"policy_status":           "review_required",
+		"terms_checked":           false,
+		"robots_checked":          false,
+		"attribution_required":    true,
+		"link_to_original":        true,
+		"republish_full_text":     false,
+		"republish_images":        false,
+		"article_body_fetch":      false,
 		"max_requests_per_minute": 6,
-		"enforcement":              "block",
+		"enforcement":             "block",
 	}}
 
 	result, err := executor.Execute(NewExecutionContext("wf", "exec"), node)
@@ -33,6 +33,25 @@ func TestSourcePolicyAllowsReviewedPersonalSourceWithWarnings(t *testing.T) {
 	warnings := output["warnings"].([]string)
 	if len(warnings) != 1 || warnings[0] != "source policy still requires review" {
 		t.Fatalf("unexpected warnings: %#v", warnings)
+	}
+}
+
+func TestSourcePolicyAllowsManualUploadWithoutURL(t *testing.T) {
+	executor := NewSourcePolicyExecutor()
+	node := &Node{Params: map[string]interface{}{
+		"source_id":         "uploaded-contract",
+		"publisher":         "User supplied",
+		"collection_method": "manual_upload",
+		"usage_context":     "personal_noncommercial",
+		"policy_status":     "review_required",
+		"enforcement":       "block",
+	}}
+	result, err := executor.Execute(NewExecutionContext("wf", "exec"), node)
+	if err != nil {
+		t.Fatalf("manual upload should not require a URL: %v", err)
+	}
+	if result.(map[string]interface{})["canonical_host"] != "" {
+		t.Fatalf("manual upload canonical host should be empty: %#v", result)
 	}
 }
 
