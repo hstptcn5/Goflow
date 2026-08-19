@@ -1,5 +1,5 @@
 /* Directional workflow connectors for the brutalist canvas.
- * Visual-only: no workflow edge data, serialization, or execution behavior changes.
+ * Presentation-only: edge JSON, source/target ids and execution behavior stay unchanged.
  */
 .vue-flow__edge-path,
 .vue-flow__connection-path {
@@ -11,4 +11,64 @@
 .vue-flow__edge.selected .vue-flow__edge-path,
 .vue-flow__edge:hover .vue-flow__edge-path {
   marker-end: url(#goflow-workflow-arrow) !important;
+}
+
+/* The workflow reads left-to-right: inputs enter on the left, outputs leave on the right. */
+.goflow-canvas .custom-node-card > .vue-flow__handle.target {
+  left: -2px !important;
+  right: auto !important;
+  top: 50% !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 5 !important;
+}
+
+.goflow-canvas .custom-node-card > .vue-flow__handle.source {
+  left: auto !important;
+  right: -2px !important;
+  top: 50% !important;
+  bottom: auto !important;
+  transform: translate(50%, -50%) !important;
+  z-index: 5 !important;
+}
+
+/* IF branches share the right edge but remain visibly separated. */
+.goflow-canvas .custom-node-card > .vue-flow__handle.source[data-handleid='true'] {
+  top: 36% !important;
+  background: #d9f7e5 !important;
+}
+
+.goflow-canvas .custom-node-card > .vue-flow__handle.source[data-handleid='false'] {
+  top: 68% !important;
+  background: #ffe0e0 !important;
+}
+
+/* Keep the quick-add affordance away from the actual output port and wire. */
+.goflow-canvas .custom-node-card > .quick-add-button {
+  right: -16px !important;
+  top: -16px !important;
+  transform: none !important;
+  z-index: 6 !important;
+}
+
+.goflow-canvas .custom-node-card > .handle-label {
+  left: auto !important;
+  right: -58px !important;
+  bottom: auto !important;
+  padding: 2px 4px;
+  border: 2px solid #1d1c12;
+  background: #fff;
+  color: #1d1c12 !important;
+  font-family: var(--font-mono);
+  font-size: 0.58rem !important;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.goflow-canvas .custom-node-card > .handle-label-true {
+  top: calc(36% - 8px) !important;
+}
+
+.goflow-canvas .custom-node-card > .handle-label-false {
+  top: calc(68% - 8px) !important;
 }
