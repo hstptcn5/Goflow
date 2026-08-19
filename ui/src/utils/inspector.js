@@ -264,7 +264,9 @@ export function credentialsForParam(credentials, param, nodeType = '') {
   if (!hint) return credentials;
   return credentials.filter((cred) => {
     const type = String(cred.type || '').toLowerCase();
+    const kind = canonicalCredentialKind(cred);
     const provider = canonicalCredentialProvider(cred);
+    if (hint.includes('aiextract')) return kind === 'API_KEY' && (provider === 'openai' || provider === 'custom');
     return hint.includes(type) || type.includes(hint) || hint.includes(provider) || provider.includes(hint) || credentialAliasMatch(type, hint);
   });
 }
