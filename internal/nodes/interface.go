@@ -14,6 +14,7 @@ const (
 	TypeManualTrigger        NodeType = "manualTrigger"
 	TypeHTTPRequest          NodeType = "httpRequest"
 	TypeNormalizedHTTPSource NodeType = "normalizedHttpSource"
+	TypeRSSFeedSource        NodeType = "rssFeedSource"
 	TypeTelegramBot          NodeType = "telegramBot"
 	TypeJSONTransform        NodeType = "jsonTransform"
 	TypeConditionIF          NodeType = "conditionIf"
