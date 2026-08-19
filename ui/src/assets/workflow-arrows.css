@@ -1,0 +1,14 @@
+/* Directional workflow connectors for the brutalist canvas.
+ * Visual-only: no workflow edge data, serialization, or execution behavior changes.
+ */
+.vue-flow__edge-path,
+.vue-flow__connection-path {
+  marker-end: url(#goflow-workflow-arrow) !important;
+  stroke-linecap: square !important;
+  stroke-linejoin: miter !important;
+}
+
+.vue-flow__edge.selected .vue-flow__edge-path,
+.vue-flow__edge:hover .vue-flow__edge-path {
+  marker-end: url(#goflow-workflow-arrow) !important;
+}
