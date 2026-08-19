@@ -399,13 +399,24 @@ func (e *Engine) executeWorkflow(runCtx context.Context, wf *storage.Workflow, t
 		ctx.SetOutput("$trigger", triggerPayload)
 	}
 
-	// Chỉ nạp và giải mã những credentials thực sự được tham chiếu trong các node của workflow
+	// Chỉ nạp và giải mã những credentials thực sự được tham chiếu trong các node của workflow.
+	// Store non-secret metadata next to the decrypted value so provider-aware executors
+	// can reject mismatched credentials before any outbound request is attempted.
 	for _, nodeObj := range nodeList {
 		if credID, ok := nodeObj.Params["credential_id"].(string); ok && credID != "" {
 			if _, loaded := ctx.Credentials[credID]; !loaded {
+				cred, err := e.credStore.GetByID(credID)
+				if err != nil {
+					continue
+				}
 				decrypted, err := e.credStore.GetDecryptedData(credID)
 				if err == nil {
 					ctx.Credentials[credID] = decrypted
+					ctx.CredentialMetadata[credID] = nodes.CredentialMetadata{
+						Kind:     cred.Kind,
+						Provider: cred.Provider,
+						Type:     cred.Type,
+					}
 				}
 			}
 		}
