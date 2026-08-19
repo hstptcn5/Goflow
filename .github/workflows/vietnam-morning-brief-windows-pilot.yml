@@ -8,6 +8,7 @@ on:
       - 'internal/nodes/rss_feed_source.go'
       - 'internal/nodes/rss_feed_source_test.go'
       - 'internal/pack/vietnam_morning_brief_reference_test.go'
+      - 'internal/testharness/morningbriefpilot/**'
       - 'scripts/build-vietnam-morning-brief-windows-pilot.ps1'
       - 'docs/VIETNAM_MORNING_BRIEF_WINDOWS_PILOT.md'
       - 'main.go'
