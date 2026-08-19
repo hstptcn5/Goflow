@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "config": {
+    "chat_id": "@vietnam_morning_brief_fixture",
+    "ai_provider": "none"
+  }
+}
