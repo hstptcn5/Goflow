@@ -6,6 +6,7 @@ describe('credential compatibility metadata', () => {
     { id: 'zalo', type: 'BEARER_TOKEN', kind: 'BEARER_TOKEN', provider: 'zalo', name: 'Zalo OA' },
     { id: 'github', type: 'BEARER_TOKEN', kind: 'BEARER_TOKEN', provider: 'github', name: 'GitHub' },
     { id: 'openai', type: 'OpenAI', kind: 'API_KEY', provider: 'openai', name: 'OpenAI' },
+    { id: 'deepseek', type: 'DeepSeek', kind: 'API_KEY', provider: 'deepseek', name: 'DeepSeek' },
     { id: 'custom-api-key', type: 'API_KEY', kind: 'API_KEY', provider: 'custom', name: 'Custom API Key' },
     { id: 'legacy-telegram', type: 'TELEGRAM_BOT', name: 'Telegram legacy' },
     { id: 'basic', type: 'BASIC_AUTH', kind: 'BASIC_AUTH', provider: 'custom', name: 'Basic' },
@@ -20,6 +21,7 @@ describe('credential compatibility metadata', () => {
       'zalo',
       'github',
       'openai',
+      'deepseek',
       'custom-api-key',
       'legacy-telegram',
     ]);
@@ -39,11 +41,12 @@ describe('credential compatibility metadata', () => {
     expect(credentialsForParam(credentials, param, 'telegramBot').map((cred) => cred.id)).toContain('legacy-telegram');
   });
 
-  it('keeps AI Extract compatible with OpenAI and legacy custom API keys', () => {
-    const param = { type: 'credential' };
-    expect(credentialsForParam(credentials, param, 'aiExtract').map((cred) => cred.id)).toEqual([
-      'openai',
-      'custom-api-key',
-    ]);
+  it('shows only OpenAI API keys for AI Extract when canonical metadata is declared', () => {
+    const param = {
+      type: 'credential',
+      credential_kinds: ['API_KEY'],
+      credential_providers: ['openai'],
+    };
+    expect(credentialsForParam(credentials, param, 'aiExtract').map((cred) => cred.id)).toEqual(['openai']);
   });
 });
