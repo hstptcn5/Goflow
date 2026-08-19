@@ -379,6 +379,7 @@ func validateAIExtractSchemaValue(schema map[string]interface{}, value interface
 				if err := validateAIExtractSchemaValue(itemSchema, item, fmt.Sprintf("%s[%d]", path, index), false); err != nil {
 					return err
 				}
+			}
 		}
 	case "string":
 		if _, ok := value.(string); !ok {
