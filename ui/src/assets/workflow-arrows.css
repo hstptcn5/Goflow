@@ -45,8 +45,8 @@
 
 /* Keep the quick-add affordance away from the actual output port and wire. */
 .goflow-canvas .custom-node-card > .quick-add-button {
-  right: -16px !important;
-  top: -16px !important;
+  right: -13px !important;
+  top: -13px !important;
   transform: none !important;
   z-index: 6 !important;
 }
