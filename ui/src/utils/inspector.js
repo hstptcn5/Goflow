@@ -244,16 +244,20 @@ export function orderedUpstreamNodes(selectedNodeId, nodes = [], edges = []) {
   return [...direct, ...previous].filter((node, index, all) => byId.has(node.id) && all.findIndex((item) => item.id === node.id) === index);
 }
 
-export function credentialsForParam(credentials, param, nodeType = '') {
+export function credentialsForParam(credentials, param, nodeType = '', nodeParams = {}) {
   const requestedKinds = normalizeStringList(param?.credential_kinds || param?.credentialKinds).map((value) => value.toUpperCase());
   const requestedProviders = normalizeStringList(param?.credential_providers || param?.credentialProviders).map((value) => value.toLowerCase());
+  const selectedProvider = nodeType === 'aiExtract' ? String(nodeParams?.provider || '').trim().toLowerCase() : '';
+  const effectiveProviders = selectedProvider && requestedProviders.includes(selectedProvider)
+    ? [selectedProvider]
+    : requestedProviders;
 
-  if (requestedKinds.length || requestedProviders.length) {
+  if (requestedKinds.length || effectiveProviders.length) {
     return credentials.filter((cred) => {
       const kind = canonicalCredentialKind(cred);
       const provider = canonicalCredentialProvider(cred);
       if (requestedKinds.length && !requestedKinds.includes(kind)) return false;
-      if (requestedProviders.length && !requestedProviders.includes(provider)) return false;
+      if (effectiveProviders.length && !effectiveProviders.includes(provider)) return false;
       return true;
     });
   }
@@ -266,7 +270,11 @@ export function credentialsForParam(credentials, param, nodeType = '') {
     const type = String(cred.type || '').toLowerCase();
     const kind = canonicalCredentialKind(cred);
     const provider = canonicalCredentialProvider(cred);
-    if (hint.includes('aiextract')) return kind === 'API_KEY' && (provider === 'openai' || provider === 'custom');
+    if (hint.includes('aiextract')) {
+      if (kind !== 'API_KEY') return false;
+      if (selectedProvider) return provider === selectedProvider;
+      return provider === 'openai' || provider === 'deepseek';
+    }
     return hint.includes(type) || type.includes(hint) || hint.includes(provider) || provider.includes(hint) || credentialAliasMatch(type, hint);
   });
 }
