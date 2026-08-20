@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	maxSSHOutputBytes      = 1 << 20
-	defaultSSHTimeout      = 30
-	maxSSHTimeout          = 300
-	maxSSHCommandBytes     = 256 << 10
+	maxSSHOutputBytes  = 1 << 20
+	defaultSSHTimeout  = 30
+	maxSSHTimeout      = 300
+	maxSSHCommandBytes = 256 << 10
 )
 
 type SSHRunnerExecutor struct{}
