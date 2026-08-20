@@ -9,13 +9,13 @@ const route = useRoute();
 const workflowStore = useWorkflowStore();
 
 const navItems = [
-  { label: 'Workflow', to: '/workflows' },
-  { label: 'Lịch sử chạy', to: '/executions' },
-  { label: 'Thông tin xác thực', to: '/credentials' },
-  { label: 'Mẫu workflow', to: '/templates' },
-  { label: 'Danh sách node', to: '/nodes' },
-  { label: 'Cài đặt', to: '/settings' },
-  { label: 'Trợ giúp', to: '/help' },
+  { label: 'Workflows', to: '/workflows' },
+  { label: 'Executions', to: '/executions' },
+  { label: 'Credentials', to: '/credentials' },
+  { label: 'Templates', to: '/templates' },
+  { label: 'Nodes', to: '/nodes' },
+  { label: 'Settings', to: '/settings' },
+  { label: 'Help', to: '/help' },
 ];
 
 const shellTitle = computed(() => {
@@ -28,12 +28,12 @@ const shellTitle = computed(() => {
 <template>
   <div class="app-shell">
     <aside class="nav-rail">
-      <RouterLink class="brand-link" to="/workflows" aria-label="Danh sách workflow Goflow">
+      <RouterLink class="brand-link" to="/workflows" aria-label="Goflow Workflows">
         <span class="brand-mark" v-html="getLogoSVG()"></span>
         <span class="brand-name">Goflow</span>
       </RouterLink>
 
-      <nav class="rail-nav" aria-label="Điều hướng chính">
+      <nav class="rail-nav" aria-label="Primary navigation">
         <RouterLink
           v-for="item in navItems"
           :key="item.to"
@@ -49,19 +49,19 @@ const shellTitle = computed(() => {
     <section class="shell-main">
       <header class="shell-header">
         <div>
-          <div class="shell-kicker">Không gian làm việc</div>
+          <div class="shell-kicker">Workspace</div>
           <h1>{{ shellTitle }}</h1>
         </div>
         <div class="shell-status">
           <span class="status-dot" :class="{ disconnected: wsClient.status.value !== 'connected' }"></span>
-          <span>{{ wsClient.status.value === 'connected' ? 'Đã kết nối cập nhật trực tiếp' : 'Mất kết nối cập nhật trực tiếp' }}</span>
+          <span>{{ wsClient.status.value === 'connected' ? 'Live updates connected' : 'Live updates disconnected' }}</span>
           <button
             v-if="wsClient.status.value !== 'connected'"
             type="button"
             class="status-action"
             @click="wsClient.connect()"
           >
-            Kết nối lại
+            Reconnect
           </button>
         </div>
       </header>
