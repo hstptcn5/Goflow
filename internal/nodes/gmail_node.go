@@ -2,172 +2,119 @@ package nodes
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
+	"mime"
 	"net/http"
+	"net/mail"
+	"net/url"
 	"strings"
 	"time"
-
-	"golang.org/x/oauth2/google"
 )
+
+const maxGmailMessageBytes = 5 << 20
 
 type GmailRESTExecutor struct{}
 
-func NewGmailRESTExecutor() *GmailRESTExecutor {
-	return &GmailRESTExecutor{}
-}
+func NewGmailRESTExecutor() *GmailRESTExecutor { return &GmailRESTExecutor{} }
 
-func (e *GmailRESTExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
-	// 1. Resolve parameters
-	credID, _ := node.Params["credential_id"].(string)
-	directSA, _ := node.Params["service_account_json"].(string)
+func validateGmailNode(node *Node) error {
 	to, _ := node.Params["to"].(string)
-	subject, _ := node.Params["subject"].(string)
-	body, _ := node.Params["body"].(string)
-
+	to = strings.TrimSpace(to)
 	if to == "" {
-		return nil, fmt.Errorf("recipient email 'to' is required")
+		return fmt.Errorf("recipient email 'to' is required")
 	}
-
-	saJSON := directSA
-	if credID != "" {
-		ctx.mu.RLock()
-		decrypted, ok := ctx.Credentials[credID]
-		ctx.mu.RUnlock()
-		if ok && decrypted != "" {
-			saJSON = decrypted
+	if strings.ContainsAny(to, "\r\n") {
+		return fmt.Errorf("recipient email must not contain line breaks")
+	}
+	if _, err := mail.ParseAddress(to); err != nil {
+		return fmt.Errorf("recipient email 'to' is invalid")
+	}
+	subject, _ := node.Params["subject"].(string)
+	if strings.ContainsAny(subject, "\r\n") || len([]rune(subject)) > 998 {
+		return fmt.Errorf("Gmail subject is invalid")
+	}
+	body, _ := node.Params["body"].(string)
+	if len(body) > maxGmailMessageBytes {
+		return fmt.Errorf("Gmail body exceeds %d byte limit", maxGmailMessageBytes)
+	}
+	impersonate, _ := node.Params["impersonate_user"].(string)
+	impersonate = strings.TrimSpace(impersonate)
+	if impersonate != "" {
+		if strings.ContainsAny(impersonate, "\r\n") {
+			return fmt.Errorf("impersonate_user must not contain line breaks")
+		}
+		if parsed, err := mail.ParseAddress(impersonate); err != nil || parsed.Address != impersonate {
+			return fmt.Errorf("impersonate_user must be a valid email address")
 		}
 	}
-
-	if strings.TrimSpace(saJSON) == "" {
-		return nil, fmt.Errorf("service_account_json is empty (please set it directly or select a valid credential)")
-	}
-
-	// 2. Generate Google OAuth2 Token using JWT config
-	// Gmail REST API requires scopes: https://www.googleapis.com/auth/gmail.send
-	// Note: Gmail API might require domain-wide delegation for service account to impersonate users
-	// However, we still support direct sending using the service account credentials context
-	jwtConfig, err := google.JWTConfigFromJSON([]byte(saJSON), "https://www.googleapis.com/auth/gmail.send")
-	if err != nil {
-		return nil, fmt.Errorf("invalid service account JSON: %w", err)
-	}
-
-	// If user wants to impersonate a specific user (Required for Gmail service accounts)
-	impersonateUser, _ := node.Params["impersonate_user"].(string)
-	if impersonateUser != "" {
-		jwtConfig.Subject = impersonateUser
-	}
-
-	httpClient := &http.Client{Timeout: 15 * time.Second}
-	ts := jwtConfig.TokenSource(context.Background())
-	token, err := ts.Token()
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate OAuth2 token for Gmail: %w", err)
-	}
-
-	// 3. Construct RFC 822 message
-	rawMessage := fmt.Sprintf("To: %s\r\nSubject: %s\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s", to, subject, body)
-	encodedMessage := base64.URLEncoding.EncodeToString([]byte(rawMessage))
-
-	payload := map[string]string{
-		"raw": encodedMessage,
-	}
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal gmail payload: %w", err)
-	}
-
-	url := "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
-	if impersonateUser != "" {
-		url = fmt.Sprintf("https://gmail.googleapis.com/gmail/v1/users/%s/messages/send", impersonateUser)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create http request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("http request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBytes, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Gmail API send error (status %d): %s", resp.StatusCode, string(respBytes))
-	}
-
-	var apiResult map[string]interface{}
-	_ = json.Unmarshal(respBytes, &apiResult)
-	return apiResult, nil
-}
-
-func (e *GmailRESTExecutor) Validate(node *Node) error {
-	to, _ := node.Params["to"].(string)
-	if strings.TrimSpace(to) == "" {
-		return fmt.Errorf("recipient email 'to' is required")
+	credentialID, _ := node.Params["credential_id"].(string)
+	directSA, _ := node.Params["service_account_json"].(string)
+	if strings.TrimSpace(credentialID) == "" && strings.TrimSpace(directSA) == "" {
+		return fmt.Errorf("Gmail requires an encrypted credential or service_account_json")
 	}
 	return nil
 }
 
+func (e *GmailRESTExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
+	if err := validateGmailNode(node); err != nil {
+		return nil, err
+	}
+	to, _ := node.Params["to"].(string)
+	subject, _ := node.Params["subject"].(string)
+	body, _ := node.Params["body"].(string)
+	impersonateUser, _ := node.Params["impersonate_user"].(string)
+	impersonateUser = strings.TrimSpace(impersonateUser)
+	material, err := resolveGoogleAuth(ctx, node)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(material.ServiceAccountJSON) != "" && impersonateUser == "" {
+		return nil, fmt.Errorf("Gmail service account credentials require impersonate_user with Google Workspace domain-wide delegation")
+	}
+	accessToken, err := googleAccessTokenForSubject(ctx.Context, material, impersonateUser, "https://www.googleapis.com/auth/gmail.send")
+	if err != nil {
+		return nil, err
+	}
+
+	parsedTo, _ := mail.ParseAddress(strings.TrimSpace(to))
+	encodedSubject := mime.QEncoding.Encode("UTF-8", subject)
+	rawMessage := fmt.Sprintf("To: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s", parsedTo.String(), encodedSubject, body)
+	if len(rawMessage) > maxGmailMessageBytes {
+		return nil, fmt.Errorf("Gmail encoded message exceeds %d byte limit", maxGmailMessageBytes)
+	}
+	payloadBytes, err := json.Marshal(map[string]string{"raw": base64.RawURLEncoding.EncodeToString([]byte(rawMessage))})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal Gmail payload: %w", err)
+	}
+	userPath := "me"
+	if impersonateUser != "" {
+		userPath = url.PathEscape(impersonateUser)
+	}
+	endpoint := "https://gmail.googleapis.com/gmail/v1/users/" + userPath + "/messages/send"
+	req, err := http.NewRequestWithContext(ctx.Context, http.MethodPost, endpoint, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Gmail request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 20 * time.Second}
+	return doGoogleJSONRequest(client, req, http.StatusOK)
+}
+
+func (e *GmailRESTExecutor) Validate(node *Node) error { return validateGmailNode(node) }
+
 func (e *GmailRESTExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
-		Type:        TypeGmailREST,
-		Name:        "Gmail REST API",
-		Description: "Sends HTML email through the Gmail REST API using a service account",
-		Icon:        "Mail",
-		Category:    "COMMUNICATION",
+		Type: TypeGmailREST, Name: "Gmail REST API", Description: "Sends bounded HTML email through the Gmail REST API", Icon: "Mail", Category: "COMMUNICATION",
 		Params: []ParamDefinition{
-			{
-				Name:        "credential_id",
-				Label:       "Select Encrypted Credential",
-				Type:        "credential",
-				Required:    false,
-				Description: "Select an encrypted service account JSON credential from the vault",
-			},
-			{
-				Name:        "service_account_json",
-				Label:       "Service Account JSON Key",
-				Type:        "textarea",
-				Required:    false,
-				Description: "Paste the service account JSON key directly if not using the vault",
-			},
-			{
-				Name:        "impersonate_user",
-				Label:       "Impersonate User Email (G-Suite)",
-				Type:        "text",
-				Required:    false,
-				Description: "Sender email to impersonate when using a Google Workspace service account",
-			},
-			{
-				Name:        "to",
-				Label:       "Recipient Email (To)",
-				Type:        "text",
-				Required:    true,
-				Description: "Recipient email address, for example recipient@example.com",
-			},
-			{
-				Name:        "subject",
-				Label:       "Email Subject",
-				Type:        "text",
-				Default:     "Notification from Goflow",
-				Required:    true,
-				Description: "Email subject",
-			},
-			{
-				Name:        "body",
-				Label:       "HTML Body",
-				Type:        "textarea",
-				Default:     "<h1>Hello!</h1><p>This is a custom notification email sent by Goflow automation flow.</p>",
-				Required:    true,
-				Description: "HTML email body",
-			},
+			{Name: "credential_id", Label: "Select Encrypted Credential", Type: "credential", Required: false, Description: "Encrypted Google OAuth2 access token or service account JSON"},
+			{Name: "service_account_json", Label: "Service Account JSON Key (legacy)", Type: "textarea", Required: false, Description: "Legacy inline service account JSON. Prefer an encrypted credential."},
+			{Name: "impersonate_user", Label: "Impersonate User Email (Google Workspace)", Type: "text", Required: false, Description: "Required for service accounts using domain-wide delegation. OAuth2 user credentials can leave this empty."},
+			{Name: "to", Label: "Recipient Email (To)", Type: "text", Required: true, Description: "Single recipient email address"},
+			{Name: "subject", Label: "Email Subject", Type: "text", Default: "Notification from Goflow", Required: true, Description: "Email subject"},
+			{Name: "body", Label: "HTML Body", Type: "textarea", Default: "<h1>Hello!</h1><p>This is a custom notification email sent by Goflow.</p>", Required: true, Description: "HTML email body, maximum 5 MiB"},
 		},
 	}
 }
