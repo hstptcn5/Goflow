@@ -1,7 +1,9 @@
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useWorkflowStore } from '@/stores/workflowStore';
+import { useExecutionStore } from '@/stores/executionStore';
 import { api } from '@/services/api';
+import { isReviewerCredential, reviewerCredentialProvider } from '@/utils/aiReviewer';
 
 const props = defineProps({
   visible: Boolean,
@@ -12,6 +14,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'loadWorkflow']);
 const workflowStore = useWorkflowStore();
+const executionStore = useExecutionStore();
 
 const selectedCredentialId = ref('');
 const promptText = ref('');
@@ -34,25 +37,10 @@ const messages = ref([
   }
 ]);
 
-function credentialProvider(cred) {
-  const provider = String(cred?.provider || '').trim().toLowerCase();
-  if (provider === 'openai' || provider === 'deepseek') return provider;
-  const type = String(cred?.type || '').trim().toLowerCase();
-  if (type === 'openai' || type === 'openai_api_key') return 'openai';
-  if (type === 'deepseek' || type === 'deepseek_api_key') return 'deepseek';
-  return '';
-}
-
-function isAICredential(cred) {
-  const provider = credentialProvider(cred);
-  const kind = String(cred?.kind || '').trim().toUpperCase();
-  if (!provider) return false;
-  return !kind || kind === 'API_KEY';
-}
-
-const aiCredentials = computed(() => workflowStore.credentials.filter(isAICredential));
+const aiCredentials = computed(() => workflowStore.credentials.filter(isReviewerCredential));
 const selectedCredential = computed(() => aiCredentials.value.find((cred) => cred.id === selectedCredentialId.value) || null);
-const selectedProvider = computed(() => credentialProvider(selectedCredential.value));
+const selectedProvider = computed(() => reviewerCredentialProvider(selectedCredential.value));
+const reviewExecution = computed(() => props.latestExecution || executionStore.executionLogs[0] || null);
 const modeDefinition = computed(() => modes.find((mode) => mode.id === assistantMode.value) || modes[0]);
 const isReviewMode = computed(() => assistantMode.value !== 'build');
 const reviewNeedsRun = computed(() => assistantMode.value === 'latest_run');
@@ -60,7 +48,7 @@ const canSubmit = computed(() => {
   if (loading.value || !selectedCredentialId.value) return false;
   if (assistantMode.value === 'build') return Boolean(promptText.value.trim());
   if (!(props.currentNodes || []).length) return false;
-  if (reviewNeedsRun.value && !props.latestExecution) return false;
+  if (reviewNeedsRun.value && !reviewExecution.value) return false;
   return true;
 });
 const inputPlaceholder = computed(() => {
@@ -196,7 +184,7 @@ async function handleReview() {
       mode,
       selectedCredentialId.value,
       getSerializableCanvasState(),
-      mode === 'latest_run' ? props.latestExecution : null,
+      mode === 'latest_run' ? reviewExecution.value : null,
       focus
     );
     messages.value.push({
@@ -302,7 +290,7 @@ function renderMarkdown(text) {
           <select v-model="selectedCredentialId" class="form-select select-sm" :disabled="loading">
             <option value="">-- Choose OpenAI / DeepSeek Credential --</option>
             <option v-for="cred in aiCredentials" :key="cred.id" :value="cred.id">
-              {{ cred.name }} · {{ credentialProvider(cred) }}
+              {{ cred.name }} · {{ reviewerCredentialProvider(cred) }}
             </option>
           </select>
           <span v-if="selectedProvider" class="provider-badge">{{ selectedProvider }}</span>
@@ -313,7 +301,7 @@ function renderMarkdown(text) {
 
         <div v-if="isReviewMode" class="review-safety-note">
           <strong>Human-gated review.</strong> The reviewer can only return findings and a validated proposal. It cannot save, activate, run, or apply anything by itself.
-          <span v-if="reviewNeedsRun && !latestExecution">Run this workflow at least once before using Review Latest Run.</span>
+          <span v-if="reviewNeedsRun && !reviewExecution">Run this workflow at least once before using Review Latest Run.</span>
         </div>
         <div v-else class="chat-helper-tip">
           If AI proposes a workflow, it changes the canvas only after you press <strong>Load Onto Canvas</strong>.
