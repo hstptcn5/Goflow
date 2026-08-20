@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { api } from '@/services/api';
+import { localizeNodeDefinitions } from '@/utils/operatorVi';
 
 export const useWorkflowStore = defineStore('workflow', {
   state: () => ({
@@ -45,7 +46,7 @@ export const useWorkflowStore = defineStore('workflow', {
 
     async fetchNodeDefinitions() {
       try {
-        this.nodeDefinitions = await api.getNodeDefinitions();
+        this.nodeDefinitions = localizeNodeDefinitions(await api.getNodeDefinitions());
       } catch (err) {
         this.error = err.message;
         throw err;
@@ -132,7 +133,7 @@ export const useWorkflowStore = defineStore('workflow', {
     async updateWorkflowMetadata(id, name, description) {
       const existing = this.workflows.find((w) => w.id === id)
         || (this.currentWorkflow?.id === id ? this.currentWorkflow : null);
-      if (!existing) throw new Error('Workflow not found');
+      if (!existing) throw new Error('Không tìm thấy workflow');
 
       const payload = {
         name,

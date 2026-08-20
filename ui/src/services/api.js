@@ -1,37 +1,53 @@
 const API_BASE = '/api/v1';
 
+const VI_AI_OPERATOR_INSTRUCTION = `Yêu cầu vận hành bắt buộc của Goflow:
+- Mọi phần giải thích, phản hồi hội thoại, tên workflow và tên node dành cho người dùng phải viết bằng tiếng Việt tự nhiên.
+- Giữ nguyên chính xác các identifier kỹ thuật như node type, node id, parameter name, expression path, model name và URL.
+- Không dịch khóa JSON kỹ thuật của workflow schema.
+- Nếu trả workflow JSON, trường name của workflow/node nên dùng tiếng Việt dễ hiểu nhưng type/params/edge identifiers phải giữ đúng contract Goflow.`;
+
+function isSensitiveAIContextKey(key) {
+  const normalized = String(key || '').trim().toLowerCase().replaceAll('-', '_');
+  return [
+    'api_key', 'apikey', 'authorization', 'password', 'passwd', 'secret', 'token',
+    'credential', 'private_key', 'service_account', 'client_secret', 'connection_string',
+    'webhook_url',
+  ].some((part) => normalized.includes(part));
+}
+
+function redactAIContext(value) {
+  if (Array.isArray(value)) return value.map(redactAIContext);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key,
+    isSensitiveAIContextKey(key) ? '[REDACTED]' : redactAIContext(item),
+  ]));
+}
+
 async function customFetch(url, options = {}) {
-  // 1. Inject Authorization header from localStorage if present
   const token = localStorage.getItem('GOFLOW_API_KEY');
   if (token) {
-    if (!options.headers) {
-      options.headers = {};
-    }
+    if (!options.headers) options.headers = {};
     options.headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // 2. Perform request
   let res;
   try {
     res = await fetch(url, options);
   } catch (err) {
-    throw new Error(`Network request failed. Check that Goflow is still running and reachable, then try again. Details: ${err.message}`);
+    throw new Error(`Không thể kết nối tới Goflow. Hãy kiểm tra tiến trình Goflow còn chạy và thử lại. Chi tiết: ${err.message}`);
   }
 
-  // 3. Handle 401 Unauthorized by prompting the user
   if (res.status === 401) {
-    const userInput = prompt('Goflow API requires Authorization. Please enter your GOFLOW_API_KEY:');
+    const userInput = prompt('Goflow API yêu cầu xác thực. Nhập GOFLOW_API_KEY:');
     if (userInput !== null) {
       localStorage.setItem('GOFLOW_API_KEY', userInput.trim());
-      // Retry the request once with the new key
-      if (!options.headers) {
-        options.headers = {};
-      }
+      if (!options.headers) options.headers = {};
       options.headers['Authorization'] = `Bearer ${userInput.trim()}`;
       try {
         res = await fetch(url, options);
       } catch (err) {
-        throw new Error(`Network request failed after entering API key. Check that Goflow is still running and reachable, then try again. Details: ${err.message}`);
+        throw new Error(`Không thể kết nối sau khi nhập API key. Hãy kiểm tra Goflow còn chạy và thử lại. Chi tiết: ${err.message}`);
       }
     }
   }
@@ -40,16 +56,15 @@ async function customFetch(url, options = {}) {
 }
 
 export const api = {
-  // Workflows
   async getWorkflows() {
     const res = await customFetch(`${API_BASE}/workflows`);
-    if (!res.ok) throw new Error('Failed to fetch workflows');
+    if (!res.ok) throw new Error('Không tải được danh sách workflow');
     return res.json();
   },
 
   async getWorkflow(id) {
     const res = await customFetch(`${API_BASE}/workflows/${id}`);
-    if (!res.ok) throw new Error('Failed to fetch workflow');
+    if (!res.ok) throw new Error('Không tải được workflow');
     return res.json();
   },
 
@@ -59,7 +74,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error('Failed to create workflow');
+    if (!res.ok) throw new Error('Không tạo được workflow');
     return res.json();
   },
 
@@ -69,13 +84,13 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error('Failed to update workflow');
+    if (!res.ok) throw new Error('Không cập nhật được workflow');
     return res.json();
   },
 
   async getWorkflowInterface(id) {
     const res = await customFetch(`${API_BASE}/workflows/${id}/interface`);
-    if (!res.ok) throw new Error('Failed to fetch workflow interface');
+    if (!res.ok) throw new Error('Không tải được cấu hình giao diện workflow');
     return res.json();
   },
 
@@ -87,14 +102,14 @@ export const api = {
     });
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(text || 'Failed to update workflow interface');
+      throw new Error(text || 'Không cập nhật được cấu hình giao diện workflow');
     }
     return res.json();
   },
 
   async deleteWorkflow(id) {
     const res = await customFetch(`${API_BASE}/workflows/${id}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Failed to delete workflow');
+    if (!res.ok) throw new Error('Không xóa được workflow');
     return res.json();
   },
 
@@ -104,7 +119,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_active: isActive }),
     });
-    if (!res.ok) throw new Error('Failed to toggle active status');
+    if (!res.ok) throw new Error('Không thay đổi được trạng thái kích hoạt workflow');
     return res.json();
   },
 
@@ -114,20 +129,19 @@ export const api = {
       headers: { 'Content-Type': 'application/json', 'X-Goflow-Trigger-Source': 'ui' },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error('Failed to trigger workflow');
+    if (!res.ok) throw new Error('Không chạy được workflow');
     return res.json();
   },
 
-  // Executions
   async getExecutions(workflowId) {
     const res = await customFetch(`${API_BASE}/workflows/${workflowId}/executions`);
-    if (!res.ok) throw new Error('Failed to fetch execution history');
+    if (!res.ok) throw new Error('Không tải được lịch sử chạy');
     return res.json();
   },
 
   async getExecutionDetail(id) {
     const res = await customFetch(`${API_BASE}/executions/${id}`);
-    if (!res.ok) throw new Error('Failed to fetch execution detail');
+    if (!res.ok) throw new Error('Không tải được chi tiết lần chạy');
     return res.json();
   },
 
@@ -135,7 +149,7 @@ export const api = {
     const res = await customFetch(`${API_BASE}/executions/${id}/cancel`, { method: 'POST' });
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(text || 'Failed to cancel execution');
+      throw new Error(text || 'Không hủy được lần chạy');
     }
     return res.json();
   },
@@ -144,15 +158,14 @@ export const api = {
     const res = await customFetch(`${API_BASE}/executions/${id}/replay`, { method: 'POST' });
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(text || 'Failed to replay execution');
+      throw new Error(text || 'Không phát lại được lần chạy');
     }
     return res.json();
   },
 
-  // Credentials
   async getCredentials() {
     const res = await customFetch(`${API_BASE}/credentials`);
-    if (!res.ok) throw new Error('Failed to fetch credentials');
+    if (!res.ok) throw new Error('Không tải được credential');
     return res.json();
   },
 
@@ -162,56 +175,78 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error('Failed to create credential');
+    if (!res.ok) throw new Error('Không tạo được credential');
     return res.json();
   },
 
   async deleteCredential(id) {
     const res = await customFetch(`${API_BASE}/credentials/${id}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Failed to delete credential');
+    if (!res.ok) throw new Error('Không xóa được credential');
     return res.json();
   },
 
-  // Node Definitions
   async getNodeDefinitions() {
     const res = await customFetch(`${API_BASE}/nodes/definitions`);
-    if (!res.ok) throw new Error('Failed to fetch node definitions');
+    if (!res.ok) throw new Error('Không tải được định nghĩa node');
     return res.json();
   },
 
-  // AI Assistant
   async generateAIWorkflow(messages, credentialId, currentNodes = [], currentEdges = []) {
+    const localizedMessages = [
+      { role: 'system', content: VI_AI_OPERATOR_INSTRUCTION },
+      ...(messages || []),
+    ];
     const res = await customFetch(`${API_BASE}/ai/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        messages, 
+      body: JSON.stringify({
+        messages: localizedMessages,
         credential_id: credentialId,
-        current_nodes: currentNodes,
-        current_edges: currentEdges
+        current_nodes: redactAIContext(currentNodes),
+        current_edges: redactAIContext(currentEdges),
       }),
     });
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(errText || 'Failed to generate workflow with AI');
+      throw new Error(errText || 'AI không tạo được workflow');
     }
     return res.json();
   },
 
   async configureNodeParams(nodeType, prompt, currentParams, credentialId) {
+    const localizedPrompt = `${VI_AI_OPERATOR_INSTRUCTION}\n\nYêu cầu cấu hình node của người dùng:\n${prompt}`;
     const res = await customFetch(`${API_BASE}/ai/configure-node`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        node_type: nodeType, 
-        prompt: prompt, 
-        current_params: currentParams, 
-        credential_id: credentialId 
+      body: JSON.stringify({
+        node_type: nodeType,
+        prompt: localizedPrompt,
+        current_params: redactAIContext(currentParams),
+        credential_id: credentialId,
       }),
     });
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(errText || 'Failed to configure node with AI');
+      throw new Error(errText || 'AI không cấu hình được node');
+    }
+    return res.json();
+  },
+
+  async reviewAIWorkflow(mode, credentialId, workflow, execution = null, focus = '') {
+    const res = await customFetch(`${API_BASE}/ai/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode,
+        credential_id: credentialId,
+        workflow,
+        execution,
+        focus,
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(errText || 'AI không đánh giá được workflow');
     }
     return res.json();
   },

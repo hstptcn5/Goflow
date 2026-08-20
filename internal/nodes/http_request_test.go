@@ -45,6 +45,47 @@ func TestHTTPRequestAllowsResponseAtLimit(t *testing.T) {
 	}
 }
 
+func TestHTTPRequestBlankResponseContractIsUnset(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	executor := NewHTTPRequestExecutor()
+	for _, raw := range []interface{}{"", "   \n\t"} {
+		node := &Node{Params: map[string]interface{}{
+			"url":               server.URL,
+			"method":            http.MethodGet,
+			"response_contract": raw,
+		}}
+		if err := executor.Validate(node); err != nil {
+			t.Fatalf("blank optional response_contract must validate: %v", err)
+		}
+		result, err := executor.Execute(NewExecutionContext("wf-1", "exec-1"), node)
+		if err != nil {
+			t.Fatalf("blank optional response_contract must execute normally: %v", err)
+		}
+		output := result.(map[string]interface{})
+		data, ok := output["data"].(map[string]interface{})
+		if !ok || data["ok"] != true {
+			t.Fatalf("expected normal JSON response parsing, got %#v", output["data"])
+		}
+	}
+}
+
+func TestHTTPRequestMalformedResponseContractStillFails(t *testing.T) {
+	executor := NewHTTPRequestExecutor()
+	node := &Node{Params: map[string]interface{}{
+		"url":               "https://example.test",
+		"method":            http.MethodGet,
+		"response_contract": `{"required":`,
+	}}
+	if err := executor.Validate(node); err == nil || !strings.Contains(err.Error(), "response_contract is invalid") {
+		t.Fatalf("expected malformed non-blank response_contract to fail, got %v", err)
+	}
+}
+
 func TestHTTPRequestValidationRejectsUnsafeInputs(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -13,7 +13,9 @@ import (
 type Credential struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`
-	Type          string    `json:"type"` // 'API_KEY', 'TELEGRAM_BOT', 'BEARER_TOKEN', 'BASIC_AUTH'
+	Type          string    `json:"type"` // Legacy compatibility field. New code should prefer Kind + Provider.
+	Kind          string    `json:"kind"`
+	Provider      string    `json:"provider"`
 	DataEncrypted string    `json:"data_encrypted,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
@@ -37,7 +39,27 @@ func NewCredentialStore(db *DB, cm *crypto.CryptoManager) *CredentialStore {
 	}
 }
 
+// Create preserves the historical API while attaching canonical credential metadata.
 func (s *CredentialStore) Create(name, credType, rawData string) (*Credential, error) {
+	kind, provider := credentialMetadataForLegacyType(credType)
+	return s.create(name, credType, kind, provider, rawData)
+}
+
+// CreateWithMetadata stores a credential using a generic authentication kind and provider/template id.
+// Provider is metadata, not a new secret type, so integrations do not need one enum per service.
+func (s *CredentialStore) CreateWithMetadata(name, kind, provider, rawData string) (*Credential, error) {
+	normalizedKind, err := normalizeCredentialKind(kind)
+	if err != nil {
+		return nil, err
+	}
+	normalizedProvider, err := normalizeCredentialProvider(provider)
+	if err != nil {
+		return nil, err
+	}
+	return s.create(name, legacyCredentialTypeFor(normalizedKind, normalizedProvider), normalizedKind, normalizedProvider, rawData)
+}
+
+func (s *CredentialStore) create(name, legacyType, kind, provider, rawData string) (*Credential, error) {
 	encryptedData, err := s.crypto.Encrypt([]byte(rawData))
 	if err != nil {
 		return nil, err
@@ -46,17 +68,19 @@ func (s *CredentialStore) Create(name, credType, rawData string) (*Credential, e
 	cred := &Credential{
 		ID:            uuid.New().String(),
 		Name:          name,
-		Type:          credType,
+		Type:          legacyType,
+		Kind:          kind,
+		Provider:      provider,
 		DataEncrypted: encryptedData,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
 
 	query := `
-		INSERT INTO credentials (id, name, type, data_encrypted, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO credentials (id, name, type, kind, provider, data_encrypted, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	_, err = s.db.WriteDB.Exec(query, cred.ID, cred.Name, cred.Type, cred.DataEncrypted, cred.CreatedAt, cred.UpdatedAt)
+	_, err = s.db.WriteDB.Exec(query, cred.ID, cred.Name, cred.Type, cred.Kind, cred.Provider, cred.DataEncrypted, cred.CreatedAt, cred.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +116,7 @@ func (s *CredentialStore) GetDecryptedData(id string) (string, error) {
 }
 
 func (s *CredentialStore) ListAll() ([]Credential, error) {
-	query := `SELECT id, name, type, created_at, updated_at FROM credentials ORDER BY created_at DESC`
+	query := `SELECT id, name, type, kind, provider, created_at, updated_at FROM credentials ORDER BY created_at DESC`
 	rows, err := s.db.ReadDB.Query(query)
 	if err != nil {
 		return nil, err
@@ -102,12 +126,12 @@ func (s *CredentialStore) ListAll() ([]Credential, error) {
 	var result []Credential
 	for rows.Next() {
 		var c Credential
-		if err := rows.Scan(&c.ID, &c.Name, &c.Type, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Type, &c.Kind, &c.Provider, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, c)
 	}
-	return result, nil
+	return result, rows.Err()
 }
 
 func (s *CredentialStore) Delete(id string) error {
@@ -127,10 +151,10 @@ func (s *CredentialStore) UpdateData(id, rawData string) error {
 }
 
 func (s *CredentialStore) GetByID(id string) (*Credential, error) {
-	query := `SELECT id, name, type, data_encrypted, created_at, updated_at FROM credentials WHERE id = ?`
+	query := `SELECT id, name, type, kind, provider, data_encrypted, created_at, updated_at FROM credentials WHERE id = ?`
 	row := s.db.ReadDB.QueryRow(query, id)
 	var c Credential
-	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.DataEncrypted, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.Kind, &c.Provider, &c.DataEncrypted, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}

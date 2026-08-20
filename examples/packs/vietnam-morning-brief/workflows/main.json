@@ -1,0 +1,174 @@
+{
+  "name": "Vietnam Morning Brief",
+  "description": "Collect recent items from a small set of public publisher RSS feeds, deduplicate them, optionally summarize with AI, and deliver a source-linked Vietnamese morning brief to Telegram.",
+  "is_active": false,
+  "max_concurrent_runs": 1,
+  "concurrency_policy": "reject",
+  "nodes": [
+    {
+      "id": "collect_news",
+      "type": "rssFeedSource",
+      "name": "Collect public RSS feeds",
+      "params": {
+        "feeds": [
+          {
+            "id": "vnexpress-latest",
+            "publisher": "VnExpress",
+            "url": "https://vnexpress.net/rss/tin-moi-nhat.rss",
+            "category": "general"
+          },
+          {
+            "id": "tuoitre-home",
+            "publisher": "Tuổi Trẻ",
+            "url": "https://tuoitre.vn/home.rss",
+            "category": "general"
+          },
+          {
+            "id": "thanhnien-home",
+            "publisher": "Thanh Niên",
+            "url": "https://thanhnien.vn/rss/home.rss",
+            "category": "general"
+          }
+        ],
+        "lookback_hours": 24,
+        "max_items": 60,
+        "per_feed_max_items": 30
+      }
+    },
+    {
+      "id": "prepare_brief",
+      "type": "jsCodeRunner",
+      "name": "Prepare candidates and deterministic fallback",
+      "params": {
+        "code": "var source = outputs.collect_news || {};\nvar items = Array.isArray(source.items) ? source.items : [];\nvar catalog = {};\nvar lines = [];\nvar fallback = \"<b>Điểm tin Việt Nam buổi sáng</b>\\n\";\nfunction esc(value) {\n  return String(value == null ? \"\" : value)\n    .replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\")\n    .replace(/\"/g, \"&quot;\");\n}\nvar limit = Math.min(items.length, 30);\nfor (var i = 0; i < limit; i++) {\n  var item = items[i] || {};\n  var id = \"N\" + (i + 1);\n  catalog[id] = item;\n  lines.push(\n    id + \" | \" + String(item.publisher || \"\") + \" | \" +\n    String(item.published_at || \"\") + \" | \" + String(item.title || \"\") +\n    \" | \" + String(item.summary || \"\")\n  );\n}\nif (items.length === 0) {\n  fallback += \"\\nKhông tìm thấy tin mới có thời gian xuất bản hợp lệ trong 24 giờ qua.\";\n} else {\n  var fallbackLimit = Math.min(items.length, 10);\n  for (var j = 0; j < fallbackLimit; j++) {\n    var entry = items[j] || {};\n    fallback += \"\\n\\n<b>\" + (j + 1) + \". \" + esc(entry.title || \"Tin mới\") + \"</b>\";\n    if (entry.summary) fallback += \"\\n\" + esc(String(entry.summary).slice(0, 220));\n    fallback += \"\\nNguồn: <a href=\\\"\" + esc(entry.url || \"\") + \"\\\">\" + esc(entry.publisher || \"Nguồn gốc\") + \"</a>\";\n  }\n}\nif (Array.isArray(source.source_errors) && source.source_errors.length > 0) {\n  fallback += \"\\n\\n<i>Một số nguồn tạm thời không đọc được; bản tin vẫn được tạo từ các nguồn còn lại.</i>\";\n}\nif (fallback.length > 3900) fallback = fallback.slice(0, 3860) + \"…\";\nvar prompt = \"\";\nif (lines.length > 0) {\n  prompt =\n    \"Từ danh sách ứng viên tin tức dưới đây, chọn tối đa 10 câu chuyện đáng chú ý cho độc giả Việt Nam trong bản tin buổi sáng. \" +\n    \"Chỉ dùng thông tin có trong dữ liệu được cung cấp; không bổ sung sự kiện, số liệu, nguyên nhân hoặc nguồn khác. \" +\n    \"Gộp các mục nếu chúng rõ ràng nói về cùng một sự kiện. Trả về JSON thuần, không markdown, đúng dạng \" +\n    \"{\\\"stories\\\":[{\\\"headline\\\":\\\"...\\\",\\\"summary\\\":\\\"1-2 câu ngắn\\\",\\\"ids\\\":[\\\"N1\\\"]}]}. \" +\n    \"Mỗi story phải có ít nhất một id hợp lệ từ danh sách. Không đưa URL vào JSON. Nếu dữ liệu không đủ chắc chắn thì bỏ mục đó.\\n\\n\" +\n    lines.join(\"\\n\");\n}\nreturn {\n  prompt: prompt,\n  fallback_message: fallback,\n  catalog: catalog,\n  candidate_count: items.length,\n  sources_ok: source.sources_ok || 0\n};",
+        "timeout": "5"
+      }
+    },
+    {
+      "id": "has_news",
+      "type": "conditionIf",
+      "name": "Any recent news?",
+      "params": {
+        "field": "{{prepare_brief.prompt}}",
+        "operator": "is_not_empty",
+        "value": ""
+      }
+    },
+    {
+      "id": "send_no_news",
+      "type": "telegramBot",
+      "name": "Send no-news fallback",
+      "params": {
+        "credential_id": "",
+        "chat_id": "@vietnam_morning_brief_demo",
+        "message": "{{prepare_brief.fallback_message}}"
+      }
+    },
+    {
+      "id": "use_ai",
+      "type": "conditionIf",
+      "name": "AI summary enabled?",
+      "params": {
+        "field": "none",
+        "operator": "not_equals",
+        "value": "none"
+      }
+    },
+    {
+      "id": "send_plain",
+      "type": "telegramBot",
+      "name": "Send deterministic morning brief",
+      "params": {
+        "credential_id": "",
+        "chat_id": "@vietnam_morning_brief_demo",
+        "message": "{{prepare_brief.fallback_message}}"
+      }
+    },
+    {
+      "id": "use_openai",
+      "type": "conditionIf",
+      "name": "Use OpenAI?",
+      "params": {
+        "field": "none",
+        "operator": "equals",
+        "value": "openai"
+      }
+    },
+    {
+      "id": "openai_summary",
+      "type": "openAIGPT",
+      "name": "Select and summarize with OpenAI",
+      "params": {
+        "model": "gpt-4o-mini",
+        "credential_id": "",
+        "api_key": "",
+        "system_message": "Bạn là biên tập viên bản tin ngắn. Chỉ dùng dữ kiện được cung cấp, không bịa nguồn, không bịa số liệu, và tuân thủ chính xác JSON schema trong yêu cầu.",
+        "prompt": "{{prepare_brief.prompt}}"
+      }
+    },
+    {
+      "id": "compile_openai",
+      "type": "jsCodeRunner",
+      "name": "Compile source-linked OpenAI brief",
+      "params": {
+        "code": "var prepared = outputs.prepare_brief || {};\nvar fallback = String(prepared.fallback_message || \"<b>Điểm tin Việt Nam buổi sáng</b>\\nKhông có dữ liệu.\");\nvar catalog = prepared.catalog || {};\nvar raw = String((outputs.openai_summary || {}).ai_response || \"\").trim();\nfunction esc(value) {\n  return String(value == null ? \"\" : value)\n    .replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\")\n    .replace(/\"/g, \"&quot;\");\n}\ntry {\n  raw = raw.replace(/^```(?:json)?\\s*/i, \"\").replace(/\\s*```$/i, \"\");\n  var parsed = JSON.parse(raw);\n  var stories = Array.isArray(parsed.stories) ? parsed.stories : [];\n  var message = \"<b>Điểm tin Việt Nam buổi sáng</b>\\n\";\n  var used = 0;\n  for (var i = 0; i < stories.length && used < 10; i++) {\n    var story = stories[i] || {};\n    var ids = Array.isArray(story.ids) ? story.ids : [];\n    var sources = [];\n    var sourceSeen = {};\n    for (var j = 0; j < ids.length; j++) {\n      var id = String(ids[j] || \"\");\n      var item = catalog[id];\n      if (!item || !item.url || sourceSeen[item.url]) continue;\n      sourceSeen[item.url] = true;\n      sources.push(item);\n    }\n    if (sources.length === 0) continue;\n    var headline = String(story.headline || sources[0].title || \"Tin đáng chú ý\").trim();\n    var summary = String(story.summary || \"\").trim();\n    if (!summary) continue;\n    var block = \"\\n\\n<b>\" + (used + 1) + \". \" + esc(headline.slice(0, 180)) + \"</b>\\n\" +\n      esc(summary.slice(0, 420)) + \"\\nNguồn: \";\n    var links = [];\n    for (var k = 0; k < sources.length && k < 3; k++) {\n      links.push(\"<a href=\\\"\" + esc(sources[k].url) + \"\\\">\" + esc(sources[k].publisher || \"Nguồn \" + (k + 1)) + \"</a>\");\n    }\n    block += links.join(\" · \" );\n    if (message.length + block.length > 3850) break;\n    message += block;\n    used++;\n  }\n  if (used === 0) return {message: fallback, used_ai: false, story_count: 0};\n  var source = outputs.collect_news || {};\n  if (Array.isArray(source.source_errors) && source.source_errors.length > 0 && message.length < 3750) {\n    message += \"\\n\\n<i>Một số nguồn tạm thời không đọc được; bản tin dùng các nguồn còn lại.</i>\";\n  }\n  return {message: message, used_ai: true, story_count: used};\n} catch (err) {\n  return {message: fallback, used_ai: false, story_count: 0};\n}",
+        "timeout": "5"
+      }
+    },
+    {
+      "id": "send_openai",
+      "type": "telegramBot",
+      "name": "Send OpenAI morning brief",
+      "params": {
+        "credential_id": "",
+        "chat_id": "@vietnam_morning_brief_demo",
+        "message": "{{compile_openai.message}}"
+      }
+    },
+    {
+      "id": "deepseek_summary",
+      "type": "deepseekAI",
+      "name": "Select and summarize with DeepSeek",
+      "params": {
+        "model": "deepseek-v4-flash",
+        "credential_id": "",
+        "api_key": "",
+        "system_message": "Bạn là biên tập viên bản tin ngắn. Chỉ dùng dữ kiện được cung cấp, không bịa nguồn, không bịa số liệu, và tuân thủ chính xác JSON schema trong yêu cầu.",
+        "prompt": "{{prepare_brief.prompt}}"
+      }
+    },
+    {
+      "id": "compile_deepseek",
+      "type": "jsCodeRunner",
+      "name": "Compile source-linked DeepSeek brief",
+      "params": {
+        "code": "var prepared = outputs.prepare_brief || {};\nvar fallback = String(prepared.fallback_message || \"<b>Điểm tin Việt Nam buổi sáng</b>\\nKhông có dữ liệu.\");\nvar catalog = prepared.catalog || {};\nvar raw = String((outputs.deepseek_summary || {}).ai_response || \"\").trim();\nfunction esc(value) {\n  return String(value == null ? \"\" : value)\n    .replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\")\n    .replace(/\"/g, \"&quot;\");\n}\ntry {\n  raw = raw.replace(/^```(?:json)?\\s*/i, \"\").replace(/\\s*```$/i, \"\");\n  var parsed = JSON.parse(raw);\n  var stories = Array.isArray(parsed.stories) ? parsed.stories : [];\n  var message = \"<b>Điểm tin Việt Nam buổi sáng</b>\\n\";\n  var used = 0;\n  for (var i = 0; i < stories.length && used < 10; i++) {\n    var story = stories[i] || {};\n    var ids = Array.isArray(story.ids) ? story.ids : [];\n    var sources = [];\n    var sourceSeen = {};\n    for (var j = 0; j < ids.length; j++) {\n      var id = String(ids[j] || \"\");\n      var item = catalog[id];\n      if (!item || !item.url || sourceSeen[item.url]) continue;\n      sourceSeen[item.url] = true;\n      sources.push(item);\n    }\n    if (sources.length === 0) continue;\n    var headline = String(story.headline || sources[0].title || \"Tin đáng chú ý\").trim();\n    var summary = String(story.summary || \"\").trim();\n    if (!summary) continue;\n    var block = \"\\n\\n<b>\" + (used + 1) + \". \" + esc(headline.slice(0, 180)) + \"</b>\\n\" +\n      esc(summary.slice(0, 420)) + \"\\nNguồn: \";\n    var links = [];\n    for (var k = 0; k < sources.length && k < 3; k++) {\n      links.push(\"<a href=\\\"\" + esc(sources[k].url) + \"\\\">\" + esc(sources[k].publisher || \"Nguồn \" + (k + 1)) + \"</a>\");\n    }\n    block += links.join(\" · \" );\n    if (message.length + block.length > 3850) break;\n    message += block;\n    used++;\n  }\n  if (used === 0) return {message: fallback, used_ai: false, story_count: 0};\n  var source = outputs.collect_news || {};\n  if (Array.isArray(source.source_errors) && source.source_errors.length > 0 && message.length < 3750) {\n    message += \"\\n\\n<i>Một số nguồn tạm thời không đọc được; bản tin dùng các nguồn còn lại.</i>\";\n  }\n  return {message: message, used_ai: true, story_count: used};\n} catch (err) {\n  return {message: fallback, used_ai: false, story_count: 0};\n}",
+        "timeout": "5"
+      }
+    },
+    {
+      "id": "send_deepseek",
+      "type": "telegramBot",
+      "name": "Send DeepSeek morning brief",
+      "params": {
+        "credential_id": "",
+        "chat_id": "@vietnam_morning_brief_demo",
+        "message": "{{compile_deepseek.message}}"
+      }
+    }
+  ],
+  "edges": [
+    { "id": "collect_prepare", "source": "collect_news", "target": "prepare_brief" },
+    { "id": "prepare_has_news", "source": "prepare_brief", "target": "has_news" },
+    { "id": "no_news", "source": "has_news", "sourceHandle": "false", "target": "send_no_news" },
+    { "id": "news_to_ai_choice", "source": "has_news", "sourceHandle": "true", "target": "use_ai" },
+    { "id": "no_ai", "source": "use_ai", "sourceHandle": "false", "target": "send_plain" },
+    { "id": "ai_choice", "source": "use_ai", "sourceHandle": "true", "target": "use_openai" },
+    { "id": "openai", "source": "use_openai", "sourceHandle": "true", "target": "openai_summary" },
+    { "id": "openai_compile", "source": "openai_summary", "target": "compile_openai" },
+    { "id": "openai_send", "source": "compile_openai", "target": "send_openai" },
+    { "id": "deepseek", "source": "use_openai", "sourceHandle": "false", "target": "deepseek_summary" },
+    { "id": "deepseek_compile", "source": "deepseek_summary", "target": "compile_deepseek" },
+    { "id": "deepseek_send", "source": "compile_deepseek", "target": "send_deepseek" }
+  ]
+}

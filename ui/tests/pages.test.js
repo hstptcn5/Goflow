@@ -9,29 +9,29 @@ describe('page loading, empty, and error states', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders empty workflow state with a next action', async () => {
+  it('renders Vietnamese empty workflow state with a next action', async () => {
     const { root } = await mountWithApp(WorkflowsPage, { route: '/workflows' });
     const store = useWorkflowStore();
     store.workflows = [];
     store.loading = false;
     await nextFrame();
 
-    expect(root.textContent).toContain('No workflows yet');
-    expect(root.textContent).toContain('Create from template');
+    expect(root.textContent).toContain('Chưa có workflow');
+    expect(root.textContent).toContain('Tạo từ mẫu');
   });
 
   it('renders API error state with retry action', async () => {
     const { root } = await mountWithApp(StateBlock, {
       props: {
         tone: 'danger',
-        title: 'Workflow request failed',
-        message: 'Network request failed',
-        actionLabel: 'Retry',
+        title: 'Không tải được workflow',
+        message: 'Không thể kết nối mạng',
+        actionLabel: 'Thử lại',
       },
     });
 
-    expect(root.textContent).toContain('Workflow request failed');
-    expect(root.textContent).toContain('Network request failed');
-    expect(root.querySelector('button')?.textContent).toContain('Retry');
+    expect(root.textContent).toContain('Không tải được workflow');
+    expect(root.textContent).toContain('Không thể kết nối mạng');
+    expect(root.querySelector('button')?.textContent).toContain('Thử lại');
   });
 });

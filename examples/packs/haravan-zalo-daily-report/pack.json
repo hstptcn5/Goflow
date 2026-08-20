@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "id": "official.haravan-zalo-daily-report",
+  "name": "Haravan to Zalo Daily Report",
+  "version": "0.1.0",
+  "description": "Fetch recent Haravan orders with an encrypted bearer token, summarize them locally, and post a daily message to an authorized Zalo OA delivery adapter endpoint.",
+  "entry_workflow": "workflows/main.json",
+  "required_credentials": [],
+  "supported_platforms": ["windows-amd64", "linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64"],
+  "assets": ["README.md", "CHANGELOG.md", "locales.json"],
+  "required_capabilities": ["goflow.pack.v1", "goflow.setup.bindings.v1", "goflow.schedule.daily.v1"],
+  "config_schema": [
+    {
+      "key": "haravan_orders_url",
+      "label": "Haravan orders URL",
+      "description": "Haravan Admin API orders endpoint. You can add supported query parameters to narrow the reporting window.",
+      "type": "url",
+      "required": true
+    },
+    {
+      "key": "zalo_delivery_url",
+      "label": "Zalo OA delivery adapter URL",
+      "description": "HTTPS endpoint you are authorized to use for Zalo OA delivery. Goflow posts recipient_id and message to this adapter.",
+      "type": "url",
+      "required": true
+    },
+    {
+      "key": "zalo_recipient_id",
+      "label": "Zalo recipient ID",
+      "description": "Recipient identifier expected by your authorized Zalo OA delivery adapter.",
+      "type": "string",
+      "required": true,
+      "min_length": 1,
+      "max_length": 160
+    },
+    {
+      "key": "output_language",
+      "label": "Report language",
+      "description": "Language used in the summary message.",
+      "type": "select",
+      "required": true,
+      "default": "vi",
+      "options": ["vi", "en"]
+    }
+  ],
+  "credential_requirements": [
+    {
+      "key": "haravan",
+      "label": "Haravan access token",
+      "description": "Encrypted bearer token for an authorized Haravan app with the required order-read permission.",
+      "type": "BEARER_TOKEN",
+      "required": true
+    },
+    {
+      "key": "zalo",
+      "label": "Zalo adapter access token",
+      "description": "Encrypted bearer token expected by your authorized Zalo OA delivery adapter.",
+      "type": "BEARER_TOKEN",
+      "required": true
+    }
+  ],
+  "bindings": [
+    { "source": "config.haravan_orders_url", "target": { "node_id": "fetch_orders", "param": "url" } },
+    { "source": "credential.haravan", "target": { "node_id": "fetch_orders", "param": "credential_id" } },
+    { "source": "config.output_language", "target": { "node_id": "aggregate", "param": "input" } },
+    { "source": "config.zalo_recipient_id", "target": { "node_id": "build_delivery", "param": "input" } },
+    { "source": "config.zalo_delivery_url", "target": { "node_id": "send_zalo", "param": "url" } },
+    { "source": "credential.zalo", "target": { "node_id": "send_zalo", "param": "credential_id" } }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "config": {
+    "source_url": "https://example.test/daily-business-report.json",
+    "chat_id": "@daily_business_report_fixture",
+    "ai_provider": "none"
+  }
+}

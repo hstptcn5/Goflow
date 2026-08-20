@@ -4,163 +4,190 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
+)
+
+const (
+	defaultSubWorkflowConcurrency = 5
+	maxSubWorkflowConcurrency     = 32
+	maxSubWorkflowLoopItems       = 1000
+	maxSubWorkflowPayloadBytes    = 2 << 20
 )
 
 type SubWorkflowExecutor struct{}
 
-func NewSubWorkflowExecutor() *SubWorkflowExecutor {
-	return &SubWorkflowExecutor{}
+func NewSubWorkflowExecutor() *SubWorkflowExecutor { return &SubWorkflowExecutor{} }
+
+func parseSubWorkflowConcurrency(raw interface{}) (int, error) {
+	if raw == nil || strings.TrimSpace(fmt.Sprint(raw)) == "" {
+		return defaultSubWorkflowConcurrency, nil
+	}
+	var value int
+	switch typed := raw.(type) {
+	case int:
+		value = typed
+	case int64:
+		value = int(typed)
+	case float64:
+		if typed != float64(int(typed)) {
+			return 0, fmt.Errorf("sub-workflow concurrency_limit must be an integer")
+		}
+		value = int(typed)
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		if err != nil {
+			return 0, fmt.Errorf("sub-workflow concurrency_limit must be an integer")
+		}
+		value = parsed
+	default:
+		return 0, fmt.Errorf("sub-workflow concurrency_limit must be an integer")
+	}
+	if value < 1 || value > maxSubWorkflowConcurrency {
+		return 0, fmt.Errorf("sub-workflow concurrency_limit must be between 1 and %d", maxSubWorkflowConcurrency)
+	}
+	return value, nil
+}
+
+func parseSubWorkflowPayload(raw interface{}) (interface{}, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	if text, ok := raw.(string); ok {
+		if len(text) > maxSubWorkflowPayloadBytes {
+			return nil, fmt.Errorf("sub-workflow payload exceeds %d byte limit", maxSubWorkflowPayloadBytes)
+		}
+		if strings.TrimSpace(text) == "" {
+			return nil, nil
+		}
+		var payload interface{}
+		if err := json.Unmarshal([]byte(text), &payload); err == nil {
+			return payload, nil
+		}
+		return text, nil
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("sub-workflow payload could not be encoded: %w", err)
+	}
+	if len(encoded) > maxSubWorkflowPayloadBytes {
+		return nil, fmt.Errorf("sub-workflow payload exceeds %d byte limit", maxSubWorkflowPayloadBytes)
+	}
+	return raw, nil
+}
+
+func validateSubWorkflowNode(node *Node) error {
+	subWfID, _ := node.Params["sub_workflow_id"].(string)
+	if strings.TrimSpace(subWfID) == "" {
+		return fmt.Errorf("sub_workflow_id is required")
+	}
+	if len(subWfID) > 256 {
+		return fmt.Errorf("sub_workflow_id exceeds 256 character limit")
+	}
+	if text, ok := node.Params["concurrency_limit"].(string); ok && containsTemplateExpression(text) {
+		return nil
+	}
+	_, err := parseSubWorkflowConcurrency(node.Params["concurrency_limit"])
+	return err
 }
 
 func (e *SubWorkflowExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
+	if err := validateSubWorkflowNode(node); err != nil {
+		return nil, err
+	}
 	subWfID, _ := node.Params["sub_workflow_id"].(string)
-	if subWfID == "" {
-		return nil, fmt.Errorf("sub_workflow_id is required")
+	subWfID = strings.TrimSpace(subWfID)
+	payload, err := parseSubWorkflowPayload(node.Params["payload_json"])
+	if err != nil {
+		return nil, err
 	}
-
-	payloadJSON, _ := node.Params["payload_json"].(string)
-	var payload interface{}
-	if payloadJSON != "" {
-		if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
-			// Fallback: treat as raw string if it is not valid JSON
-			payload = payloadJSON
-		}
-	}
-
 	loopMode, _ := node.Params["loop_mode"].(bool)
 	parallel, _ := node.Params["parallel"].(bool)
-
 	if ctx.ExecuteWorkflow == nil {
 		return nil, fmt.Errorf("ExecuteWorkflow callback is not initialized in context")
 	}
-
-	// 1. Loop Mode: Iterate over array payload
-	if loopMode {
-		slicePayload, isArray := payload.([]interface{})
-		if !isArray {
-			// If not array, wrap in an array of 1 element
-			slicePayload = []interface{}{payload}
+	if !loopMode {
+		if err := ctx.Context.Err(); err != nil {
+			return nil, err
 		}
+		return ctx.ExecuteWorkflow(subWfID, payload)
+	}
 
-		results := make([]interface{}, len(slicePayload))
-		var errorsList []string
-		var errMu sync.Mutex
+	slicePayload, isArray := payload.([]interface{})
+	if !isArray {
+		slicePayload = []interface{}{payload}
+	}
+	if len(slicePayload) > maxSubWorkflowLoopItems {
+		return nil, fmt.Errorf("sub-workflow loop contains %d items; maximum is %d", len(slicePayload), maxSubWorkflowLoopItems)
+	}
+	results := make([]interface{}, len(slicePayload))
+	var errorsList []string
+	var errMu sync.Mutex
 
-		if parallel {
-			maxConcurrency := 5
-			if limitVal, ok := node.Params["concurrency_limit"]; ok {
-				switch l := limitVal.(type) {
-				case string:
-					if val, err := strconv.Atoi(l); err == nil && val > 0 {
-						maxConcurrency = val
-					}
-				case float64:
-					if l > 0 {
-						maxConcurrency = int(l)
-					}
-				case int:
-					if l > 0 {
-						maxConcurrency = l
-					}
-				}
-			}
-
-			sem := make(chan struct{}, maxConcurrency)
-			var wg sync.WaitGroup
-			for i, item := range slicePayload {
-				wg.Add(1)
-				sem <- struct{}{} // Acquire slot
-				go func(idx int, it interface{}) {
-					defer wg.Done()
-					defer func() { <-sem }() // Release slot
-					res, err := ctx.ExecuteWorkflow(subWfID, it)
-					errMu.Lock()
-					defer errMu.Unlock()
-					if err != nil {
-						errorsList = append(errorsList, fmt.Sprintf("Item %d failed: %v", idx, err))
-					} else {
-						results[idx] = res
-					}
-				}(i, item)
-			}
-			wg.Wait()
+	runItem := func(idx int, item interface{}) {
+		if err := ctx.Context.Err(); err != nil {
+			errMu.Lock()
+			errorsList = append(errorsList, fmt.Sprintf("Item %d cancelled: %v", idx, err))
+			errMu.Unlock()
+			return
+		}
+		res, err := ctx.ExecuteWorkflow(subWfID, item)
+		errMu.Lock()
+		defer errMu.Unlock()
+		if err != nil {
+			errorsList = append(errorsList, fmt.Sprintf("Item %d failed: %v", idx, err))
 		} else {
-			for i, item := range slicePayload {
-				res, err := ctx.ExecuteWorkflow(subWfID, item)
-				if err != nil {
-					errorsList = append(errorsList, fmt.Sprintf("Item %d failed: %v", i, err))
-				} else {
-					results[i] = res
-				}
+			results[idx] = res
+		}
+	}
+
+	if parallel {
+		maxConcurrency, err := parseSubWorkflowConcurrency(node.Params["concurrency_limit"])
+		if err != nil {
+			return nil, err
+		}
+		sem := make(chan struct{}, maxConcurrency)
+		var wg sync.WaitGroup
+		for i, item := range slicePayload {
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Context.Done():
+				wg.Wait()
+				return results, ctx.Context.Err()
 			}
+			wg.Add(1)
+			go func(idx int, it interface{}) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				runItem(idx, it)
+			}(i, item)
 		}
-
-		if len(errorsList) > 0 {
-			return results, fmt.Errorf("loop execution completed with errors: %s", errorsList)
+		wg.Wait()
+	} else {
+		for i, item := range slicePayload {
+			if err := ctx.Context.Err(); err != nil {
+				return results, err
+			}
+			runItem(i, item)
 		}
-		return results, nil
 	}
-
-	// 2. Simple execution (Single sub-workflow run)
-	return ctx.ExecuteWorkflow(subWfID, payload)
+	if len(errorsList) > 0 {
+		return results, fmt.Errorf("loop execution completed with %d error(s): %s", len(errorsList), strings.Join(errorsList, "; "))
+	}
+	return results, nil
 }
 
-func (e *SubWorkflowExecutor) Validate(node *Node) error {
-	subWfID, _ := node.Params["sub_workflow_id"].(string)
-	if subWfID == "" {
-		return fmt.Errorf("sub_workflow_id is required")
-	}
-	return nil
-}
+func (e *SubWorkflowExecutor) Validate(node *Node) error { return validateSubWorkflowNode(node) }
 
 func (e *SubWorkflowExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
-		Type:        TypeSubWorkflow,
-		Name:        "Sub-workflow Runner",
-		Description: "Runs a child workflow sequentially or in parallel loop mode",
-		Icon:        "Folder",
-		Category:    "LOGIC & UTILITY",
+		Type: TypeSubWorkflow, Name: "Sub-workflow Runner", Description: "Runs a child workflow sequentially or in a bounded parallel loop", Icon: "Folder", Category: "LOGIC & UTILITY",
 		Params: []ParamDefinition{
-			{
-				Name:        "sub_workflow_id",
-				Label:       "Sub-workflow to Run",
-				Type:        "select",
-				Required:    true,
-				Description: "Select the child workflow to execute",
-			},
-			{
-				Name:        "payload_json",
-				Label:       "Input Payload (JSON / Text)",
-				Type:        "textarea",
-				Default:     "{\n  \"message\": \"Input payload\"\n}",
-				Required:    false,
-				Description: "Input payload as text, JSON, or placeholders such as {{node.path}}",
-			},
-			{
-				Name:        "loop_mode",
-				Label:       "Loop mode (Run for each item in array)",
-				Type:        "boolean",
-				Default:     false,
-				Required:    false,
-				Description: "Treat the input payload as an array of items to iterate over",
-			},
-			{
-				Name:        "parallel",
-				Label:       "Run loop items in parallel (Goroutines)",
-				Type:        "boolean",
-				Default:     false,
-				Required:    false,
-				Description: "Run loop items in parallel goroutines or sequentially",
-			},
-			{
-				Name:        "concurrency_limit",
-				Label:       "Concurrency Limit",
-				Type:        "text",
-				Default:     "5",
-				Required:    false,
-				Description: "Maximum number of child workflow runs in parallel",
-			},
+			{Name: "sub_workflow_id", Label: "Sub-workflow to Run", Type: "select", Required: true, Description: "Select the child workflow to execute"},
+			{Name: "payload_json", Label: "Input Payload (JSON / Text)", Type: "textarea", Default: "{\n  \"message\": \"Input payload\"\n}", Required: false, Description: "Input payload as text, JSON, or placeholders such as {{node.path}}"},
+			{Name: "loop_mode", Label: "Loop mode (Run for each item in array)", Type: "boolean", Default: false, Required: false, Description: "Treat the input payload as an array of up to 1,000 items"},
+			{Name: "parallel", Label: "Run loop items in parallel", Type: "boolean", Default: false, Required: false, Description: "Run loop items in bounded parallel execution"},
+			{Name: "concurrency_limit", Label: "Concurrency Limit", Type: "text", Default: "5", Required: false, Description: "Maximum child workflow runs in parallel, between 1 and 32"},
 		},
 	}
 }

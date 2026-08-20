@@ -1,0 +1,31 @@
+{
+  "default_locale": "vi",
+  "locales": {
+    "en": {
+      "name": "Vietnam Morning Brief",
+      "description": "Collect recent stories from publisher-provided RSS feeds and send one source-linked Vietnamese morning digest to Telegram.",
+      "config": {
+        "chat_id": { "label": "Telegram chat ID", "description": "Chat, group, or channel that receives the morning brief." },
+        "ai_provider": { "label": "AI summarization", "description": "Optional. Start without AI; enable OpenAI or DeepSeek after the basic brief works.", "options": { "none": "No AI", "openai": "OpenAI", "deepseek": "DeepSeek" } }
+      },
+      "credentials": {
+        "telegram": { "label": "Telegram bot token", "description": "Required encrypted token used only by the local Goflow runtime." },
+        "openai": { "label": "OpenAI API key", "description": "Optional; used only when OpenAI summarization is selected." },
+        "deepseek": { "label": "DeepSeek API key", "description": "Optional; used only when DeepSeek summarization is selected." }
+      }
+    },
+    "vi": {
+      "name": "Điểm tin Việt Nam buổi sáng",
+      "description": "Gom các tin mới từ RSS do nhà xuất bản cung cấp, giữ liên kết nguồn gốc và gửi một bản tin ngắn qua Telegram.",
+      "config": {
+        "chat_id": { "label": "Chat ID Telegram", "description": "Chat, nhóm hoặc kênh nhận điểm tin buổi sáng." },
+        "ai_provider": { "label": "Tóm tắt bằng AI", "description": "Không bắt buộc. Hãy chạy bản tin thường thành công trước; sau đó có thể bật OpenAI hoặc DeepSeek.", "options": { "none": "Không dùng AI", "openai": "OpenAI", "deepseek": "DeepSeek" } }
+      },
+      "credentials": {
+        "telegram": { "label": "Bot token Telegram", "description": "Bắt buộc. Token được mã hóa và chỉ dùng trong Goflow chạy cục bộ." },
+        "openai": { "label": "API key OpenAI", "description": "Không bắt buộc; chỉ dùng khi chọn OpenAI." },
+        "deepseek": { "label": "API key DeepSeek", "description": "Không bắt buộc; chỉ dùng khi chọn DeepSeek." }
+      }
+    }
+  }
+}

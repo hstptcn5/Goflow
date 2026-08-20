@@ -115,6 +115,7 @@ func NewRouter(
 
 		r.Post("/ai/generate", aiHandler.GenerateWorkflow)
 		r.Post("/ai/configure-node", aiHandler.ConfigureNode)
+		r.Post("/ai/review", aiHandler.ReviewWorkflow)
 	})
 
 	r.Post("/webhook/{workflowId}", wfHandler.TriggerWebhook)

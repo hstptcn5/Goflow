@@ -1,0 +1,83 @@
+name: Vietnam Morning Brief Windows Pilot
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/vietnam-morning-brief-windows-pilot.yml'
+      - 'examples/packs/vietnam-morning-brief/**'
+      - 'internal/nodes/rss_feed_source.go'
+      - 'internal/nodes/rss_feed_source_test.go'
+      - 'internal/pack/vietnam_morning_brief_reference_test.go'
+      - 'internal/testharness/morningbriefpilot/**'
+      - 'scripts/build-vietnam-morning-brief-windows-pilot.ps1'
+      - 'docs/VIETNAM_MORNING_BRIEF_WINDOWS_PILOT.md'
+      - 'main.go'
+      - 'static_embed.go'
+      - 'ui/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOFLOW_PILOT_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  windows-pilot:
+    name: Build Vietnam Morning Brief personal pilot
+    runs-on: windows-latest
+    steps:
+      - name: Checkout exact workflow commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GOFLOW_PILOT_COMMIT }}
+          fetch-depth: 0
+
+      - name: Verify exact checkout
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -ne $env:GOFLOW_PILOT_COMMIT) {
+            throw 'workflow checkout does not match the requested commit'
+          }
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build embedded UI
+        working-directory: ui
+        shell: pwsh
+        run: |
+          npm ci
+          npm run test
+          npm run build
+
+      - name: Validate RSS and Morning Brief contracts
+        shell: pwsh
+        run: |
+          go test ./internal/nodes ./internal/pack
+          if ($LASTEXITCODE -ne 0) { throw 'Morning Brief contract tests failed' }
+
+      - name: Build and verify native Windows personal pilot
+        shell: pwsh
+        run: >-
+          ./scripts/build-vietnam-morning-brief-windows-pilot.ps1
+          -OutputDirectory "${{ runner.temp }}/vietnam-morning-brief-pilot"
+          -Commit "${{ env.GOFLOW_PILOT_COMMIT }}"
+
+      - name: Upload unsigned personal pilot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UNSIGNED-PERSONAL-PILOT-goflow-vietnam-morning-brief-windows-amd64
+          path: ${{ runner.temp }}/vietnam-morning-brief-pilot/
+          if-no-files-found: error
+          retention-days: 14

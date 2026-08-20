@@ -53,8 +53,10 @@ const aiHelperError = ref(null);
 const copiedMessage = ref('');
 
 function isAICredential(cred) {
-  const type = String(cred.type || '').toLowerCase();
-  return type === 'openai' || type === 'deepseek' || type === 'api_key';
+  const provider = String(cred?.provider || '').trim().toLowerCase();
+  const type = String(cred?.type || '').trim().toLowerCase();
+  if (provider) return provider === 'openai' || provider === 'deepseek';
+  return type === 'openai' || type === 'deepseek' || type === 'openai_api_key' || type === 'deepseek_api_key';
 }
 
 const aiCredentialId = computed(() => {
@@ -157,7 +159,10 @@ const fieldErrors = computed(() => {
   const errors = {};
   (nodeDef.value?.params || []).forEach((param) => {
     const value = props.selectedNode?.params?.[param.name] ?? param.default ?? '';
-    const message = validateParamValue(param, value, workflowStore.credentials);
+    const availableCredentials = param.type === 'credential'
+      ? credentialsForParam(workflowStore.credentials, param, props.selectedNode?.type || '', props.selectedNode?.params || {})
+      : workflowStore.credentials;
+    const message = validateParamValue(param, value, availableCredentials);
     if (message) errors[param.name] = message;
   });
   props.validationIssues.forEach((issue) => {
@@ -324,6 +329,15 @@ function handleParamChange(paramName, value) {
   if (!props.selectedNode) return;
   clearConversionNotice(paramName);
   const updatedParams = { ...props.selectedNode.params, [paramName]: value };
+  if (props.selectedNode.type === 'aiExtract' && paramName === 'provider' && updatedParams.credential_id) {
+    const credentialParam = (nodeDef.value?.params || []).find((param) => param.name === 'credential_id');
+    if (credentialParam) {
+      const compatible = credentialsForParam(workflowStore.credentials, credentialParam, 'aiExtract', updatedParams);
+      if (!compatible.some((cred) => cred.id === updatedParams.credential_id)) {
+        updatedParams.credential_id = '';
+      }
+    }
+  }
   emit('updateNodeParams', props.selectedNode.id, updatedParams);
 }
 
@@ -413,7 +427,7 @@ function downloadOutput() {
 async function runAIHelper() {
   if (!props.selectedNode || !aiHelperPrompt.value.trim() || aiHelperLoading.value) return;
   if (!aiCredentialId.value) {
-    aiHelperError.value = 'No AI API key found. Add one in Credentials first.';
+    aiHelperError.value = 'No provider-tagged OpenAI or DeepSeek credential found. Add one in Credentials first.';
     return;
   }
   aiHelperLoading.value = true;
@@ -509,7 +523,7 @@ async function runAIHelper() {
                 @change="handleParamChange(param.name, $event.target.value)"
               >
                 <option value="">-- Select Credential Secret --</option>
-                <option v-for="cred in credentialsForParam(workflowStore.credentials, param, selectedNode.type)" :key="cred.id" :value="cred.id">
+                <option v-for="cred in credentialsForParam(workflowStore.credentials, param, selectedNode.type, selectedNode.params)" :key="cred.id" :value="cred.id">
                   {{ cred.name }} ({{ cred.type }})
                 </option>
               </select>

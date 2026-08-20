@@ -1,0 +1,41 @@
+{
+  "name": "Low Stock Alert",
+  "description": "Check one normalized inventory snapshot and notify only when low-stock items exist.",
+  "is_active": false,
+  "max_concurrent_runs": 1,
+  "concurrency_policy": "reject",
+  "nodes": [
+    {
+      "id": "fetch_stock",
+      "type": "httpRequest",
+      "name": "Fetch inventory snapshot",
+      "params": {
+        "method": "GET",
+        "url": "https://example.test/low-stock.json",
+        "headers": "{}",
+        "response_contract": {
+          "required": {
+            "checked_at": { "type": "string", "non_empty": true },
+            "store_name": { "type": "string", "non_empty": true },
+            "low_stock_count": { "type": "integer", "minimum": 0 },
+            "items_summary": { "type": "string", "non_empty": true }
+          }
+        }
+      }
+    },
+    { "id": "has_low_stock", "type": "conditionIf", "name": "Any low-stock items?", "params": { "field": "{{fetch_stock.data.low_stock_count}}", "operator": "not_equals", "value": "0" } },
+    { "id": "locale_vi", "type": "conditionIf", "name": "Vietnamese alert?", "params": { "field": "vi", "operator": "equals", "value": "vi" } },
+    { "id": "build_vi", "type": "jsonTransform", "name": "Tạo cảnh báo tiếng Việt", "params": { "json_template": "{\"message\":\"<b>Cảnh báo tồn kho</b>\\nCửa hàng: {{fetch_stock.data.store_name}}\\nThời điểm kiểm tra: {{fetch_stock.data.checked_at}}\\nSản phẩm cần chú ý: {{fetch_stock.data.low_stock_count}}\\nChi tiết: {{fetch_stock.data.items_summary}}\"}" } },
+    { "id": "send_vi", "type": "telegramBot", "name": "Gửi cảnh báo tiếng Việt", "params": { "credential_id": "", "chat_id": "@low_stock_demo", "message": "{{build_vi.transformed.message}}" } },
+    { "id": "build_en", "type": "jsonTransform", "name": "Build English alert", "params": { "json_template": "{\"message\":\"<b>Low Stock Alert</b>\\nStore: {{fetch_stock.data.store_name}}\\nChecked: {{fetch_stock.data.checked_at}}\\nItems needing attention: {{fetch_stock.data.low_stock_count}}\\nDetails: {{fetch_stock.data.items_summary}}\"}" } },
+    { "id": "send_en", "type": "telegramBot", "name": "Send English alert", "params": { "credential_id": "", "chat_id": "@low_stock_demo", "message": "{{build_en.transformed.message}}" } }
+  ],
+  "edges": [
+    { "id": "fetch_to_check", "source": "fetch_stock", "target": "has_low_stock" },
+    { "id": "stock_to_locale", "source": "has_low_stock", "sourceHandle": "true", "target": "locale_vi" },
+    { "id": "locale_vi_true", "source": "locale_vi", "sourceHandle": "true", "target": "build_vi" },
+    { "id": "build_to_send_vi", "source": "build_vi", "target": "send_vi" },
+    { "id": "locale_en", "source": "locale_vi", "sourceHandle": "false", "target": "build_en" },
+    { "id": "build_to_send_en", "source": "build_en", "target": "send_en" }
+  ]
+}

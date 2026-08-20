@@ -1,0 +1,9 @@
+{
+  "report_date": "2026-08-18",
+  "timezone": "Asia/Ho_Chi_Minh",
+  "revenue": 48250.75,
+  "order_count": 314,
+  "cancelled_refunded_count": 7,
+  "low_stock_summary": "3 demo SKUs below threshold",
+  "comparison_summary": "Demo revenue up 12.4% vs prior day"
+}

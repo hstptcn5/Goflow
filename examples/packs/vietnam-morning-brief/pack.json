@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "id": "official.vietnam-morning-brief",
+  "name": "Vietnam Morning Brief",
+  "version": "0.1.0",
+  "description": "Personal-pilot morning brief that reads a small set of publisher-provided RSS feeds, keeps original source links, and sends a concise Vietnamese digest to Telegram with optional AI summarization.",
+  "entry_workflow": "workflows/main.json",
+  "required_credentials": [],
+  "supported_platforms": ["windows-amd64", "linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64"],
+  "assets": ["README.md", "CHANGELOG.md", "locales.json", "SOURCE_POLICY.md", "sources.json"],
+  "required_capabilities": [
+    "goflow.pack.v1",
+    "goflow.setup.bindings.v1",
+    "goflow.setup.connection-tests.v1",
+    "goflow.schedule.daily.v1"
+  ],
+  "offline_test_fixture": "tests/offline.json",
+  "config_schema": [
+    {
+      "key": "chat_id",
+      "label": "Telegram chat ID",
+      "description": "Chat, group, or channel that should receive the morning brief.",
+      "type": "string",
+      "required": true,
+      "min_length": 1,
+      "max_length": 120
+    },
+    {
+      "key": "ai_provider",
+      "label": "AI summarization",
+      "description": "Optional. Keep this at none for the first run; OpenAI or DeepSeek can later select and summarize notable stories.",
+      "type": "select",
+      "required": true,
+      "default": "none",
+      "options": ["none", "openai", "deepseek"]
+    }
+  ],
+  "credential_requirements": [
+    {
+      "key": "telegram",
+      "label": "Telegram bot token",
+      "description": "Required. Encrypted bot token used only by the local Goflow runtime to deliver the brief.",
+      "type": "TELEGRAM_BOT",
+      "required": true,
+      "test_kind": "telegram_get_me"
+    },
+    {
+      "key": "openai",
+      "label": "OpenAI API key (optional)",
+      "description": "Optional; used only when AI summarization is set to openai.",
+      "type": "OPENAI_API_KEY",
+      "required": false
+    },
+    {
+      "key": "deepseek",
+      "label": "DeepSeek API key (optional)",
+      "description": "Optional; used only when AI summarization is set to deepseek.",
+      "type": "DEEPSEEK_API_KEY",
+      "required": false
+    }
+  ],
+  "bindings": [
+    { "source": "config.ai_provider", "target": { "node_id": "use_ai", "param": "field" } },
+    { "source": "config.ai_provider", "target": { "node_id": "use_openai", "param": "field" } },
+    { "source": "config.chat_id", "target": { "node_id": "send_no_news", "param": "chat_id" } },
+    { "source": "config.chat_id", "target": { "node_id": "send_plain", "param": "chat_id" } },
+    { "source": "config.chat_id", "target": { "node_id": "send_openai", "param": "chat_id" } },
+    { "source": "config.chat_id", "target": { "node_id": "send_deepseek", "param": "chat_id" } },
+    { "source": "credential.telegram", "target": { "node_id": "send_no_news", "param": "credential_id" } },
+    { "source": "credential.telegram", "target": { "node_id": "send_plain", "param": "credential_id" } },
+    { "source": "credential.telegram", "target": { "node_id": "send_openai", "param": "credential_id" } },
+    { "source": "credential.telegram", "target": { "node_id": "send_deepseek", "param": "credential_id" } },
+    { "source": "credential.openai", "target": { "node_id": "openai_summary", "param": "credential_id" } },
+    { "source": "credential.deepseek", "target": { "node_id": "deepseek_summary", "param": "credential_id" } }
+  ]
+}

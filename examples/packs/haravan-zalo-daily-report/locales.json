@@ -1,0 +1,33 @@
+{
+  "default_locale": "vi",
+  "locales": {
+    "vi": {
+      "name": "Báo cáo Haravan → Zalo",
+      "description": "Lấy dữ liệu đơn hàng Haravan bằng token được mã hóa, tổng hợp cục bộ và gửi qua endpoint Zalo OA mà bạn được phép sử dụng.",
+      "config": {
+        "haravan_orders_url": { "label": "Đường dẫn đơn hàng Haravan", "description": "API đơn hàng Haravan; có thể thêm tham số truy vấn phù hợp với kỳ báo cáo." },
+        "zalo_delivery_url": { "label": "Endpoint gửi Zalo OA", "description": "Endpoint/adapter Zalo OA mà bạn có quyền sử dụng." },
+        "zalo_recipient_id": { "label": "Mã người nhận Zalo", "description": "Mã người nhận theo contract của endpoint Zalo OA của bạn." },
+        "output_language": { "label": "Ngôn ngữ báo cáo", "options": { "vi": "Tiếng Việt", "en": "Tiếng Anh" } }
+      },
+      "credentials": {
+        "haravan": { "label": "Access token Haravan", "description": "Bearer token được mã hóa cho ứng dụng Haravan đã được cấp quyền phù hợp." },
+        "zalo": { "label": "Access token endpoint Zalo", "description": "Bearer token được mã hóa theo yêu cầu của endpoint Zalo OA bạn sử dụng." }
+      }
+    },
+    "en": {
+      "name": "Haravan to Zalo Daily Report",
+      "description": "Fetch authorized Haravan order data, summarize locally, and deliver through your authorized Zalo OA endpoint.",
+      "config": {
+        "haravan_orders_url": { "label": "Haravan orders URL" },
+        "zalo_delivery_url": { "label": "Zalo OA delivery endpoint" },
+        "zalo_recipient_id": { "label": "Zalo recipient ID" },
+        "output_language": { "label": "Report language", "options": { "vi": "Vietnamese", "en": "English" } }
+      },
+      "credentials": {
+        "haravan": { "label": "Haravan access token" },
+        "zalo": { "label": "Zalo adapter access token" }
+      }
+    }
+  }
+}

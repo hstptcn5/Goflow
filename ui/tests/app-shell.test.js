@@ -3,7 +3,7 @@ import AppShell from '../src/components/AppShell.vue';
 import { mountWithApp } from './mount';
 
 describe('AppShell navigation', () => {
-  it('renders primary navigation and marks the active route', async () => {
+  it('renders primary navigation and marks the active route before runtime localization', async () => {
     const { root } = await mountWithApp(AppShell, { route: '/credentials' });
 
     const links = Array.from(root.querySelectorAll('.rail-link')).map((item) => item.textContent.trim());

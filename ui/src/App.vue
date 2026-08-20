@@ -1,15 +1,18 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { useExecutionStore } from '@/stores/executionStore';
 import { wsClient } from '@/services/websocket';
 import { applianceApi } from '@/services/applianceApi';
 import ApplianceApp from '@/components/ApplianceApp.vue';
+import ApplianceActivationProbe from '@/components/ApplianceActivationProbe.vue';
 import AppShell from '@/components/AppShell.vue';
 import StateBlock from '@/components/StateBlock.vue';
 
 const workflowStore = useWorkflowStore();
 const executionStore = useExecutionStore();
+const route = useRoute();
 const initialLoading = ref(true);
 const bootError = ref('');
 const applianceBootstrap = ref(null);
@@ -32,6 +35,7 @@ async function bootstrap() {
     await Promise.all([
       workflowStore.fetchWorkflows(),
       workflowStore.fetchNodeDefinitions(),
+      workflowStore.fetchCredentials(),
     ]);
   } catch (err) {
     bootError.value = err.message || 'Failed to initialize Goflow';
@@ -39,6 +43,16 @@ async function bootstrap() {
     initialLoading.value = false;
   }
 }
+
+watch(
+  () => route.fullPath,
+  () => {
+    if (initialLoading.value || applianceBootstrap.value) return;
+    workflowStore.fetchCredentials().catch(() => {
+      // Keep the current page usable; the store already records the refresh error.
+    });
+  }
+);
 
 onMounted(bootstrap);
 
@@ -49,7 +63,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <ApplianceApp v-if="applianceBootstrap" :bootstrap="applianceBootstrap" />
+  <template v-if="applianceBootstrap">
+    <ApplianceApp :bootstrap="applianceBootstrap" />
+    <ApplianceActivationProbe :bootstrap="applianceBootstrap" />
+  </template>
   <AppShell v-else>
     <div v-if="initialLoading" class="app-loading" aria-live="polite">
       <div class="spinner"></div>

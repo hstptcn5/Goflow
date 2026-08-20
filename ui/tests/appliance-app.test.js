@@ -54,13 +54,16 @@ function applianceFetch(overrides = {}) {
         current_config_values: {
           source_url: state.configSaved ? 'https://example.test/feed.json' : '',
           chat_id: '@dailyops',
+          ai_provider: 'none',
         },
         config_schema: [
           { key: 'source_url', label: 'Source URL', type: 'url', required: true, test_kind: 'http_json_contract', description: 'Feed URL' },
           { key: 'chat_id', label: 'Telegram chat ID', type: 'string', required: true },
+          { key: 'ai_provider', label: 'AI commentary', type: 'select', required: true, options: ['none', 'openai', 'deepseek'], description: 'Optional AI note' },
         ],
         credential_requirements: [
           { key: 'telegram', label: 'Telegram', type: 'TELEGRAM_BOT', required: true, test_kind: 'telegram_get_me', assigned: state.credentialAssigned },
+          { key: 'openai', label: 'OpenAI API key', type: 'OPENAI_API_KEY', required: false, assigned: false },
         ],
         attention_category: state.attentionCategory,
       });
@@ -146,13 +149,28 @@ function applianceFetch(overrides = {}) {
 }
 
 describe('appliance UI', () => {
-  it('shows the runtime version and unsigned beta status', async () => {
+  it('shows the runtime version and public beta status', async () => {
     vi.stubGlobal('fetch', applianceFetch());
     const { root } = await mountWithApp(ApplianceApp, { props: { bootstrap } });
     await nextFrame();
 
     expect(root.textContent).toContain('Goflow 0.5.0-test');
-    expect(root.textContent).toContain('Unsigned pilot beta');
+    expect(root.textContent).toContain('Unsigned public beta');
+  });
+
+  it('renders select config and marks optional credentials clearly', async () => {
+    vi.stubGlobal('fetch', applianceFetch());
+    const { root } = await mountWithApp(ApplianceApp, { props: { bootstrap } });
+    await nextFrame();
+
+    const provider = root.querySelector('#pack-config-ai_provider');
+    expect(provider?.tagName).toBe('SELECT');
+    expect([...provider.options].map((option) => option.value)).toEqual(['none', 'openai', 'deepseek']);
+    expect(provider.value).toBe('none');
+
+    const openai = [...root.querySelectorAll('.credential-row')].find((row) => row.textContent.includes('OpenAI API key'));
+    expect(openai?.textContent).toContain('Optional');
+    expect(openai?.textContent).not.toContain('Required');
   });
 
   it('falls back to generic workspace when appliance bootstrap is absent', async () => {
@@ -277,7 +295,7 @@ describe('appliance UI', () => {
 
     expect(root.querySelector('.run-panel textarea')).toBeNull();
     expect(root.textContent).not.toContain('Run input');
-    expect(root.textContent).toContain('DailyOps report');
+    expect(root.textContent).toContain('Example Appliance');
 
     root.querySelector('.run-panel button[type="submit"]').click();
     await nextFrame();
@@ -289,7 +307,7 @@ describe('appliance UI', () => {
 
     root.querySelector('.appliance-side .btn-secondary').click();
     await nextFrame();
-    expect(root.textContent).toContain('Local pilot summary');
+    expect(root.textContent).toContain('Local diagnostics');
     expect(root.textContent).toContain('"secrets_hidden": true');
     expect(root.textContent).not.toContain('secret-canary');
 

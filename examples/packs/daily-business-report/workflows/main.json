@@ -1,0 +1,106 @@
+{
+  "name": "Daily Business Report",
+  "description": "Fetch a normalized daily business snapshot and deliver one concise Telegram report in English or Vietnamese with optional AI commentary.",
+  "is_active": false,
+  "max_concurrent_runs": 1,
+  "concurrency_policy": "reject",
+  "nodes": [
+    {
+      "id": "fetch_business",
+      "type": "httpRequest",
+      "name": "Fetch business snapshot",
+      "params": {
+        "method": "GET",
+        "url": "https://example.test/daily-business-report.json",
+        "headers": "{}",
+        "response_contract": {
+          "required": {
+            "report_date": { "type": "string", "non_empty": true },
+            "timezone": { "type": "string", "non_empty": true },
+            "revenue": { "type": "number" },
+            "order_count": { "type": "integer", "minimum": 0 },
+            "cancelled_refunded_count": { "type": "integer", "minimum": 0 },
+            "low_stock_summary": { "type": "string" },
+            "comparison_summary": { "type": "string" }
+          }
+        }
+      }
+    },
+    { "id": "locale_vi", "type": "conditionIf", "name": "Vietnamese output?", "params": { "field": "en", "operator": "equals", "value": "vi" } },
+
+    { "id": "use_ai_en", "type": "conditionIf", "name": "AI commentary enabled?", "params": { "field": "none", "operator": "not_equals", "value": "none" } },
+    { "id": "build_plain_en", "type": "jsonTransform", "name": "Build English deterministic report", "params": { "json_template": "{\"message\":\"<b>Daily Business Report</b>\\nDate: {{fetch_business.data.report_date}} ({{fetch_business.data.timezone}})\\nRevenue: {{fetch_business.data.revenue}}\\nOrders: {{fetch_business.data.order_count}}\\nCancelled/refunded: {{fetch_business.data.cancelled_refunded_count}}\\nLow stock: {{fetch_business.data.low_stock_summary}}\\nTrend: {{fetch_business.data.comparison_summary}}\"}" } },
+    { "id": "send_plain_en", "type": "telegramBot", "name": "Send English deterministic report", "params": { "credential_id": "", "chat_id": "@daily_business_report_demo", "message": "{{build_plain_en.transformed.message}}" } },
+    { "id": "use_openai_en", "type": "conditionIf", "name": "Use OpenAI for English?", "params": { "field": "none", "operator": "equals", "value": "openai" } },
+    {
+      "id": "openai_summary_en", "type": "openAIGPT", "name": "Generate English OpenAI commentary",
+      "params": {
+        "model": "gpt-4o-mini", "credential_id": "", "api_key": "",
+        "system_message": "You summarize business metrics. Be concise, factual, and never invent numbers or causes that are not in the supplied data.",
+        "prompt": "Write at most 3 short sentences highlighting what needs attention. Date={{fetch_business.data.report_date}}; revenue={{fetch_business.data.revenue}}; orders={{fetch_business.data.order_count}}; cancelled/refunded={{fetch_business.data.cancelled_refunded_count}}; low stock={{fetch_business.data.low_stock_summary}}; comparison={{fetch_business.data.comparison_summary}}."
+      }
+    },
+    { "id": "build_openai_en", "type": "jsonTransform", "name": "Build English OpenAI report", "params": { "json_template": "{\"message\":\"<b>Daily Business Report</b>\\nDate: {{fetch_business.data.report_date}} ({{fetch_business.data.timezone}})\\nRevenue: {{fetch_business.data.revenue}}\\nOrders: {{fetch_business.data.order_count}}\\nCancelled/refunded: {{fetch_business.data.cancelled_refunded_count}}\\nLow stock: {{fetch_business.data.low_stock_summary}}\\nTrend: {{fetch_business.data.comparison_summary}}\\n\\n<b>AI note</b>\\n{{openai_summary_en.ai_response}}\"}" } },
+    { "id": "send_openai_en", "type": "telegramBot", "name": "Send English OpenAI report", "params": { "credential_id": "", "chat_id": "@daily_business_report_demo", "message": "{{build_openai_en.transformed.message}}" } },
+    {
+      "id": "deepseek_summary_en", "type": "deepseekAI", "name": "Generate English DeepSeek commentary",
+      "params": {
+        "model": "deepseek-v4-flash", "credential_id": "", "api_key": "",
+        "system_message": "You summarize business metrics. Be concise, factual, and never invent numbers or causes that are not in the supplied data.",
+        "prompt": "Write at most 3 short sentences highlighting what needs attention. Date={{fetch_business.data.report_date}}; revenue={{fetch_business.data.revenue}}; orders={{fetch_business.data.order_count}}; cancelled/refunded={{fetch_business.data.cancelled_refunded_count}}; low stock={{fetch_business.data.low_stock_summary}}; comparison={{fetch_business.data.comparison_summary}}."
+      }
+    },
+    { "id": "build_deepseek_en", "type": "jsonTransform", "name": "Build English DeepSeek report", "params": { "json_template": "{\"message\":\"<b>Daily Business Report</b>\\nDate: {{fetch_business.data.report_date}} ({{fetch_business.data.timezone}})\\nRevenue: {{fetch_business.data.revenue}}\\nOrders: {{fetch_business.data.order_count}}\\nCancelled/refunded: {{fetch_business.data.cancelled_refunded_count}}\\nLow stock: {{fetch_business.data.low_stock_summary}}\\nTrend: {{fetch_business.data.comparison_summary}}\\n\\n<b>AI note</b>\\n{{deepseek_summary_en.ai_response}}\"}" } },
+    { "id": "send_deepseek_en", "type": "telegramBot", "name": "Send English DeepSeek report", "params": { "credential_id": "", "chat_id": "@daily_business_report_demo", "message": "{{build_deepseek_en.transformed.message}}" } },
+
+    { "id": "use_ai_vi", "type": "conditionIf", "name": "Bật nhận xét AI?", "params": { "field": "none", "operator": "not_equals", "value": "none" } },
+    { "id": "build_plain_vi", "type": "jsonTransform", "name": "Tạo báo cáo tiếng Việt", "params": { "json_template": "{\"message\":\"<b>Báo cáo kinh doanh mỗi ngày</b>\\nNgày: {{fetch_business.data.report_date}} ({{fetch_business.data.timezone}})\\nDoanh thu: {{fetch_business.data.revenue}}\\nĐơn hàng: {{fetch_business.data.order_count}}\\nHủy/hoàn: {{fetch_business.data.cancelled_refunded_count}}\\nSắp hết hàng: {{fetch_business.data.low_stock_summary}}\\nSo sánh: {{fetch_business.data.comparison_summary}}\"}" } },
+    { "id": "send_plain_vi", "type": "telegramBot", "name": "Gửi báo cáo tiếng Việt", "params": { "credential_id": "", "chat_id": "@daily_business_report_demo", "message": "{{build_plain_vi.transformed.message}}" } },
+    { "id": "use_openai_vi", "type": "conditionIf", "name": "Dùng OpenAI?", "params": { "field": "none", "operator": "equals", "value": "openai" } },
+    {
+      "id": "openai_summary_vi", "type": "openAIGPT", "name": "Tạo nhận xét OpenAI tiếng Việt",
+      "params": {
+        "model": "gpt-4o-mini", "credential_id": "", "api_key": "",
+        "system_message": "Bạn tóm tắt số liệu kinh doanh bằng tiếng Việt. Viết ngắn gọn, dựa đúng dữ liệu và không tự suy đoán nguyên nhân hay số liệu.",
+        "prompt": "Viết tối đa 3 câu ngắn nêu điều cần chú ý. Ngày={{fetch_business.data.report_date}}; doanh thu={{fetch_business.data.revenue}}; đơn={{fetch_business.data.order_count}}; hủy/hoàn={{fetch_business.data.cancelled_refunded_count}}; sắp hết hàng={{fetch_business.data.low_stock_summary}}; so sánh={{fetch_business.data.comparison_summary}}."
+      }
+    },
+    { "id": "build_openai_vi", "type": "jsonTransform", "name": "Tạo báo cáo OpenAI tiếng Việt", "params": { "json_template": "{\"message\":\"<b>Báo cáo kinh doanh mỗi ngày</b>\\nNgày: {{fetch_business.data.report_date}} ({{fetch_business.data.timezone}})\\nDoanh thu: {{fetch_business.data.revenue}}\\nĐơn hàng: {{fetch_business.data.order_count}}\\nHủy/hoàn: {{fetch_business.data.cancelled_refunded_count}}\\nSắp hết hàng: {{fetch_business.data.low_stock_summary}}\\nSo sánh: {{fetch_business.data.comparison_summary}}\\n\\n<b>Nhận xét AI</b>\\n{{openai_summary_vi.ai_response}}\"}" } },
+    { "id": "send_openai_vi", "type": "telegramBot", "name": "Gửi báo cáo OpenAI tiếng Việt", "params": { "credential_id": "", "chat_id": "@daily_business_report_demo", "message": "{{build_openai_vi.transformed.message}}" } },
+    {
+      "id": "deepseek_summary_vi", "type": "deepseekAI", "name": "Tạo nhận xét DeepSeek tiếng Việt",
+      "params": {
+        "model": "deepseek-v4-flash", "credential_id": "", "api_key": "",
+        "system_message": "Bạn tóm tắt số liệu kinh doanh bằng tiếng Việt. Viết ngắn gọn, dựa đúng dữ liệu và không tự suy đoán nguyên nhân hay số liệu.",
+        "prompt": "Viết tối đa 3 câu ngắn nêu điều cần chú ý. Ngày={{fetch_business.data.report_date}}; doanh thu={{fetch_business.data.revenue}}; đơn={{fetch_business.data.order_count}}; hủy/hoàn={{fetch_business.data.cancelled_refunded_count}}; sắp hết hàng={{fetch_business.data.low_stock_summary}}; so sánh={{fetch_business.data.comparison_summary}}."
+      }
+    },
+    { "id": "build_deepseek_vi", "type": "jsonTransform", "name": "Tạo báo cáo DeepSeek tiếng Việt", "params": { "json_template": "{\"message\":\"<b>Báo cáo kinh doanh mỗi ngày</b>\\nNgày: {{fetch_business.data.report_date}} ({{fetch_business.data.timezone}})\\nDoanh thu: {{fetch_business.data.revenue}}\\nĐơn hàng: {{fetch_business.data.order_count}}\\nHủy/hoàn: {{fetch_business.data.cancelled_refunded_count}}\\nSắp hết hàng: {{fetch_business.data.low_stock_summary}}\\nSo sánh: {{fetch_business.data.comparison_summary}}\\n\\n<b>Nhận xét AI</b>\\n{{deepseek_summary_vi.ai_response}}\"}" } },
+    { "id": "send_deepseek_vi", "type": "telegramBot", "name": "Gửi báo cáo DeepSeek tiếng Việt", "params": { "credential_id": "", "chat_id": "@daily_business_report_demo", "message": "{{build_deepseek_vi.transformed.message}}" } }
+  ],
+  "edges": [
+    { "id": "fetch_to_locale", "source": "fetch_business", "target": "locale_vi" },
+
+    { "id": "locale_en", "source": "locale_vi", "sourceHandle": "false", "target": "use_ai_en" },
+    { "id": "no_ai_en", "source": "use_ai_en", "sourceHandle": "false", "target": "build_plain_en" },
+    { "id": "plain_send_en", "source": "build_plain_en", "target": "send_plain_en" },
+    { "id": "ai_provider_en", "source": "use_ai_en", "sourceHandle": "true", "target": "use_openai_en" },
+    { "id": "openai_en", "source": "use_openai_en", "sourceHandle": "true", "target": "openai_summary_en" },
+    { "id": "openai_build_en", "source": "openai_summary_en", "target": "build_openai_en" },
+    { "id": "openai_send_en", "source": "build_openai_en", "target": "send_openai_en" },
+    { "id": "deepseek_en", "source": "use_openai_en", "sourceHandle": "false", "target": "deepseek_summary_en" },
+    { "id": "deepseek_build_en", "source": "deepseek_summary_en", "target": "build_deepseek_en" },
+    { "id": "deepseek_send_en", "source": "build_deepseek_en", "target": "send_deepseek_en" },
+
+    { "id": "locale_vi_true", "source": "locale_vi", "sourceHandle": "true", "target": "use_ai_vi" },
+    { "id": "no_ai_vi", "source": "use_ai_vi", "sourceHandle": "false", "target": "build_plain_vi" },
+    { "id": "plain_send_vi", "source": "build_plain_vi", "target": "send_plain_vi" },
+    { "id": "ai_provider_vi", "source": "use_ai_vi", "sourceHandle": "true", "target": "use_openai_vi" },
+    { "id": "openai_vi", "source": "use_openai_vi", "sourceHandle": "true", "target": "openai_summary_vi" },
+    { "id": "openai_build_vi", "source": "openai_summary_vi", "target": "build_openai_vi" },
+    { "id": "openai_send_vi", "source": "build_openai_vi", "target": "send_openai_vi" },
+    { "id": "deepseek_vi", "source": "use_openai_vi", "sourceHandle": "false", "target": "deepseek_summary_vi" },
+    { "id": "deepseek_build_vi", "source": "deepseek_summary_vi", "target": "build_deepseek_vi" },
+    { "id": "deepseek_send_vi", "source": "build_deepseek_vi", "target": "send_deepseek_vi" }
+  ]
+}

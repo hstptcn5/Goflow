@@ -1,0 +1,35 @@
+{
+  "default_locale": "en",
+  "locales": {
+    "en": {
+      "name": "Daily Business Report",
+      "description": "Turn one normalized business snapshot into a concise daily Telegram report.",
+      "config": {
+        "source_url": { "label": "Business data URL", "description": "JSON endpoint with the seven required daily business fields." },
+        "chat_id": { "label": "Telegram chat ID", "description": "Chat, group, or channel that receives the report." },
+        "output_language": { "label": "Report language", "description": "Language used in the delivered report.", "options": { "en": "English", "vi": "Vietnamese" } },
+        "ai_provider": { "label": "AI commentary", "description": "Optional. Keep AI off until the deterministic report works.", "options": { "none": "No AI", "openai": "OpenAI", "deepseek": "DeepSeek" } }
+      },
+      "credentials": {
+        "telegram": { "label": "Telegram bot token", "description": "Required encrypted token used only by the local Goflow runtime." },
+        "openai": { "label": "OpenAI API key", "description": "Optional; used only when OpenAI commentary is selected." },
+        "deepseek": { "label": "DeepSeek API key", "description": "Optional; used only when DeepSeek commentary is selected." }
+      }
+    },
+    "vi": {
+      "name": "Báo cáo kinh doanh mỗi ngày",
+      "description": "Biến một bản dữ liệu kinh doanh chuẩn hóa thành báo cáo ngắn gọn gửi qua Telegram mỗi ngày.",
+      "config": {
+        "source_url": { "label": "Nguồn dữ liệu kinh doanh", "description": "Đường dẫn JSON có đủ bảy trường dữ liệu kinh doanh bắt buộc." },
+        "chat_id": { "label": "Chat ID Telegram", "description": "Chat, nhóm hoặc kênh nhận báo cáo." },
+        "output_language": { "label": "Ngôn ngữ báo cáo", "description": "Ngôn ngữ dùng trong báo cáo được gửi đi.", "options": { "en": "Tiếng Anh", "vi": "Tiếng Việt" } },
+        "ai_provider": { "label": "Nhận xét bằng AI", "description": "Không bắt buộc. Hãy chạy báo cáo thường thành công trước khi bật AI.", "options": { "none": "Không dùng AI", "openai": "OpenAI", "deepseek": "DeepSeek" } }
+      },
+      "credentials": {
+        "telegram": { "label": "Bot token Telegram", "description": "Bắt buộc. Token được mã hóa và chỉ dùng trong Goflow chạy cục bộ." },
+        "openai": { "label": "API key OpenAI", "description": "Không bắt buộc; chỉ dùng khi chọn nhận xét OpenAI." },
+        "deepseek": { "label": "API key DeepSeek", "description": "Không bắt buộc; chỉ dùng khi chọn nhận xét DeepSeek." }
+      }
+    }
+  }
+}

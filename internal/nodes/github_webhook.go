@@ -4,109 +4,107 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 )
 
 type GithubWebhookExecutor struct{}
 
-func NewGithubWebhookExecutor() *GithubWebhookExecutor {
-	return &GithubWebhookExecutor{}
-}
+func NewGithubWebhookExecutor() *GithubWebhookExecutor { return &GithubWebhookExecutor{} }
 
 func (e *GithubWebhookExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
 	triggerData, ok := ctx.GetOutput("$trigger")
 	if !ok {
 		return nil, fmt.Errorf("GitHub Webhook Trigger requires a trigger payload")
 	}
-
 	triggerMap, ok := triggerData.(map[string]interface{})
 	if !ok {
-		return triggerData, nil
+		return nil, fmt.Errorf("GitHub Webhook Trigger payload must be an object")
 	}
 
-	// 1. Check Secret validation if set
 	secret, _ := node.Params["secret"].(string)
+	secret = strings.TrimSpace(secret)
 	if secret != "" {
-		headers, _ := triggerMap["headers"].(map[string]interface{})
-		if headers == nil {
-			headers = make(map[string]interface{})
-		}
-
-		// Look for signature header
-		sigHeader := ""
-		for k, v := range headers {
-			if strings.ToLower(k) == "x-hub-signature-256" {
-				if strList, isList := v.([]string); isList && len(strList) > 0 {
-					sigHeader = strList[0]
-				} else if strVal, isStr := v.(string); isStr {
-					sigHeader = strVal
-				}
-				break
-			}
-		}
-
+		headers := webhookHeaderMap(triggerMap["headers"])
+		sigHeader := firstHeaderValue(headers, "x-hub-signature-256")
 		if sigHeader == "" {
 			return nil, fmt.Errorf("GitHub signature validation failed: X-Hub-Signature-256 header is missing")
 		}
-
-		// Get raw body
-		bodyBytesStr, _ := triggerMap["body_raw"].(string)
-		if bodyBytesStr == "" {
-			// Fallback to body map marshal if body_raw is not available
-			bodyMap, _ := triggerMap["body"].(map[string]interface{})
-			if bodyMap != nil {
-				if jsonBytes, err := json.Marshal(bodyMap); err == nil {
-					bodyBytesStr = string(jsonBytes)
-				}
-			}
-		}
-
-		// Verify SHA-256 HMAC signature
 		if !strings.HasPrefix(sigHeader, "sha256=") {
 			return nil, fmt.Errorf("GitHub signature validation failed: signature format must start with sha256=")
 		}
-		expectedSig := sigHeader[7:]
+		expectedSig, err := hex.DecodeString(strings.TrimPrefix(sigHeader, "sha256="))
+		if err != nil || len(expectedSig) != sha256.Size {
+			return nil, fmt.Errorf("GitHub signature validation failed: signature is not a valid SHA-256 digest")
+		}
 
+		// GitHub signs the exact HTTP request body bytes. Re-marshalling a decoded
+		// JSON object can change whitespace/order and must never be used for HMAC.
+		bodyRaw, ok := triggerMap["body_raw"].(string)
+		if !ok || bodyRaw == "" {
+			return nil, fmt.Errorf("GitHub signature validation failed: exact body_raw is required when a webhook secret is configured")
+		}
 		mac := hmac.New(sha256.New, []byte(secret))
-		mac.Write([]byte(bodyBytesStr))
-		computedSig := hex.EncodeToString(mac.Sum(nil))
-
-		if !hmac.Equal([]byte(computedSig), []byte(expectedSig)) {
+		_, _ = mac.Write([]byte(bodyRaw))
+		if !hmac.Equal(mac.Sum(nil), expectedSig) {
 			return nil, fmt.Errorf("GitHub signature validation failed: signature mismatch")
 		}
 	}
 
-	// 2. Return payload
-	body, _ := triggerMap["body"]
-	if body != nil {
+	if body, exists := triggerMap["body"]; exists && body != nil {
 		return body, nil
 	}
-
 	return triggerMap, nil
 }
 
+func webhookHeaderMap(raw interface{}) map[string]interface{} {
+	if headers, ok := raw.(map[string]interface{}); ok {
+		return headers
+	}
+	if headers, ok := raw.(map[string]string); ok {
+		result := make(map[string]interface{}, len(headers))
+		for key, value := range headers {
+			result[key] = value
+		}
+		return result
+	}
+	return map[string]interface{}{}
+}
+
+func firstHeaderValue(headers map[string]interface{}, name string) string {
+	for key, value := range headers {
+		if !strings.EqualFold(key, name) {
+			continue
+		}
+		switch typed := value.(type) {
+		case string:
+			return strings.TrimSpace(typed)
+		case []string:
+			if len(typed) > 0 {
+				return strings.TrimSpace(typed[0])
+			}
+		case []interface{}:
+			if len(typed) > 0 {
+				if text, ok := typed[0].(string); ok {
+					return strings.TrimSpace(text)
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func (e *GithubWebhookExecutor) Validate(node *Node) error {
+	secret, _ := node.Params["secret"].(string)
+	if len([]byte(secret)) > 4096 {
+		return fmt.Errorf("GitHub webhook secret exceeds 4096 byte limit")
+	}
 	return nil
 }
 
 func (e *GithubWebhookExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
-		Type:        TypeGithubWebhook,
-		Name:        "GitHub Webhook",
-		Description: "Starts a workflow from GitHub webhook events with signature verification",
-		Icon:        "GitBranch",
-		Category:    "TRIGGER",
-		Retryable:   true,
-		Params: []ParamDefinition{
-			{
-				Name:        "secret",
-				Label:       "Webhook Secret",
-				Type:        "password",
-				Required:    false,
-				Description: "Shared secret used to verify GitHub X-Hub-Signature-256",
-			},
-		},
+		Type: TypeGithubWebhook, Name: "GitHub Webhook", Description: "Starts a workflow from GitHub webhook events with signature verification", Icon: "GitBranch", Category: "TRIGGER", Retryable: true,
+		Params: []ParamDefinition{{Name: "secret", Label: "Webhook Secret", Type: "password", Required: false, Description: "Shared secret used to verify GitHub X-Hub-Signature-256 against the exact raw request body"}},
 	}
 }

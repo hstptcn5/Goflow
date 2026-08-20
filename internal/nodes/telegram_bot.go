@@ -10,11 +10,15 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"goflow/internal/apperror"
 )
 
-const maxTelegramResponseBytes int64 = 256 << 10
+const (
+	maxTelegramResponseBytes int64 = 256 << 10
+	maxTelegramMessageRunes        = 4096
+)
 
 type TelegramBotExecutor struct {
 	client  *http.Client
@@ -38,10 +42,34 @@ func NewTelegramBotExecutorWithClient(client *http.Client, baseURL string) *Tele
 	return &TelegramBotExecutor{client: client, baseURL: baseURL}
 }
 
+func normalizeTelegramParseMode(raw string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "plain", "plain text", "none", "văn bản thường", "van ban thuong":
+		return "", nil
+	case "html":
+		return "HTML", nil
+	case "markdownv2", "markdown v2":
+		return "MarkdownV2", nil
+	default:
+		return "", fmt.Errorf("Định dạng tin nhắn Telegram phải là Văn bản thường, HTML hoặc MarkdownV2")
+	}
+}
+
+func validateTelegramMessage(message string) error {
+	if strings.TrimSpace(message) == "" {
+		return fmt.Errorf("Telegram Node requires 'message'")
+	}
+	if utf8.RuneCountInString(message) > maxTelegramMessageRunes {
+		return apperror.New("telegram_message_too_long", fmt.Sprintf("Tin nhắn Telegram vượt quá giới hạn %d ký tự. Hãy rút gọn nội dung trước khi gửi.", maxTelegramMessageRunes))
+	}
+	return nil
+}
+
 func (e *TelegramBotExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
 	botToken, _ := node.Params["bot_token"].(string)
 	chatID, _ := node.Params["chat_id"].(string)
 	message, _ := node.Params["message"].(string)
+	parseModeRaw, _ := node.Params["parse_mode"].(string)
 
 	credID, _ := node.Params["credential_id"].(string)
 	if credID != "" {
@@ -52,8 +80,15 @@ func (e *TelegramBotExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 		botToken = token
 	}
 
-	if botToken == "" || chatID == "" {
+	if strings.TrimSpace(botToken) == "" || strings.TrimSpace(chatID) == "" {
 		return nil, fmt.Errorf("bot_token and chat_id are required")
+	}
+	if err := validateTelegramMessage(message); err != nil {
+		return nil, err
+	}
+	parseMode, err := normalizeTelegramParseMode(parseModeRaw)
+	if err != nil {
+		return nil, err
 	}
 
 	urlStr, err := e.telegramMethodURL(botToken, "sendMessage")
@@ -61,9 +96,11 @@ func (e *TelegramBotExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 		return nil, err
 	}
 	payload := map[string]interface{}{
-		"chat_id":    chatID,
-		"text":       message,
-		"parse_mode": "HTML",
+		"chat_id": chatID,
+		"text":    message,
+	}
+	if parseMode != "" {
+		payload["parse_mode"] = parseMode
 	}
 
 	payloadBytes, _ := json.Marshal(payload)
@@ -74,7 +111,7 @@ func (e *TelegramBotExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := e.client.Do(req)
 	if err != nil {
-		return nil, apperror.New("telegram_unreachable", "Goflow could not connect to Telegram.")
+		return nil, apperror.New("telegram_unreachable", "GoFlow không thể kết nối tới Telegram. Hãy thử lại sau.")
 	}
 	defer resp.Body.Close()
 
@@ -86,22 +123,67 @@ func (e *TelegramBotExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 		return nil, fmt.Errorf("telegram API response exceeds %d byte limit", maxTelegramResponseBytes)
 	}
 	var result map[string]interface{}
-	json.Unmarshal(respBytes, &result)
+	_ = json.Unmarshal(respBytes, &result)
 
-	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusUnauthorized {
-			return nil, apperror.New("telegram_unauthorized", "Telegram rejected the bot token. Reconfigure and test the token again.")
-		}
-		return nil, apperror.New("telegram_chat_inaccessible", "Telegram could not deliver to this chat. Send /start to the bot and verify the chat ID.")
+	ok, _ := result["ok"].(bool)
+	if resp.StatusCode != http.StatusOK || !ok {
+		return nil, telegramAPIError(resp.StatusCode, result, respBytes)
 	}
 
 	return result, nil
+}
+
+func telegramAPIError(status int, result map[string]interface{}, body []byte) error {
+	description, _ := result["description"].(string)
+	description = strings.TrimSpace(redactTelegramText(description))
+	lower := strings.ToLower(description)
+
+	if status == http.StatusUnauthorized {
+		return apperror.New("telegram_unauthorized", "Telegram từ chối Bot Token. Hãy kiểm tra lại credential của bot.")
+	}
+	if status == http.StatusTooManyRequests {
+		return apperror.New("telegram_rate_limited", "Telegram đang giới hạn tần suất gửi tin. Hãy chờ một lúc rồi thử lại.")
+	}
+	if strings.Contains(lower, "can't parse entities") || strings.Contains(lower, "can't find end tag") || strings.Contains(lower, "unsupported start tag") {
+		return apperror.New("telegram_message_format_invalid", "Telegram không đọc được định dạng tin nhắn. Hãy dùng Văn bản thường hoặc sửa cú pháp HTML/MarkdownV2.")
+	}
+	if strings.Contains(lower, "message is too long") {
+		return apperror.New("telegram_message_too_long", fmt.Sprintf("Tin nhắn Telegram vượt quá giới hạn %d ký tự. Hãy rút gọn nội dung trước khi gửi.", maxTelegramMessageRunes))
+	}
+	if strings.Contains(lower, "bot was blocked by the user") {
+		return apperror.New("telegram_bot_blocked", "Người nhận đã chặn bot Telegram. Hãy bỏ chặn bot rồi thử lại.")
+	}
+	if strings.Contains(lower, "chat not found") || strings.Contains(lower, "bot can't initiate conversation") || strings.Contains(lower, "bot cannot initiate conversation") {
+		return apperror.New("telegram_chat_inaccessible", "Telegram không tìm thấy hoặc chưa cho bot truy cập chat này. Hãy gửi /start cho bot và kiểm tra Chat ID.")
+	}
+	if strings.Contains(lower, "not enough rights") || strings.Contains(lower, "have no rights") || strings.Contains(lower, "forbidden") {
+		return apperror.New("telegram_permission_denied", "Bot Telegram không có đủ quyền gửi tin vào chat hoặc kênh này.")
+	}
+
+	if description == "" {
+		description = redactTelegramErrorBody(body)
+	}
+	if len(description) > 1000 {
+		description = description[:1000]
+	}
+	if description == "" {
+		description = fmt.Sprintf("HTTP %d", status)
+	}
+	return apperror.New("telegram_api_error", fmt.Sprintf("Telegram từ chối gửi tin: %s", description))
 }
 
 func (e *TelegramBotExecutor) Validate(node *Node) error {
 	chatID, _ := node.Params["chat_id"].(string)
 	if strings.TrimSpace(chatID) == "" {
 		return fmt.Errorf("Telegram Node requires 'chat_id'")
+	}
+	message, _ := node.Params["message"].(string)
+	if err := validateTelegramMessage(message); err != nil {
+		return err
+	}
+	parseMode, _ := node.Params["parse_mode"].(string)
+	if _, err := normalizeTelegramParseMode(parseMode); err != nil {
+		return err
 	}
 	return nil
 }
@@ -144,7 +226,16 @@ func (e *TelegramBotExecutor) GetDefinition() NodeDefinition {
 				Type:        "textarea",
 				Default:     "Goflow Execution Completed!",
 				Required:    true,
-				Description: "Message content. HTML tags are supported",
+				Description: "Message content. Plain text is safest for AI-generated output.",
+			},
+			{
+				Name:        "parse_mode",
+				Label:       "Định dạng tin nhắn",
+				Type:        "select",
+				Default:     "Văn bản thường",
+				Options:     []string{"Văn bản thường", "HTML", "MarkdownV2"},
+				Required:    false,
+				Description: "Văn bản thường gửi nguyên nội dung và an toàn nhất cho output AI. Chỉ chọn HTML hoặc MarkdownV2 khi bạn chủ động định dạng tin nhắn.",
 			},
 		},
 	}

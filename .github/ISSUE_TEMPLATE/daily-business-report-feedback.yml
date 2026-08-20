@@ -1,0 +1,71 @@
+name: Daily Business Report feedback
+description: Report an install, setup, source-contract, scheduling, or Telegram-delivery problem with the public beta.
+title: "[Daily Business Report] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing the Daily Business Report public beta.
+
+        **Do not paste Telegram bot tokens, OpenAI/DeepSeek API keys, master keys, passwords, or other secrets into this issue.**
+  - type: input
+    id: version
+    attributes:
+      label: Pack version
+      description: The version shown in the appliance header or release page.
+      placeholder: 0.9.0
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where did it fail?
+      options:
+        - Download / checksum
+        - Launch / SmartScreen
+        - Source test
+        - Telegram test
+        - Complete setup
+        - Run now
+        - Scheduled run
+        - Restart persistence
+        - OpenAI commentary
+        - DeepSeek commentary
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+      description: Include the exact non-secret error message if available.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Paste only the redacted diagnostics exported by the appliance. Remove anything you consider sensitive before posting.
+      render: json
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Secret-safety check
+      options:
+        - label: I checked this issue and did not include bot tokens, API keys, master keys, passwords, or other secrets.
+          required: true
