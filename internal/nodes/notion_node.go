@@ -90,7 +90,7 @@ func (e *NotionPageExecutor) Execute(ctx *ExecutionContext, node *Node) (interfa
 		return nil, err
 	}
 	bodyBytes, err := json.Marshal(map[string]interface{}{
-		"parent": map[string]string{"database_id": strings.TrimSpace(databaseID)},
+		"parent":     map[string]string{"database_id": strings.TrimSpace(databaseID)},
 		"properties": properties,
 	})
 	if err != nil {
