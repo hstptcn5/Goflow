@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { api } from '@/services/api';
 import { workflowTemplates } from '@/templates/workflowTemplates';
+import { viNodeName } from '@/utils/operatorVi';
 import StateBlock from '@/components/StateBlock.vue';
 
 const router = useRouter();
@@ -11,20 +12,27 @@ const workflowStore = useWorkflowStore();
 const creating = ref(false);
 const pageError = ref('');
 
+function localizedTemplateNodes(nodes = []) {
+  return nodes.map((node) => ({
+    ...node,
+    name: viNodeName(node.type, node.name),
+  }));
+}
+
 async function createFromTemplate(template) {
   creating.value = true;
   pageError.value = '';
   try {
     const data = template.workflow;
     const workflow = await workflowStore.createWorkflow(
-      data.name || template.title,
-      data.description || template.summary || 'Workflow tạo từ mẫu'
+      template.title || data.name || 'Workflow từ mẫu',
+      template.summary || data.description || 'Workflow tạo từ mẫu'
     );
     const updated = await api.updateWorkflow(workflow.id, {
       name: workflow.name,
       description: workflow.description,
       is_active: workflow.is_active,
-      nodes_json: JSON.stringify(data.nodes || []),
+      nodes_json: JSON.stringify(localizedTemplateNodes(data.nodes || [])),
       edges_json: JSON.stringify(data.edges || []),
     });
     workflowStore.currentWorkflow = updated;
