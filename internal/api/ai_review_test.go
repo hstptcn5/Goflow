@@ -181,39 +181,30 @@ func TestStripProposalSecretsRemovesCredentialAndSecretParams(t *testing.T) {
 
 func TestValidateReviewProposalSupportsExplicitParamDeletionButProtectsCredentials(t *testing.T) {
 	handler := newTestAIHandler(t)
-	current := workflowDraft{
-		Name: "Sheets",
-		Nodes: []nodes.Node{{
-			ID:   "sheet_1",
-			Type: nodes.TypeGoogleSheets,
-			Name: "Sheets",
-			Params: map[string]interface{}{
-				"credential_id":        "cred-1",
-				"service_account_json": `{"private_key":"secret"}`,
-				"spreadsheet_id":       "sheet-id",
-				"sheet_name":           "Sheet1",
-				"action":               "APPEND",
-			},
-		}},
-	}
+	current := validReviewerWorkflow()
+	current.Nodes[1].Params["body"] = "legacy-payload"
+	current.Nodes[1].Params["credential_id"] = "cred-1"
 	proposal := cloneWorkflowDraft(current)
-	delete(proposal.Nodes[0].Params, "service_account_json")
-	delete(proposal.Nodes[0].Params, "credential_id")
+	delete(proposal.Nodes[1].Params, "body")
+	delete(proposal.Nodes[1].Params, "credential_id")
 
 	issues, deletes := handler.validateReviewProposal(current, &proposal, map[string][]string{
-		"sheet_1": {"service_account_json"},
+		"http_1": {"body"},
 	})
 	if len(issues) != 0 {
 		t.Fatalf("expected explicit non-credential deletion to validate, got %#v", issues)
 	}
-	if len(deletes["sheet_1"]) != 1 || deletes["sheet_1"][0] != "service_account_json" {
+	if len(deletes["http_1"]) != 1 || deletes["http_1"][0] != "body" {
 		t.Fatalf("unexpected delete params: %#v", deletes)
 	}
 
-	_, protectedDeletes := handler.validateReviewProposal(current, &proposal, map[string][]string{
-		"sheet_1": {"credential_id"},
+	credentialIssues, protectedDeletes := handler.validateReviewProposal(current, &proposal, map[string][]string{
+		"http_1": {"credential_id"},
 	})
 	if len(protectedDeletes) != 0 {
 		t.Fatalf("credential deletion must not be exposed: %#v", protectedDeletes)
+	}
+	if len(credentialIssues) == 0 {
+		t.Fatal("expected credential deletion request to be rejected")
 	}
 }
