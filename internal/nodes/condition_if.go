@@ -71,8 +71,9 @@ func (e *ConditionIFExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 		resultHandle = "true"
 	}
 	return map[string]interface{}{
-		"result": isTrue, "target_handle": resultHandle,
-		"evaluated": fmt.Sprintf("%s %s %s", field, operator, value),
+		"result":        isTrue,
+		"target_handle": resultHandle,
+		"evaluated":     fmt.Sprintf("%s %s %s", field, operator, value),
 		"execution_tag": uuid.New().String(),
 	}, nil
 }
