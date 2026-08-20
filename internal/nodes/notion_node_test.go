@@ -18,8 +18,8 @@ func TestNotionPageExecutorOffline(t *testing.T) {
 
 	// Test 2: Missing token/credential is rejected before outbound request.
 	nodeNoToken := &Node{Params: map[string]interface{}{
-		"database_id":    "db-123",
-		"notion_token":   "",
+		"database_id":     "db-123",
+		"notion_token":    "",
 		"properties_json": `{"Name":{"title":[{"text":{"content":"test"}}]}}`,
 	}}
 	_, err = executor.Execute(ctx, nodeNoToken)
