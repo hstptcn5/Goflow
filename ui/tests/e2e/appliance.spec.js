@@ -81,36 +81,36 @@ async function mockAppliance(page, initial = {}) {
   return state;
 }
 
-test('appliance first-run setup and run flow hides submitted secrets', async ({ page }) => {
+test('appliance first-run setup and run flow is Vietnamese and hides submitted secrets', async ({ page }) => {
   await mockAppliance(page);
   await page.goto('/workflows/wf-1');
 
   await expect(page.getByRole('heading', { name: 'Example Appliance', level: 1 })).toBeVisible();
-  await expect(page.getByText('Unsigned pack integrity')).toBeVisible();
+  await expect(page.getByText('Gói chưa ký số')).toBeVisible();
 
   await page.getByLabel('Source URL').fill('https://example.test/feed.json');
-  await page.getByRole('button', { name: 'Save configuration' }).click();
+  await page.getByRole('button', { name: 'Lưu cấu hình' }).click();
   await page.locator('input[type="password"]').fill('123:secret-canary');
-  await page.getByRole('button', { name: 'Create' }).click();
-  await expect(page.getByText('Credential saved', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Tạo' }).click();
+  await expect(page.getByText('Đã lưu thông tin xác thực', { exact: true })).toBeVisible();
   await expect(page.locator('body')).not.toContainText('secret-canary');
 
-  await page.getByRole('button', { name: 'Test Telegram' }).click();
-  await expect(page.getByText('Valid', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Complete setup' }).click();
+  await page.getByRole('button', { name: 'Kiểm tra Telegram' }).click();
+  await expect(page.getByText('Hợp lệ', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Hoàn tất thiết lập' }).click();
 
   await expect(page.getByRole('heading', { name: 'Example Appliance', level: 2 })).toBeVisible();
-  await page.getByRole('button', { name: 'Run now' }).click();
-  await expect(page.getByLabel('Latest execution').getByText('SUCCESS')).toBeVisible();
-  await page.getByRole('button', { name: 'Refresh' }).click();
+  await page.getByRole('button', { name: 'Chạy ngay' }).click();
+  await expect(page.getByLabel('Lần chạy gần nhất').getByText('SUCCESS')).toBeVisible();
+  await page.getByRole('button', { name: 'Làm mới' }).click();
   await expect(page.getByText('"secrets_hidden": true')).toBeVisible();
   await expect(page.locator('body')).not.toContainText('secret-canary');
 });
 
-test('generic serve keeps the workspace when appliance bootstrap returns 404', async ({ page }) => {
+test('generic serve keeps the Vietnamese workspace when appliance bootstrap returns 404', async ({ page }) => {
   await page.route('**/api/appliance/bootstrap', (route) => route.fulfill({ status: 404, body: '' }));
   await page.goto('/workflows');
 
-  await expect(page.locator('h1', { hasText: 'Workflows' })).toBeVisible();
-  await expect(page.getByText('Pack appliance')).toHaveCount(0);
+  await expect(page.locator('h1', { hasText: 'Workflow' })).toBeVisible();
+  await expect(page.getByText('Ứng dụng Goflow')).toHaveCount(0);
 });
