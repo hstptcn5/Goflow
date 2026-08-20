@@ -82,7 +82,7 @@ test('DailyOps appliance completes real setup and execution with mocked Telegram
 
   await page.locator('input[type="password"]').fill(fakeToken());
   await page.getByRole('button', { name: 'Thay thế' }).click();
-  await expect(page.getByText('Đã lưu thông tin xác thực')).toBeVisible();
+  await expect(page.getByText('Đã lưu thông tin xác thực', { exact: true })).toBeVisible();
   await expectNoSecret(page);
 
   await page.getByRole('button', { name: 'Kiểm tra Telegram' }).click();
