@@ -34,13 +34,13 @@ watch(() => route.params.id, (id) => loadWorkflow(id));
 
 <template>
   <div class="route-fill">
-    <StateBlock v-if="loading" title="Loading workflow" message="Fetching workflow definition from the Goflow API." />
+    <StateBlock v-if="loading" title="Đang tải workflow" message="Đang lấy định nghĩa workflow từ Goflow API." />
     <StateBlock
       v-else-if="pageError"
       tone="danger"
-      title="Workflow could not be opened"
+      title="Không mở được workflow"
       :message="pageError"
-      action-label="Return to workflows"
+      action-label="Quay lại danh sách workflow"
       @action="router.push('/workflows')"
     />
     <WorkflowEditor v-else-if="workflowStore.currentWorkflow" />
