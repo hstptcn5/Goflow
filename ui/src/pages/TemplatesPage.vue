@@ -18,7 +18,7 @@ async function createFromTemplate(template) {
     const data = template.workflow;
     const workflow = await workflowStore.createWorkflow(
       data.name || template.title,
-      data.description || template.summary || 'Workflow created from template'
+      data.description || template.summary || 'Workflow tạo từ mẫu'
     );
     const updated = await api.updateWorkflow(workflow.id, {
       name: workflow.name,
@@ -41,15 +41,15 @@ async function createFromTemplate(template) {
   <div class="page-stack">
     <section class="page-toolbar">
       <div>
-        <h2>Templates</h2>
-        <p>Start from an example workflow, then replace placeholder URLs, IDs, and credentials.</p>
+        <h2>Mẫu workflow</h2>
+        <p>Bắt đầu từ workflow mẫu, sau đó thay URL, ID và credential bằng cấu hình thật của bạn.</p>
       </div>
     </section>
 
     <StateBlock
       v-if="pageError"
       tone="danger"
-      title="Template workflow failed"
+      title="Không tạo được workflow từ mẫu"
       :message="pageError"
     />
 
@@ -62,12 +62,12 @@ async function createFromTemplate(template) {
           </div>
           <p>{{ template.summary }}</p>
           <div class="meta-row">
-            <span>Needs: {{ template.requirements?.join(', ') || 'None' }}</span>
-            <span>Nodes: {{ template.workflow?.nodes?.length || 0 }}</span>
+            <span>Cần: {{ template.requirements?.join(', ') || 'Không có' }}</span>
+            <span>Số node: {{ template.workflow?.nodes?.length || 0 }}</span>
           </div>
         </div>
         <button class="btn btn-primary" type="button" :disabled="creating" @click="createFromTemplate(template)">
-          Create workflow
+          Tạo workflow
         </button>
       </article>
     </section>
