@@ -10,14 +10,14 @@ const nodeDefs = [
 ];
 
 describe('NodePicker', () => {
-  it('opens focused, searches by name/type/description, and shows empty state', async () => {
+  it('opens focused, searches by name/type/description, and shows Vietnamese empty state', async () => {
     const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus');
     const { root } = await mountWithApp(NodePicker, { props: { visible: true } });
     const store = useWorkflowStore();
     store.nodeDefinitions = nodeDefs;
     await nextFrame();
 
-    const input = root.querySelector('[aria-label="Search nodes"]');
+    const input = root.querySelector('[aria-label="Tìm node"]');
     expect(input).not.toBeNull();
     expect(focusSpy).toHaveBeenCalled();
 
@@ -34,7 +34,7 @@ describe('NodePicker', () => {
     input.value = 'does-not-exist';
     input.dispatchEvent(new Event('input'));
     await nextFrame();
-    expect(root.textContent).toContain('No nodes match this search.');
+    expect(root.textContent).toContain('Không có node phù hợp.');
   });
 
   it('supports keyboard selection and local favorite/recent state', async () => {
@@ -43,12 +43,12 @@ describe('NodePicker', () => {
     store.nodeDefinitions = nodeDefs;
     await nextFrame();
 
-    root.querySelector('[aria-label="Search nodes"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-    root.querySelector('[aria-label="Search nodes"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    root.querySelector('[aria-label="Tìm node"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    root.querySelector('[aria-label="Tìm node"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await nextFrame();
     expect(JSON.parse(localStorage.getItem('goflow.recentNodes'))).toContain('httpRequest');
 
-    root.querySelector('[aria-label="Add HTTP Request to favorites"]').click();
+    root.querySelector('[aria-label="Thêm HTTP Request vào yêu thích"]').click();
     await nextFrame();
     expect(JSON.parse(localStorage.getItem('goflow.favoriteNodes'))).toContain('httpRequest');
   });
@@ -60,7 +60,7 @@ describe('NodePicker', () => {
     store.nodeDefinitions = nodeDefs;
     await nextFrame();
 
-    root.querySelector('[aria-label="Add HTTP Request to favorites"]').click();
+    root.querySelector('[aria-label="Thêm HTTP Request vào yêu thích"]').click();
     await nextFrame();
 
     expect(selected).toBe(false);
@@ -69,7 +69,7 @@ describe('NodePicker', () => {
 
   it('traps focus and restores focus when closed', async () => {
     const opener = document.createElement('button');
-    opener.textContent = 'Open picker';
+    opener.textContent = 'Mở bộ chọn';
     document.body.appendChild(opener);
     opener.focus();
 
@@ -78,9 +78,9 @@ describe('NodePicker', () => {
     store.nodeDefinitions = nodeDefs;
     await nextFrame();
 
-    const input = root.querySelector('[aria-label="Search nodes"]');
-    const close = root.querySelector('[aria-label="Close node picker"]');
-    const lastFavorite = root.querySelector('[aria-label="Add Telegram Bot to favorites"]');
+    const input = root.querySelector('[aria-label="Tìm node"]');
+    const close = root.querySelector('[aria-label="Đóng bộ chọn node"]');
+    const lastFavorite = root.querySelector('[aria-label="Thêm Telegram Bot vào yêu thích"]');
     close.focus();
     close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }));
     await nextFrame();
