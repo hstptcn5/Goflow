@@ -6,6 +6,24 @@ const VI_AI_OPERATOR_INSTRUCTION = `Yêu cầu vận hành bắt buộc của Go
 - Không dịch khóa JSON kỹ thuật của workflow schema.
 - Nếu trả workflow JSON, trường name của workflow/node nên dùng tiếng Việt dễ hiểu nhưng type/params/edge identifiers phải giữ đúng contract Goflow.`;
 
+function isSensitiveAIContextKey(key) {
+  const normalized = String(key || '').trim().toLowerCase().replaceAll('-', '_');
+  return [
+    'api_key', 'apikey', 'authorization', 'password', 'passwd', 'secret', 'token',
+    'credential', 'private_key', 'service_account', 'client_secret', 'connection_string',
+    'webhook_url',
+  ].some((part) => normalized.includes(part));
+}
+
+function redactAIContext(value) {
+  if (Array.isArray(value)) return value.map(redactAIContext);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key,
+    isSensitiveAIContextKey(key) ? '[REDACTED]' : redactAIContext(item),
+  ]));
+}
+
 async function customFetch(url, options = {}) {
   const token = localStorage.getItem('GOFLOW_API_KEY');
   if (token) {
@@ -184,8 +202,8 @@ export const api = {
       body: JSON.stringify({
         messages: localizedMessages,
         credential_id: credentialId,
-        current_nodes: currentNodes,
-        current_edges: currentEdges,
+        current_nodes: redactAIContext(currentNodes),
+        current_edges: redactAIContext(currentEdges),
       }),
     });
     if (!res.ok) {
@@ -203,7 +221,7 @@ export const api = {
       body: JSON.stringify({
         node_type: nodeType,
         prompt: localizedPrompt,
-        current_params: currentParams,
+        current_params: redactAIContext(currentParams),
         credential_id: credentialId,
       }),
     });
