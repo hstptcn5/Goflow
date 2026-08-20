@@ -8,6 +8,13 @@ import './assets/main.css';
 import './assets/stitch-theme.css';
 import './assets/workflow-arrows.css';
 
+if (typeof localStorage !== 'undefined') {
+  localStorage.setItem('goflow-appliance-locale', 'vi');
+}
+if (typeof document !== 'undefined') {
+  document.documentElement.lang = 'vi';
+}
+
 installWorkflowArrowMarkers();
 
 const app = createApp(App);
