@@ -23,9 +23,9 @@ const messagesListRef = ref(null);
 const assistantMode = ref('build');
 
 const modes = [
-  { id: 'build', label: 'Build / Edit' },
-  { id: 'workflow', label: 'Review Workflow' },
-  { id: 'latest_run', label: 'Review Latest Run' },
+  { id: 'build', label: 'Tạo / Chỉnh sửa' },
+  { id: 'workflow', label: 'Đánh giá workflow' },
+  { id: 'latest_run', label: 'Đánh giá lần chạy gần nhất' },
 ];
 
 const messages = ref([
@@ -33,7 +33,7 @@ const messages = ref([
     id: 'welcome',
     sender: 'ai',
     type: 'text',
-    text: '👋 Goflow AI can build workflows or review them. Review mode only proposes changes; nothing is applied, saved, or run until you explicitly choose an action.'
+    text: '👋 Tôi là Trợ lý AI của Goflow. Tôi có thể tạo, chỉnh sửa hoặc đánh giá workflow. Ở chế độ đánh giá, tôi chỉ đề xuất; không có thay đổi nào được áp dụng, lưu hoặc chạy cho tới khi bạn chủ động bấm nút.'
   }
 ]);
 
@@ -52,9 +52,9 @@ const canSubmit = computed(() => {
   return true;
 });
 const inputPlaceholder = computed(() => {
-  if (assistantMode.value === 'build') return 'Ask AI to design, edit or explain workflow...';
-  if (assistantMode.value === 'latest_run') return 'Optional: describe what a good result should look like...';
-  return 'Optional: tell the reviewer what you want to optimize...';
+  if (assistantMode.value === 'build') return 'Yêu cầu AI tạo, chỉnh sửa hoặc giải thích workflow...';
+  if (assistantMode.value === 'latest_run') return 'Tùy chọn: mô tả kết quả tốt mà bạn mong muốn...';
+  return 'Tùy chọn: cho Reviewer biết bạn muốn tối ưu điều gì...';
 });
 
 onMounted(() => {
@@ -123,7 +123,7 @@ async function handleBuild() {
     .map((m) => {
       let content = m.text || '';
       if (m.type === 'workflow' && m.workflow) {
-        content = `${m.text || ''}\n\n[Sơ đồ thiết kế hiện tại]:\n${JSON.stringify(m.workflow)}`;
+        content = `${m.text || ''}\n\n[Sơ đồ workflow hiện tại]:\n${JSON.stringify(m.workflow)}`;
       }
       return {
         role: m.sender === 'user' ? 'user' : 'assistant',
@@ -168,7 +168,7 @@ async function handleBuild() {
 async function handleReview() {
   const focus = promptText.value.trim();
   const mode = assistantMode.value;
-  const label = mode === 'latest_run' ? 'Review latest run' : 'Review workflow';
+  const label = mode === 'latest_run' ? 'Đánh giá lần chạy gần nhất' : 'Đánh giá workflow';
   messages.value.push({
     id: `msg_user_review_${Date.now()}`,
     sender: 'user',
@@ -212,7 +212,7 @@ function pushAIError(err) {
     id: `msg_ai_err_${Date.now()}`,
     sender: 'ai',
     type: 'text',
-    text: `❌ **Failed to communicate with AI**: ${err.message}`,
+    text: `❌ **Không thể trao đổi với AI**: ${err.message}`,
   });
 }
 
@@ -220,23 +220,48 @@ function handleLoad(workflow) {
   if (workflow) emit('loadWorkflow', workflow);
 }
 
+function applyExplicitParamDeletions(deleteParams = {}) {
+  const requested = deleteParams || {};
+  for (const node of props.currentNodes || []) {
+    const names = Array.isArray(requested[node.id]) ? requested[node.id] : [];
+    if (!names.length || !node?.data?.params) continue;
+    for (const name of names) {
+      delete node.data.params[name];
+    }
+  }
+}
+
+function handleApplyReview(review) {
+  if (!review?.proposed_workflow || !review?.proposal_validated) return;
+  applyExplicitParamDeletions(review.proposal_delete_params);
+  emit('loadWorkflow', review.proposed_workflow);
+}
+
 function scoreEntries(scores = {}) {
   const labels = {
-    reliability: 'Reliability',
-    security: 'Security',
-    data_correctness: 'Data',
-    cost_efficiency: 'Cost',
-    maintainability: 'Maintain',
-    output_quality: 'Output',
+    reliability: 'Độ tin cậy',
+    security: 'Bảo mật',
+    data_correctness: 'Dữ liệu',
+    cost_efficiency: 'Chi phí',
+    maintainability: 'Dễ bảo trì',
+    output_quality: 'Chất lượng đầu ra',
   };
-  return Object.entries(labels).map(([key, label]) => ({ key, label, value: Number(scores?.[key] || 0) }));
+  return Object.entries(labels).map(([key, label]) => {
+    const raw = scores?.[key];
+    const available = typeof raw === 'number' && Number.isFinite(raw);
+    return { key, label, value: available ? raw : 'N/A', available };
+  });
 }
 
 function severityLabel(value) {
   const normalized = String(value || '').toLowerCase();
-  if (normalized === 'high') return 'HIGH';
-  if (normalized === 'low') return 'LOW';
-  return 'MEDIUM';
+  if (normalized === 'high') return 'CAO';
+  if (normalized === 'low') return 'THẤP';
+  return 'TRUNG BÌNH';
+}
+
+function deleteParamCount(deleteParams = {}) {
+  return Object.values(deleteParams || {}).reduce((total, names) => total + (Array.isArray(names) ? names.length : 0), 0);
 }
 
 async function scrollToBottom() {
@@ -263,15 +288,15 @@ function renderMarkdown(text) {
         <div class="header-title">
           <span class="icon">🤖</span>
           <div>
-            <h3>AI Assistant</h3>
-            <p class="subtitle">Build, review, and improve with human approval</p>
+            <h3>Trợ lý AI</h3>
+            <p class="subtitle">Tạo, đánh giá và cải thiện với xác nhận của người dùng</p>
           </div>
         </div>
-        <button class="btn-close" @click="emit('close')">✕</button>
+        <button class="btn-close" aria-label="Đóng trợ lý AI" @click="emit('close')">✕</button>
       </div>
 
       <div class="chat-container">
-        <div class="mode-selector" role="tablist" aria-label="AI assistant mode">
+        <div class="mode-selector" role="tablist" aria-label="Chế độ trợ lý AI">
           <button
             v-for="mode in modes"
             :key="mode.id"
@@ -286,25 +311,25 @@ function renderMarkdown(text) {
         </div>
 
         <div class="key-selector-bar">
-          <label>AI brain:</label>
+          <label>Bộ não AI:</label>
           <select v-model="selectedCredentialId" class="form-select select-sm" :disabled="loading">
-            <option value="">-- Choose OpenAI / DeepSeek Credential --</option>
+            <option value="">-- Chọn credential OpenAI / DeepSeek --</option>
             <option v-for="cred in aiCredentials" :key="cred.id" :value="cred.id">
               {{ cred.name }} · {{ reviewerCredentialProvider(cred) }}
             </option>
           </select>
           <span v-if="selectedProvider" class="provider-badge">{{ selectedProvider }}</span>
           <div v-if="aiCredentials.length === 0" class="no-keys-error">
-            Add an OpenAI or DeepSeek API_KEY credential first. Generic API keys are intentionally not used by the reviewer.
+            Hãy tạo credential API_KEY OpenAI hoặc DeepSeek trước. Reviewer không tự đoán generic API key thuộc nhà cung cấp nào.
           </div>
         </div>
 
         <div v-if="isReviewMode" class="review-safety-note">
-          <strong>Human-gated review.</strong> The reviewer can only return findings and a validated proposal. It cannot save, activate, run, or apply anything by itself.
-          <span v-if="reviewNeedsRun && !reviewExecution">Run this workflow at least once before using Review Latest Run.</span>
+          <strong>Đánh giá có xác nhận của người dùng.</strong> Reviewer chỉ trả findings và proposal đã được Goflow kiểm tra. Nó không thể tự lưu, kích hoạt, chạy hoặc áp dụng thay đổi.
+          <span v-if="reviewNeedsRun && !reviewExecution">Hãy chạy workflow ít nhất một lần trước khi dùng “Đánh giá lần chạy gần nhất”.</span>
         </div>
         <div v-else class="chat-helper-tip">
-          If AI proposes a workflow, it changes the canvas only after you press <strong>Load Onto Canvas</strong>.
+          Nếu AI đề xuất workflow, canvas chỉ thay đổi sau khi bạn bấm <strong>Nạp lên canvas</strong>.
         </div>
 
         <div class="messages-list" ref="messagesListRef">
@@ -328,9 +353,9 @@ function renderMarkdown(text) {
                   <div class="workflow-bubble-header">
                     <span class="success-icon">✨</span>
                     <div>
-                      <strong>Sơ đồ workflow mới/sửa đổi</strong>
-                      <p class="workflow-name-preview">Name: {{ msg.workflow.name || 'Unnamed Flow' }}</p>
-                      <p v-if="msg.validated" class="workflow-validation">Validated by Goflow</p>
+                      <strong>Sơ đồ workflow mới / đã chỉnh sửa</strong>
+                      <p class="workflow-name-preview">Tên: {{ msg.workflow.name || 'Workflow chưa đặt tên' }}</p>
+                      <p v-if="msg.validated" class="workflow-validation">Đã được Goflow kiểm tra</p>
                     </div>
                   </div>
                   <div class="pipeline-flow-preview">
@@ -342,7 +367,7 @@ function renderMarkdown(text) {
                     </div>
                   </div>
                   <button class="btn btn-success btn-sm btn-load" @click="handleLoad(msg.workflow)">
-                    Load Onto Canvas (Áp dụng)
+                    Nạp lên canvas
                   </button>
                 </div>
               </div>
@@ -350,16 +375,16 @@ function renderMarkdown(text) {
               <div v-else-if="msg.type === 'review'" class="review-card">
                 <div class="review-header">
                   <div>
-                    <strong>{{ msg.review.mode === 'latest_run' ? 'Latest Run Review' : 'Workflow Review' }}</strong>
+                    <strong>{{ msg.review.mode === 'latest_run' ? 'Đánh giá lần chạy gần nhất' : 'Đánh giá workflow' }}</strong>
                     <p>{{ msg.review.provider }} · {{ msg.review.model }}</p>
                   </div>
-                  <span class="review-count">{{ msg.review.findings?.length || 0 }} findings</span>
+                  <span class="review-count">{{ msg.review.findings?.length || 0 }} phát hiện</span>
                 </div>
 
                 <p class="review-summary">{{ msg.review.summary }}</p>
 
                 <div class="score-grid">
-                  <div v-for="score in scoreEntries(msg.review.scores)" :key="score.key" class="score-item">
+                  <div v-for="score in scoreEntries(msg.review.scores)" :key="score.key" class="score-item" :class="{ unavailable: !score.available }">
                     <span>{{ score.label }}</span>
                     <strong>{{ score.value }}</strong>
                   </div>
@@ -371,29 +396,34 @@ function renderMarkdown(text) {
                       <span class="severity" :class="`severity-${finding.severity}`">{{ severityLabel(finding.severity) }}</span>
                       <strong>{{ finding.title }}</strong>
                     </div>
-                    <p><b>Why:</b> {{ finding.why }}</p>
-                    <p><b>Impact:</b> {{ finding.impact }}</p>
-                    <p><b>Suggested:</b> {{ finding.suggested_change }}</p>
+                    <p><b>Lý do:</b> {{ finding.why }}</p>
+                    <p><b>Tác động:</b> {{ finding.impact }}</p>
+                    <p><b>Đề xuất:</b> {{ finding.suggested_change }}</p>
+                    <p v-if="finding.evidence"><b>Bằng chứng:</b> {{ finding.evidence }}</p>
+                    <p v-if="typeof finding.confidence === 'number'"><b>Độ tin cậy:</b> {{ finding.confidence }}%</p>
                   </article>
                 </div>
 
                 <div v-if="msg.review.proposed_workflow && msg.review.proposal_validated" class="proposal-box">
-                  <strong>Validated improvement proposal</strong>
+                  <strong>Đề xuất cải thiện đã được kiểm tra</strong>
                   <p>{{ msg.review.proposal_summary }}</p>
-                  <p v-if="msg.review.expected_improvement"><b>Expected:</b> {{ msg.review.expected_improvement }}</p>
+                  <p v-if="msg.review.expected_improvement"><b>Kỳ vọng:</b> {{ msg.review.expected_improvement }}</p>
+                  <p v-if="deleteParamCount(msg.review.proposal_delete_params)">
+                    <b>Xóa có chủ đích:</b> {{ deleteParamCount(msg.review.proposal_delete_params) }} parameter cũ sẽ bị xóa khỏi canvas khi bạn bấm Áp dụng.
+                  </p>
                   <div class="sequence-chips">
                     <span v-for="node in msg.review.proposed_workflow.nodes || []" :key="node.id" class="chip">
                       {{ node.name || node.type }}
                     </span>
                   </div>
-                  <button class="btn btn-success btn-sm btn-load" @click="handleLoad(msg.review.proposed_workflow)">
-                    Apply proposal to canvas
+                  <button class="btn btn-success btn-sm btn-load" @click="handleApplyReview(msg.review)">
+                    Áp dụng đề xuất lên canvas
                   </button>
-                  <p class="human-gate-copy">This only updates the unsaved canvas. It does not save, activate, or run the workflow.</p>
+                  <p class="human-gate-copy">Chỉ canvas chưa lưu được cập nhật. Goflow không tự lưu, kích hoạt hay chạy workflow.</p>
                 </div>
 
                 <div v-else-if="msg.review.proposal_validation_issues?.length" class="proposal-invalid">
-                  <strong>Proposal was not exposed for Apply because Goflow validation rejected it.</strong>
+                  <strong>Proposal không được mở cho thao tác Áp dụng vì Goflow validation đã từ chối.</strong>
                   <p v-for="issue in msg.review.proposal_validation_issues" :key="issue">{{ issue }}</p>
                 </div>
               </div>
@@ -425,7 +455,7 @@ function renderMarkdown(text) {
             :disabled="!canSubmit"
             :title="modeDefinition.label"
           >
-            {{ isReviewMode ? 'Review' : '✈️' }}
+            {{ isReviewMode ? 'Đánh giá' : '✈️' }}
           </button>
         </div>
       </div>
@@ -605,6 +635,7 @@ function renderMarkdown(text) {
 .score-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .score-item { border: 1px solid #e2e8f0; padding: 6px; background: #f8fafc; display: flex; justify-content: space-between; gap: 4px; font-size: 0.62rem; }
 .score-item strong { color: #0f172a; }
+.score-item.unavailable strong { color: #64748b; font-weight: 700; }
 
 .findings-list { display: flex; flex-direction: column; gap: 8px; }
 .finding-card { border: 1px solid #e2e8f0; padding: 9px; background: #f8fafc; }
