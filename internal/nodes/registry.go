@@ -40,9 +40,7 @@ func withCredentialCompatibility(executor NodeExecutor, paramName string, kinds,
 }
 
 func NewPluginRegistry() *PluginRegistry {
-	return &PluginRegistry{
-		executors: make(map[NodeType]NodeExecutor),
-	}
+	return &PluginRegistry{executors: make(map[NodeType]NodeExecutor)}
 }
 
 func NewBuiltinRegistry() *PluginRegistry {
@@ -56,6 +54,7 @@ func NewBuiltinRegistryWithTelegramExecutor(telegramExecutor NodeExecutor) *Plug
 	registry := NewPluginRegistry()
 	_ = registry.Register(NewWebhookTriggerExecutor())
 	_ = registry.Register(NewCronTriggerExecutor())
+	_ = registry.Register(NewManualTriggerExecutor())
 	_ = registry.Register(NewHTTPRequestExecutor())
 	_ = registry.Register(NewNormalizedHTTPSourceExecutor())
 	_ = registry.Register(NewRSSFeedSourceExecutor())
@@ -89,14 +88,18 @@ func NewBuiltinRegistryWithTelegramExecutor(telegramExecutor NodeExecutor) *Plug
 }
 
 func (r *PluginRegistry) Register(executor NodeExecutor) error {
+	if executor == nil {
+		return fmt.Errorf("node executor is nil")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
 	nodeType := executor.GetDefinition().Type
+	if nodeType == "" {
+		return fmt.Errorf("node executor type is empty")
+	}
 	if _, exists := r.executors[nodeType]; exists {
 		return fmt.Errorf("node type '%s' already registered", nodeType)
 	}
-
 	r.executors[nodeType] = executor
 	return nil
 }
@@ -104,7 +107,6 @@ func (r *PluginRegistry) Register(executor NodeExecutor) error {
 func (r *PluginRegistry) Get(nodeType NodeType) (NodeExecutor, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
 	executor, exists := r.executors[nodeType]
 	return executor, exists
 }
@@ -112,7 +114,6 @@ func (r *PluginRegistry) Get(nodeType NodeType) (NodeExecutor, bool) {
 func (r *PluginRegistry) ListDefinitions() []NodeDefinition {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
 	defs := make([]NodeDefinition, 0, len(r.executors))
 	for _, exec := range r.executors {
 		defs = append(defs, exec.GetDefinition())
