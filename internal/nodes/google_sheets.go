@@ -2,231 +2,198 @@ package nodes
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
+)
 
-	"golang.org/x/oauth2/google"
+const (
+	maxGoogleAPIResponseBytes int64 = 2 << 20
+	maxSheetsValuesBytes            = 1 << 20
+	maxSheetsValuesCount            = 1000
 )
 
 type GoogleSheetsExecutor struct{}
 
-func NewGoogleSheetsExecutor() *GoogleSheetsExecutor {
-	return &GoogleSheetsExecutor{}
-}
+func NewGoogleSheetsExecutor() *GoogleSheetsExecutor { return &GoogleSheetsExecutor{} }
 
-func (e *GoogleSheetsExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
-	// 1. Resolve parameters
-	credID, _ := node.Params["credential_id"].(string)
-	directSA, _ := node.Params["service_account_json"].(string)
-	spreadsheetID, _ := node.Params["spreadsheet_id"].(string)
-	sheetName, _ := node.Params["sheet_name"].(string)
+func parseSheetsAction(node *Node) (string, error) {
 	action, _ := node.Params["action"].(string)
-	valuesJSON, _ := node.Params["values_json"].(string)
-
-	if spreadsheetID == "" {
-		return nil, fmt.Errorf("spreadsheet_id is required")
-	}
-	if sheetName == "" {
-		sheetName = "Sheet1"
-	}
 	action = strings.ToUpper(strings.TrimSpace(action))
 	if action == "" {
 		action = "APPEND"
 	}
-
-	// Resolve Service Account JSON key (prioritize Vault credential)
-	saJSON := directSA
-	var accessToken string
-	var useOAuth2 bool
-
-	if credID != "" && ctx.RefreshCredential != nil {
-		secret, err := ctx.RefreshCredential(credID)
-		if err == nil && secret != "" {
-			if !strings.HasPrefix(strings.TrimSpace(secret), "{") {
-				accessToken = secret
-				useOAuth2 = true
-			} else {
-				saJSON = secret
-			}
-		}
-	} else if credID != "" {
-		ctx.mu.RLock()
-		decrypted, ok := ctx.Credentials[credID]
-		ctx.mu.RUnlock()
-		if ok && decrypted != "" {
-			if !strings.HasPrefix(strings.TrimSpace(decrypted), "{") {
-				accessToken = decrypted
-				useOAuth2 = true
-			} else {
-				saJSON = decrypted
-			}
-		}
+	if action != "APPEND" && action != "READ" {
+		return "", fmt.Errorf("unsupported Google Sheets action: %s", action)
 	}
-
-	httpClient := &http.Client{Timeout: 10 * time.Second}
-
-	if !useOAuth2 {
-		if strings.TrimSpace(saJSON) == "" {
-			return nil, fmt.Errorf("service_account_json is empty (please set it directly or select a valid credential)")
-		}
-
-		// 2. Generate Google OAuth2 Token using JWT config
-		jwtConfig, err := google.JWTConfigFromJSON([]byte(saJSON), "https://www.googleapis.com/auth/spreadsheets")
-		if err != nil {
-			return nil, fmt.Errorf("invalid service account JSON: %w", err)
-		}
-
-		ts := jwtConfig.TokenSource(context.Background())
-		token, err := ts.Token()
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate OAuth2 token: %w", err)
-		}
-		accessToken = token.AccessToken
-	}
-
-	// 3. Perform REST requests
-	if action == "APPEND" {
-		if strings.TrimSpace(valuesJSON) == "" {
-			return nil, fmt.Errorf("values_json array is empty")
-		}
-
-		var values []interface{}
-		if err := json.Unmarshal([]byte(valuesJSON), &values); err != nil {
-			// Fallback: parse as single string if it's not a JSON array
-			values = []interface{}{valuesJSON}
-		}
-
-		// Google Sheets API expects a 2D array: [ [col1, col2, ...] ]
-		payload := map[string]interface{}{
-			"values": [][]interface{}{values},
-		}
-		payloadBytes, err := json.Marshal(payload)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal payload: %w", err)
-		}
-
-		url := fmt.Sprintf("https://sheets.googleapis.com/v4/spreadsheets/%s/values/%s:append?valueInputOption=USER_ENTERED",
-			spreadsheetID, sheetName)
-
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(payloadBytes))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create http request: %w", err)
-		}
-		req.Header.Set("Authorization", "Bearer "+accessToken)
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("http request failed: %w", err)
-		}
-		defer resp.Body.Close()
-
-		respBytes, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("Google Sheets API error (status %d): %s", resp.StatusCode, string(respBytes))
-		}
-
-		var apiResult map[string]interface{}
-		_ = json.Unmarshal(respBytes, &apiResult)
-
-		return apiResult, nil
-	} else if action == "READ" {
-		url := fmt.Sprintf("https://sheets.googleapis.com/v4/spreadsheets/%s/values/%s", spreadsheetID, sheetName)
-
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create http request: %w", err)
-		}
-		req.Header.Set("Authorization", "Bearer "+accessToken)
-
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("http request failed: %w", err)
-		}
-		defer resp.Body.Close()
-
-		respBytes, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("Google Sheets API error (status %d): %s", resp.StatusCode, string(respBytes))
-		}
-
-		var apiResult map[string]interface{}
-		_ = json.Unmarshal(respBytes, &apiResult)
-
-		return apiResult, nil
-	}
-
-	return nil, fmt.Errorf("unsupported Google Sheets action: %s", action)
+	return action, nil
 }
 
-func (e *GoogleSheetsExecutor) Validate(node *Node) error {
+func parseSheetsValues(raw interface{}) ([]interface{}, error) {
+	if raw == nil {
+		return nil, fmt.Errorf("values_json array is empty")
+	}
+	var values []interface{}
+	switch typed := raw.(type) {
+	case []interface{}:
+		values = typed
+	case string:
+		text := strings.TrimSpace(typed)
+		if text == "" {
+			return nil, fmt.Errorf("values_json array is empty")
+		}
+		if len(text) > maxSheetsValuesBytes {
+			return nil, fmt.Errorf("values_json exceeds %d byte limit", maxSheetsValuesBytes)
+		}
+		if err := json.Unmarshal([]byte(text), &values); err != nil {
+			return nil, fmt.Errorf("values_json must be a valid JSON array: %w", err)
+		}
+	default:
+		encoded, err := json.Marshal(raw)
+		if err != nil {
+			return nil, fmt.Errorf("values_json could not be encoded: %w", err)
+		}
+		if len(encoded) > maxSheetsValuesBytes {
+			return nil, fmt.Errorf("values_json exceeds %d byte limit", maxSheetsValuesBytes)
+		}
+		if err := json.Unmarshal(encoded, &values); err != nil {
+			return nil, fmt.Errorf("values_json must resolve to a JSON array")
+		}
+	}
+	if len(values) == 0 {
+		return nil, fmt.Errorf("values_json array is empty")
+	}
+	if len(values) > maxSheetsValuesCount {
+		return nil, fmt.Errorf("values_json contains %d values; maximum is %d", len(values), maxSheetsValuesCount)
+	}
+	encoded, err := json.Marshal(values)
+	if err != nil || len(encoded) > maxSheetsValuesBytes {
+		return nil, fmt.Errorf("values_json exceeds %d byte limit", maxSheetsValuesBytes)
+	}
+	return values, nil
+}
+
+func validateGoogleSheetsNode(node *Node) error {
 	spreadsheetID, _ := node.Params["spreadsheet_id"].(string)
 	if strings.TrimSpace(spreadsheetID) == "" {
 		return fmt.Errorf("spreadsheet_id is required")
 	}
-	return nil
+	if strings.ContainsAny(spreadsheetID, "\r\n") || len(spreadsheetID) > 512 {
+		return fmt.Errorf("spreadsheet_id is invalid")
+	}
+	sheetName, _ := node.Params["sheet_name"].(string)
+	if len(sheetName) > 1024 || strings.ContainsAny(sheetName, "\r\n") {
+		return fmt.Errorf("sheet_name is invalid")
+	}
+	action, err := parseSheetsAction(node)
+	if err != nil {
+		return err
+	}
+	credentialID, _ := node.Params["credential_id"].(string)
+	directSA, _ := node.Params["service_account_json"].(string)
+	if strings.TrimSpace(credentialID) == "" && strings.TrimSpace(directSA) == "" {
+		return fmt.Errorf("Google Sheets requires an encrypted credential or service_account_json")
+	}
+	if action == "APPEND" {
+		if text, ok := node.Params["values_json"].(string); ok && containsTemplateExpression(text) {
+			return nil
+		}
+		_, err = parseSheetsValues(node.Params["values_json"])
+	}
+	return err
 }
+
+func (e *GoogleSheetsExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
+	if err := validateGoogleSheetsNode(node); err != nil {
+		return nil, err
+	}
+	spreadsheetID, _ := node.Params["spreadsheet_id"].(string)
+	sheetName, _ := node.Params["sheet_name"].(string)
+	if strings.TrimSpace(sheetName) == "" {
+		sheetName = "Sheet1"
+	}
+	action, _ := parseSheetsAction(node)
+	material, err := resolveGoogleAuth(ctx, node)
+	if err != nil {
+		return nil, err
+	}
+	accessToken, err := googleAccessToken(ctx.Context, material, "https://www.googleapis.com/auth/spreadsheets")
+	if err != nil {
+		return nil, err
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	base := "https://sheets.googleapis.com/v4/spreadsheets/" + url.PathEscape(strings.TrimSpace(spreadsheetID)) + "/values/" + url.PathEscape(sheetName)
+
+	if action == "APPEND" {
+		values, err := parseSheetsValues(node.Params["values_json"])
+		if err != nil {
+			return nil, err
+		}
+		payloadBytes, err := json.Marshal(map[string]interface{}{"values": [][]interface{}{values}})
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal Google Sheets payload: %w", err)
+		}
+		req, err := http.NewRequestWithContext(ctx.Context, http.MethodPost, base+":append?valueInputOption=USER_ENTERED", bytes.NewReader(payloadBytes))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Google Sheets request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		req.Header.Set("Content-Type", "application/json")
+		return doGoogleJSONRequest(client, req, http.StatusOK)
+	}
+	req, err := http.NewRequestWithContext(ctx.Context, http.MethodGet, base, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Google Sheets request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	return doGoogleJSONRequest(client, req, http.StatusOK)
+}
+
+func doGoogleJSONRequest(client *http.Client, req *http.Request, successCodes ...int) (map[string]interface{}, error) {
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Google API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := readNodeResponseBody(resp, maxGoogleAPIResponseBytes)
+	if err != nil {
+		return nil, fmt.Errorf("Google API %w", err)
+	}
+	success := false
+	for _, code := range successCodes {
+		if resp.StatusCode == code {
+			success = true
+			break
+		}
+	}
+	if !success {
+		return nil, fmt.Errorf("Google API error (status %d): %s", resp.StatusCode, boundedNodeErrorText(body))
+	}
+	var result map[string]interface{}
+	if len(strings.TrimSpace(string(body))) == 0 {
+		return map[string]interface{}{}, nil
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("Google API returned invalid JSON: %w", err)
+	}
+	return result, nil
+}
+
+func (e *GoogleSheetsExecutor) Validate(node *Node) error { return validateGoogleSheetsNode(node) }
 
 func (e *GoogleSheetsExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
-		Type:        TypeGoogleSheets,
-		Name:        "Google Sheets",
-		Description: "Reads from or appends rows to Google Sheets using a service account",
-		Icon:        "Table",
-		Category:    "COMMUNICATION",
-		Retryable:   true,
+		Type: TypeGoogleSheets, Name: "Google Sheets", Description: "Reads from or appends a bounded row to Google Sheets", Icon: "Table", Category: "COMMUNICATION", Retryable: true,
 		Params: []ParamDefinition{
-			{
-				Name:        "credential_id",
-				Label:       "Select Encrypted Credential",
-				Type:        "credential",
-				Required:    false,
-				Description: "Select an encrypted service account JSON credential from the vault",
-			},
-			{
-				Name:        "service_account_json",
-				Label:       "Service Account JSON Key",
-				Type:        "textarea",
-				Required:    false,
-				Description: "Paste the service account JSON key directly if not using the vault",
-			},
-			{
-				Name:        "spreadsheet_id",
-				Label:       "Spreadsheet ID",
-				Type:        "text",
-				Required:    true,
-				Description: "Spreadsheet ID from the Google Sheets URL",
-			},
-			{
-				Name:        "sheet_name",
-				Label:       "Sheet Name / Range",
-				Type:        "text",
-				Default:     "Sheet1",
-				Required:    true,
-				Description: "Sheet name or range, for example Sheet1 or Sheet1!A:C",
-			},
-			{
-				Name:        "action",
-				Label:       "Action",
-				Type:        "select",
-				Default:     "APPEND",
-				Options:     []string{"APPEND", "READ"},
-				Required:    true,
-				Description: "Choose APPEND to add rows or READ to fetch data",
-			},
-			{
-				Name:        "values_json",
-				Label:       "Values Array (For APPEND)",
-				Type:        "textarea",
-				Default:     "[\n  \"Value 1\",\n  \"Value 2\"\n]",
-				Required:    false,
-				Description: "JSON array of column values. Supports placeholders such as {{trigger.name}}.",
-			},
+			{Name: "credential_id", Label: "Select Encrypted Credential", Type: "credential", Required: false, Description: "Encrypted Google OAuth2 access token or service account JSON"},
+			{Name: "service_account_json", Label: "Service Account JSON Key (legacy)", Type: "textarea", Required: false, Description: "Legacy inline service account JSON. Prefer an encrypted credential."},
+			{Name: "spreadsheet_id", Label: "Spreadsheet ID", Type: "text", Required: true, Description: "Spreadsheet ID from the Google Sheets URL"},
+			{Name: "sheet_name", Label: "Sheet Name / Range", Type: "text", Default: "Sheet1", Required: true, Description: "Sheet name or range, for example Sheet1 or Sheet1!A:C"},
+			{Name: "action", Label: "Action", Type: "select", Default: "APPEND", Options: []string{"APPEND", "READ"}, Required: true, Description: "Choose APPEND to add one row or READ to fetch data"},
+			{Name: "values_json", Label: "Values Array (For APPEND)", Type: "textarea", Default: "[\n  \"Value 1\",\n  \"Value 2\"\n]", Required: false, Description: "Valid JSON array of up to 1,000 column values. Supports placeholders."},
 		},
 	}
 }
