@@ -42,8 +42,19 @@ func NewHTTPRequestExecutorWithClient(client *http.Client) *HTTPRequestExecutor 
 	return &HTTPRequestExecutor{client: &bounded}
 }
 
+func declaredHTTPResponseContract(params map[string]interface{}) (interface{}, bool) {
+	raw, ok := params["response_contract"]
+	if !ok || raw == nil {
+		return nil, false
+	}
+	if text, ok := raw.(string); ok && strings.TrimSpace(text) == "" {
+		return nil, false
+	}
+	return raw, true
+}
+
 func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
-	_, strictContract := node.Params["response_contract"]
+	contractRaw, strictContract := declaredHTTPResponseContract(node.Params)
 	urlStr, _ := node.Params["url"].(string)
 	method, _ := node.Params["method"].(string)
 	method = strings.ToUpper(strings.TrimSpace(method))
@@ -120,7 +131,7 @@ func (e *HTTPRequestExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 	}
 
 	var jsonResult interface{}
-	if contractRaw, declared := node.Params["response_contract"]; declared {
+	if strictContract {
 		contract, err := jsoncontract.Parse(contractRaw)
 		if err != nil {
 			return nil, fmt.Errorf("invalid response_contract: %w", err)
@@ -171,7 +182,7 @@ func (e *HTTPRequestExecutor) Validate(node *Node) error {
 	if method != "" && !allowedHTTPMethod(method) {
 		return fmt.Errorf("HTTP method %q is not supported", method)
 	}
-	if raw, ok := node.Params["response_contract"]; ok {
+	if raw, ok := declaredHTTPResponseContract(node.Params); ok {
 		if _, err := jsoncontract.Parse(raw); err != nil {
 			return err
 		}
