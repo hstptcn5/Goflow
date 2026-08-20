@@ -34,17 +34,17 @@ type aiReviewFinding struct {
 }
 
 type aiReviewResult struct {
-	Summary                  string                 `json:"summary"`
-	Scores                   map[string]int         `json:"scores"`
-	Findings                 []aiReviewFinding      `json:"findings"`
-	ProposalSummary          string                 `json:"proposal_summary,omitempty"`
-	ExpectedImprovement      string                 `json:"expected_improvement,omitempty"`
-	ProposedWorkflow         *workflowDraft         `json:"proposed_workflow,omitempty"`
-	ProposalValidated        bool                   `json:"proposal_validated"`
-	ProposalValidationIssues []string               `json:"proposal_validation_issues,omitempty"`
-	Provider                 string                 `json:"provider"`
-	Model                    string                 `json:"model"`
-	Mode                     string                 `json:"mode"`
+	Summary                  string            `json:"summary"`
+	Scores                   map[string]int    `json:"scores"`
+	Findings                 []aiReviewFinding `json:"findings"`
+	ProposalSummary          string            `json:"proposal_summary,omitempty"`
+	ExpectedImprovement      string            `json:"expected_improvement,omitempty"`
+	ProposedWorkflow         *workflowDraft    `json:"proposed_workflow,omitempty"`
+	ProposalValidated        bool              `json:"proposal_validated"`
+	ProposalValidationIssues []string          `json:"proposal_validation_issues,omitempty"`
+	Provider                 string            `json:"provider"`
+	Model                    string            `json:"model"`
+	Mode                     string            `json:"mode"`
 }
 
 func strictAIReviewProvider(cred *storage.Credential) (endpoint, model, provider string, ok bool) {
@@ -157,8 +157,8 @@ func boundedReviewJSON(value interface{}) string {
 	}
 	preview := string(raw[:maxAIReviewContextBytes])
 	wrapped, _ := json.Marshal(map[string]interface{}{
-		"truncated":       true,
-		"original_bytes":  len(raw),
+		"truncated":        true,
+		"original_bytes":   len(raw),
 		"redacted_preview": preview,
 	})
 	return string(wrapped)
@@ -171,12 +171,12 @@ func (h *AIHandler) compactReviewDefinitions() []map[string]interface{} {
 		params := make([]map[string]interface{}, 0, len(def.Params))
 		for _, param := range def.Params {
 			params = append(params, map[string]interface{}{
-				"name":                  param.Name,
-				"type":                  param.Type,
-				"required":              param.Required,
-				"options":               param.Options,
-				"credential_kinds":      param.CredentialKinds,
-				"credential_providers":  param.CredentialProviders,
+				"name":                 param.Name,
+				"type":                 param.Type,
+				"required":             param.Required,
+				"options":              param.Options,
+				"credential_kinds":     param.CredentialKinds,
+				"credential_providers": param.CredentialProviders,
 			})
 		}
 		out = append(out, map[string]interface{}{
