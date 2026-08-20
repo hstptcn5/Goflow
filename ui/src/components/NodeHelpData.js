@@ -1,243 +1,248 @@
 export const nodeHelpMap = {
   webhookTrigger: {
-    title: "Webhook Trigger",
-    desc: "Starts workflow execution when Goflow receives an incoming HTTP POST request at `/webhook/{workflowId}`.",
-    inputs: "None.",
+    title: 'Kích hoạt Webhook',
+    desc: 'Khởi chạy workflow khi Goflow nhận yêu cầu HTTP tại endpoint webhook của workflow.',
+    inputs: '- Đường dẫn webhook (tùy chọn)\n- Secret webhook (khuyến nghị nếu endpoint được public)',
     output: `{
   "headers": { "Content-Type": "application/json" },
   "query": { "source": "api" },
   "body": { "event": "user_signup" }
-}`
+}`,
   },
   cronTrigger: {
-    title: "Cron Trigger",
-    desc: "Triggers workflow automatically based on standard Cron expression schedule.",
-    inputs: "- Cron Expression: Cron pattern (e.g. */5 * * * * for every 5 mins)",
+    title: 'Lịch Cron',
+    desc: 'Khởi chạy workflow tự động theo lịch Cron chuẩn.',
+    inputs: '- Biểu thức Cron, ví dụ */5 * * * * để chạy mỗi 5 phút',
     output: `{
   "triggered_at": "2026-07-23T08:00:00Z",
   "schedule": "*/5 * * * *"
-}`
+}`,
   },
   githubWebhook: {
-    title: "GitHub Webhook Trigger",
-    desc: "Listens to GitHub repository events with HMAC SHA-256 webhook signature verification.",
-    inputs: "- Secret: GitHub webhook secret token",
+    title: 'Webhook GitHub',
+    desc: 'Nhận sự kiện từ GitHub và hỗ trợ xác minh chữ ký webhook HMAC SHA-256.',
+    inputs: '- Secret webhook GitHub',
     output: `{
   "event": "push",
-  "payload": {
-    "ref": "refs/heads/main",
-    "repository": { "name": "goflow" }
-  }
-}`
+  "payload": { "ref": "refs/heads/main" }
+}`,
+  },
+  sourcePolicy: {
+    title: 'Chính sách nguồn',
+    desc: 'Kiểm tra nguồn dữ liệu trước khi cho phép workflow xử lý tiếp. Dùng node này để ghi rõ loại nguồn, mức rủi ro và cách sử dụng được phép.',
+    inputs: '- URL hoặc thông tin nguồn\n- Loại nguồn / chính sách áp dụng\n- Metadata cần kiểm tra',
+    output: `{
+  "allowed": true,
+  "source_type": "official_api",
+  "risk": "low"
+}`,
+  },
+  aiExtract: {
+    title: 'AI Trích xuất',
+    desc: 'Dùng OpenAI hoặc DeepSeek để biến văn bản/JSON đầu vào thành dữ liệu có cấu trúc theo schema.',
+    inputs: '- Nhà cung cấp: OpenAI hoặc DeepSeek\n- Credential đã mã hóa đúng nhà cung cấp\n- Đầu vào\n- Yêu cầu trích xuất\n- JSON Schema',
+    output: `{
+  "data": { "field": "value" },
+  "provider": "deepseek"
+}`,
+  },
+  zaloOA: {
+    title: 'Zalo OA',
+    desc: 'Gửi tin nhắn qua Zalo Official Account. Cần credential/token Zalo hợp lệ.',
+    inputs: '- Credential Zalo OA\n- Người nhận / target\n- Nội dung tin nhắn',
+    output: `{
+  "status": "sent"
+}`,
   },
   postgresQuery: {
-    title: "PostgreSQL Query",
-    desc: "Executes raw SQL query scripts against external PostgreSQL database.",
-    inputs: "- Connection URI: postgres://user:pass@host:5432/db\n- Query: SQL command",
+    title: 'Truy vấn PostgreSQL',
+    desc: 'Chạy câu lệnh SQL trên PostgreSQL bên ngoài.',
+    inputs: '- Connection URI\n- Câu lệnh SQL',
     output: `{
-  "rows": [
-    { "id": 1, "name": "Alice", "role": "admin" }
-  ],
+  "rows": [{ "id": 1, "name": "Alice" }],
   "rows_affected": 1
-}`
+}`,
   },
   mysqlQuery: {
-    title: "MySQL Query",
-    desc: "Executes raw SQL query scripts against remote MySQL database.",
-    inputs: "- Connection URI: user:pass@tcp(host:3306)/db\n- Query: SQL command",
+    title: 'Truy vấn MySQL',
+    desc: 'Chạy câu lệnh SQL trên MySQL từ xa.',
+    inputs: '- Connection URI\n- Câu lệnh SQL',
     output: `{
-  "rows": [
-    { "id": 1, "name": "Alice" }
-  ],
+  "rows": [{ "id": 1, "name": "Alice" }],
   "rows_affected": 1
-}`
+}`,
   },
   mongodbCommand: {
-    title: "MongoDB Command",
-    desc: "Runs collection operations (FindOne, InsertOne, UpdateOne, DeleteOne) on MongoDB.",
-    inputs: "- Connection URI: mongodb://host:27017\n- Database & Collection names\n- Query JSON: raw query settings",
+    title: 'Lệnh MongoDB',
+    desc: 'Chạy các thao tác FindOne, InsertOne, UpdateOne hoặc DeleteOne trên MongoDB.',
+    inputs: '- Connection URI\n- Database và collection\n- Query JSON',
     output: `{
   "matched_count": 1,
-  "modified_count": 1,
-  "data": { "name": "Alice" }
-}`
+  "modified_count": 1
+}`,
   },
   redisCommand: {
-    title: "Redis Command",
-    desc: "Interacts with Redis key-value store database.",
-    inputs: "- Address & Password\n- Command: GET, SET, DEL, HGET, HSET, LPUSH, LPOP\n- Key & optional Value parameters",
+    title: 'Lệnh Redis',
+    desc: 'Đọc hoặc ghi dữ liệu trong Redis.',
+    inputs: '- Địa chỉ và mật khẩu\n- Lệnh GET, SET, DEL, HGET, HSET, LPUSH, LPOP\n- Key và value nếu cần',
     output: `{
   "command": "GET",
   "key": "user:99",
-  "result": "{\\"name\\": \\"Alice\\"}"
-}`
+  "result": "value"
+}`,
   },
   googleSheets: {
-    title: "Google Sheets",
-    desc: "Appends rows or reads spreadsheet ranges via Google Service Account or OAuth2.",
-    inputs: "- Credential ID\n- Spreadsheet ID\n- Range: Sheet1!A1:D\n- Operation: Read, Append\n- Values JSON: e.g. [[\"Alice\", \"Engineer\"]]",
+    title: 'Google Sheets',
+    desc: 'Đọc hoặc thêm dòng vào Google Sheets. Nên dùng credential đã mã hóa thay vì dán Service Account JSON trực tiếp vào node.',
+    inputs: '- Credential\n- Spreadsheet ID\n- Tên sheet / phạm vi\n- Thao tác READ hoặc APPEND\n- Mảng giá trị JSON',
     output: `{
   "range": "Sheet1!A1:B2",
   "values": [["Name", "Role"], ["Alice", "Engineer"]]
-}`
+}`,
   },
   googleDrive: {
-    title: "Google Drive",
-    desc: "Uploads files or lists directories inside Google Drive workspace.",
-    inputs: "- Credential ID\n- Operation: ListFiles, UploadFile\n- Filename & Text file content",
+    title: 'Google Drive',
+    desc: 'Liệt kê tệp hoặc tải tệp lên Google Drive.',
+    inputs: '- Credential\n- Thao tác\n- Tên tệp và nội dung nếu tải lên',
     output: `{
   "file_id": "19c8828b812b...",
-  "name": "report.txt",
-  "webViewLink": "https://drive.google.com/..."
-}`
+  "name": "report.txt"
+}`,
   },
   gmailREST: {
-    title: "Gmail REST",
-    desc: "Sends HTML rich email using the official Google Gmail REST API.",
-    inputs: "- Credential ID\n- To: recipient email address\n- Subject: email title\n- Body HTML: HTML content",
+    title: 'Gmail REST',
+    desc: 'Gửi email qua Gmail REST API.',
+    inputs: '- Credential\n- Email người nhận\n- Tiêu đề\n- Nội dung HTML',
     output: `{
   "message_id": "18c8d8c227cc8f8f",
   "status": "SENT"
-}`
+}`,
   },
   notionPage: {
-    title: "Notion Page",
-    desc: "Creates database pages or updates elements in Notion databases.",
-    inputs: "- Credential ID (Notion Token)\n- Database ID\n- Title & custom properties JSON schema",
+    title: 'Trang Notion',
+    desc: 'Tạo hoặc cập nhật trang trong database Notion.',
+    inputs: '- Credential Notion\n- Database ID\n- Tiêu đề và properties JSON',
     output: `{
   "page_id": "c8e88bb8-2a88-4c88-88aa-8ff288ccee12",
-  "url": "https://notion.so/...",
   "status": "CREATED"
-}`
+}`,
   },
   emailSMTP: {
-    title: "SMTP Email",
-    desc: "Sends rich HTML/text email using standard SMTP server configurations.",
-    inputs: "- Host & Port\n- Username & Password\n- From & To headers\n- Subject & Body content",
+    title: 'Email SMTP',
+    desc: 'Gửi email HTML/text qua máy chủ SMTP.',
+    inputs: '- Host và port\n- Tài khoản xác thực\n- From / To\n- Tiêu đề và nội dung',
     output: `{
   "status": "sent",
-  "to": "client@gmail.com",
-  "sent_at": "2026-07-23T08:15:00Z"
-}`
+  "to": "client@gmail.com"
+}`,
   },
   telegramBot: {
-    title: "Telegram Bot",
-    desc: "Sends rich notification text messages to groups or chats via Telegram API.",
-    inputs: "- Bot Token: Bot token from @BotFather\n- Chat ID: Chat ID or Group ID\n- Message: Markdown/HTML text body",
+    title: 'Telegram Bot',
+    desc: 'Gửi thông báo tới chat hoặc nhóm Telegram.',
+    inputs: '- Bot Token / credential\n- Chat ID\n- Nội dung tin nhắn',
     output: `{
   "ok": true,
-  "message_id": 887,
-  "chat_title": "Ops Alerts Group"
-}`
+  "message_id": 887
+}`,
   },
   discordBot: {
-    title: "Discord Webhook",
-    desc: "Sends notification strings and rich embeds to Discord server channels.",
-    inputs: "- Webhook URL\n- Content: Message body\n- Username: Bot custom display name",
+    title: 'Webhook Discord',
+    desc: 'Gửi thông báo tới kênh Discord.',
+    inputs: '- Webhook URL\n- Nội dung\n- Tên bot tùy chọn',
     output: `{
   "status": "ok",
   "statusCode": 204
-}`
+}`,
   },
   slackBot: {
-    title: "Slack Webhook",
-    desc: "Sends formatted messages and blocks layout payloads to Slack channels.",
-    inputs: "- Webhook URL\n- Message: markdown or JSON blocks",
+    title: 'Webhook Slack',
+    desc: 'Gửi thông báo tới kênh Slack.',
+    inputs: '- Webhook URL\n- Tin nhắn hoặc JSON blocks',
     output: `{
   "status": "ok",
   "statusCode": 200
-}`
+}`,
   },
   jsCodeRunner: {
-    title: "JS Code Runner",
-    desc: "Executes custom JavaScript ES5 sandboxed expressions to transform variables.",
-    inputs: "- JavaScript Code block\n- Timeout (Seconds): Max execution limit (default 5s)",
-    output: "Evaluates the return value of your code, e.g.:\n{\n  \"status\": \"processed\",\n  \"total_items\": 42\n}"
+    title: 'Chạy JavaScript',
+    desc: 'Chạy JavaScript trong sandbox để biến đổi dữ liệu.',
+    inputs: '- Mã JavaScript\n- Timeout tối đa',
+    output: 'Trả về giá trị return của đoạn mã.',
   },
   subWorkflow: {
-    title: "Sub-workflow Runner",
-    desc: "Executes another child workflow sequentially or in loop parallel mode.",
-    inputs: "- Sub-workflow ID\n- Input Payload (JSON)\n- Loop mode: Run for each item in array\n- Parallel: Run concurrent goroutines\n- Concurrency Limit: max parallel runs (default 5)",
-    output: "Array of child executions returned outputs:\n[\n  { \"node_1\": { \"status\": \"ok\" } }\n]"
+    title: 'Workflow con',
+    desc: 'Chạy một workflow khác tuần tự hoặc theo từng phần tử đầu vào.',
+    inputs: '- ID workflow con\n- Payload đầu vào\n- Chế độ lặp / song song\n- Giới hạn đồng thời',
+    output: 'Mảng kết quả của các lần chạy workflow con.',
   },
   conditionIf: {
-    title: "IF / ELSE Condition",
-    desc: "Branches workflow execution graph paths based on operators comparison.",
-    inputs: "- Input Value: Source field (e.g. {{ node_id.status }})\n- Operator: equals, not_equals, contains, is_not_empty\n- Compare Value: value to compare",
+    title: 'Điều kiện IF / ELSE',
+    desc: 'Rẽ nhánh workflow theo phép so sánh.',
+    inputs: '- Giá trị đầu vào\n- Toán tử\n- Giá trị so sánh',
     output: `{
   "result": true,
-  "target_handle": "true",
-  "evaluated": "'FETCHED' equals 'FETCHED'"
-}`
+  "target_handle": "true"
+}`,
   },
   delaySleep: {
-    title: "Delay / Sleep",
-    desc: "Pauses workflow execution path for configured seconds duration.",
-    inputs: "- Delay Duration (Seconds): Pause time limit",
+    title: 'Trì hoãn',
+    desc: 'Tạm dừng nhánh workflow trong số giây được cấu hình.',
+    inputs: '- Số giây trì hoãn',
     output: `{
-  "delayed_seconds": 3,
-  "resumed_at": "2026-07-23T08:50:00Z"
-}`
+  "delayed_seconds": 3
+}`,
   },
   jsonTransform: {
-    title: "JSON Transform",
-    desc: "Parses template strings with variables to render dynamic JSON output structures.",
-    inputs: "- JSON Template: raw template text (e.g. {\"val\": \"{{ prev_node.val }}\"})",
-    output: "Returns parsed JSON object containing rendered data."
+    title: 'Biến đổi JSON',
+    desc: 'Dùng template và biến từ node trước để tạo JSON đầu ra.',
+    inputs: '- Mẫu JSON, ví dụ {"val": "{{ prev_node.val }}"}',
+    output: 'JSON đã được render và parse.',
   },
   goflowPlugin: {
-    title: "Goflow Plugin",
-    desc: "Launches external native executable binary inside `./plugins/` via JSON IPC.",
-    inputs: "- Plugin Executable Name (e.g., custom_action.exe)",
-    output: "Returns parsed JSON payload output returned by standard output (stdout)."
+    title: 'Plugin Goflow',
+    desc: 'Chạy executable trong thư mục plugins qua JSON IPC.',
+    inputs: '- Tên executable plugin',
+    output: 'JSON trả về từ stdout của plugin.',
   },
   openAIGPT: {
-    title: "OpenAI GPT",
-    desc: "Sends prompts and context to OpenAI API models.",
-    inputs: "- API Key\n- Model: gpt-4o, gpt-4-turbo, gpt-3.5-turbo\n- Prompt: user request\n- System Message: role settings",
-    output: `{
-  "choices": [
-    { "message": { "content": "AI answer..." } }
-  ]
-}`
+    title: 'OpenAI GPT',
+    desc: 'Gửi prompt và context tới OpenAI API.',
+    inputs: '- Credential OpenAI\n- Model\n- Prompt\n- System message',
+    output: 'Nội dung phản hồi của model OpenAI.',
   },
   deepseekAI: {
-    title: "DeepSeek AI",
-    desc: "Calls DeepSeek chat reasoning endpoints for cost-efficient intelligence.",
-    inputs: "- API Key\n- Model: deepseek-v4-flash, deepseek-v4-pro\n- Prompt & optional System Message",
-    output: `{
-  "choices": [
-    { "message": { "content": "AI reasoning..." } }
-  ]
-}`
+    title: 'DeepSeek AI',
+    desc: 'Gửi prompt và context tới DeepSeek API.',
+    inputs: '- Credential DeepSeek\n- Model\n- Prompt\n- System message tùy chọn',
+    output: 'Nội dung phản hồi của model DeepSeek.',
   },
   sshRunner: {
-    title: "SSH Runner",
-    desc: "Connects to remote Linux servers to execute shell terminal commands.",
-    inputs: "- Host & Port\n- Username\n- Auth Method: Password or PrivateKey\n- Password / PEM Certificate\n- Command: shell command",
+    title: 'Chạy SSH',
+    desc: 'Kết nối máy Linux từ xa để chạy lệnh shell.',
+    inputs: '- Host và port\n- Username\n- Kiểu xác thực\n- Credential\n- Lệnh shell',
     output: `{
-  "stdout": "Command output...",
+  "stdout": "...",
   "stderr": "",
   "exit_code": 0
-}`
+}`,
   },
   gitCommand: {
-    title: "Git Command",
-    desc: "Triggers local Git operations (Clone, Pull, CommitAndPush) via Git CLI.",
-    inputs: "- Repository Local Path\n- Command: Clone, Pull, CommitAndPush\n- Repo URL & optional Commit Message",
+    title: 'Lệnh Git',
+    desc: 'Chạy Clone, Pull hoặc CommitAndPush qua Git CLI.',
+    inputs: '- Đường dẫn repo\n- Lệnh Git\n- URL repo / commit message nếu cần',
     output: `{
   "output": "Already up to date.",
   "status": "success"
-}`
+}`,
   },
   httpRequest: {
-    title: "HTTP Request",
-    desc: "Sends HTTP API requests (GET, POST, PUT, DELETE) to external services.",
-    inputs: "- Method: GET, POST, etc.\n- URL: Target API endpoint\n- Headers/Body configuration",
+    title: 'Yêu cầu HTTP',
+    desc: 'Gửi GET, POST, PUT, DELETE hoặc PATCH tới dịch vụ ngoài. Output chuẩn của Goflow luôn có status_code, headers và data.',
+    inputs: '- method\n- url\n- headers (JSON)\n- body nếu cần\n- credential nếu API cần xác thực',
     output: `{
-  "status": "success",
-  "statusCode": 200,
-  "body": { ... }
-}`
-  }
+  "status_code": 200,
+  "headers": { ... },
+  "data": { ... }
+}`,
+  },
 };
