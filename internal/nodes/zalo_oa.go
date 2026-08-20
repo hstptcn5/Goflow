@@ -23,15 +23,18 @@ type ZaloOAExecutor struct {
 }
 
 func NewZaloOAExecutor() *ZaloOAExecutor {
-	return &ZaloOAExecutor{
-		client:   &http.Client{Timeout: 20 * time.Second},
-		endpoint: defaultZaloOAMessageEndpoint,
-	}
+	return &ZaloOAExecutor{client: &http.Client{Timeout: 20 * time.Second}, endpoint: defaultZaloOAMessageEndpoint}
 }
 
 func NewZaloOAExecutorWithClient(client *http.Client, endpoint string) *ZaloOAExecutor {
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
+	} else {
+		bounded := *client
+		if bounded.Timeout <= 0 || bounded.Timeout > 20*time.Second {
+			bounded.Timeout = 20 * time.Second
+		}
+		client = &bounded
 	}
 	if strings.TrimSpace(endpoint) == "" {
 		endpoint = defaultZaloOAMessageEndpoint
@@ -87,10 +90,7 @@ func (e *ZaloOAExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}
 	}
 
 	return map[string]interface{}{
-		"ok":         true,
-		"user_id":    userID,
-		"message_id": zaloOAMessageID(result),
-		"response":   result,
+		"ok": true, "user_id": userID, "message_id": zaloOAMessageID(result), "response": result,
 	}, nil
 }
 
@@ -104,14 +104,15 @@ func zaloOARequestParams(ctx *ExecutionContext, node *Node, defaultEndpoint stri
 	credentialID, _ := node.Params["credential_id"].(string)
 	userID, _ := node.Params["user_id"].(string)
 	message, _ := node.Params["message"].(string)
-	endpoint, _ := node.Params["endpoint"].(string)
+	nodeEndpoint, _ := node.Params["endpoint"].(string)
 	accessToken = strings.TrimSpace(accessToken)
 	credentialID = strings.TrimSpace(credentialID)
 	userID = strings.TrimSpace(userID)
 	message = strings.TrimSpace(message)
-	endpoint = strings.TrimSpace(endpoint)
+	nodeEndpoint = strings.TrimSpace(nodeEndpoint)
+	endpoint := nodeEndpoint
 	if endpoint == "" {
-		endpoint = defaultEndpoint
+		endpoint = strings.TrimSpace(defaultEndpoint)
 	}
 	if credentialID != "" {
 		if ctx == nil {
@@ -139,6 +140,14 @@ func zaloOARequestParams(ctx *ExecutionContext, node *Node, defaultEndpoint stri
 	parsed, err := url.Parse(endpoint)
 	if err != nil || !parsed.IsAbs() || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return "", "", "", "", fmt.Errorf("Zalo OA endpoint must be an absolute http/https URL")
+	}
+	// A workflow-level endpoint override receives the OA access token. Restrict it
+	// to the official HTTPS host so a crafted workflow cannot exfiltrate credentials.
+	// Test executors can still inject a local endpoint through the constructor.
+	if nodeEndpoint != "" {
+		if !strings.EqualFold(parsed.Scheme, "https") || !strings.EqualFold(parsed.Hostname(), "openapi.zalo.me") {
+			return "", "", "", "", fmt.Errorf("Zalo OA endpoint override must use https://openapi.zalo.me")
+		}
 	}
 	return accessToken, userID, message, endpoint, nil
 }
@@ -188,18 +197,13 @@ func zaloOAMessageID(result map[string]interface{}) interface{} {
 
 func (e *ZaloOAExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
-		Type:        TypeZaloOA,
-		Name:        "Zalo OA",
-		Description: "Sends a text message through the Zalo Official Account OpenAPI customer-service endpoint",
-		Icon:        "MessageCircle",
-		Category:    "COMMUNICATION",
-		Retryable:   false,
+		Type: TypeZaloOA, Name: "Zalo OA", Description: "Sends a text message through the Zalo Official Account OpenAPI customer-service endpoint", Icon: "MessageCircle", Category: "COMMUNICATION", Retryable: false,
 		Params: []ParamDefinition{
-			{Name: "access_token", Label: "OA Access Token", Type: "text", Default: "", Required: false, Description: "Prefer an encrypted credential instead of pasting a token"},
-			{Name: "credential_id", Label: "OA Access Token Credential", Type: "credential", Default: "", Required: false, Description: "Choose a compatible API key or bearer token credential. Provider metadata is optional.", CredentialKinds: []string{"BEARER_TOKEN", "API_KEY"}},
-			{Name: "user_id", Label: "Recipient Zalo User ID (from OA webhook/callback)", Type: "text", Required: true, Description: "Zalo-scoped recipient user_id received from an Official Account webhook/callback after the user interacts with the OA. This is not a phone number, OA ID, or App ID. Recipient eligibility still follows current Zalo OA messaging and quota rules."},
+			{Name: "access_token", Label: "OA Access Token (legacy)", Type: "password", Default: "", Required: false, Description: "Legacy direct token. Prefer an encrypted credential."},
+			{Name: "credential_id", Label: "OA Access Token Credential", Type: "credential", Default: "", Required: false, Description: "Choose a compatible API key or bearer token credential.", CredentialKinds: []string{"BEARER_TOKEN", "API_KEY"}, CredentialProviders: []string{"zalo", "zalo_oa"}},
+			{Name: "user_id", Label: "Recipient Zalo User ID (from OA webhook/callback)", Type: "text", Required: true, Description: "Zalo-scoped recipient user_id received from an Official Account webhook/callback after the user interacts with the OA. This is not a phone number, OA ID, or App ID."},
 			{Name: "message", Label: "Message", Type: "textarea", Required: true, Description: "Plain text, maximum 2,000 characters"},
-			{Name: "endpoint", Label: "OA Message Endpoint", Type: "text", Default: defaultZaloOAMessageEndpoint, Required: true, Description: "Advanced override for future OA OpenAPI endpoint changes or controlled testing"},
+			{Name: "endpoint", Label: "OA Message Endpoint", Type: "text", Default: defaultZaloOAMessageEndpoint, Required: true, Description: "Official Zalo OA OpenAPI endpoint. Workflow overrides are restricted to openapi.zalo.me."},
 		},
 	}
 }
