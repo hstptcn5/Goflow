@@ -70,7 +70,7 @@ test('DailyOps appliance completes real setup and execution with mocked Telegram
 
   await page.getByLabel('Source URL').fill(sourceURL);
   await page.getByRole('button', { name: 'Kiểm tra nguồn' }).click();
-  await expect(page.getByText('7 required fields valid')).toBeVisible();
+  await expect(page.getByText('7 trường bắt buộc hợp lệ')).toBeVisible();
   await expect(page.getByText('Hợp lệ', { exact: true }).first()).toBeVisible();
 
   await page.getByLabel('Telegram chat ID').fill('@inaccessible_dailyops_e2e');
