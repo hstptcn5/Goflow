@@ -184,8 +184,8 @@ export const api = {
     const res = await customFetch(`${API_BASE}/ai/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        messages, 
+      body: JSON.stringify({
+        messages,
         credential_id: credentialId,
         current_nodes: currentNodes,
         current_edges: currentEdges
@@ -202,16 +202,35 @@ export const api = {
     const res = await customFetch(`${API_BASE}/ai/configure-node`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        node_type: nodeType, 
-        prompt: prompt, 
-        current_params: currentParams, 
-        credential_id: credentialId 
+      body: JSON.stringify({
+        node_type: nodeType,
+        prompt: prompt,
+        current_params: currentParams,
+        credential_id: credentialId
       }),
     });
     if (!res.ok) {
       const errText = await res.text();
       throw new Error(errText || 'Failed to configure node with AI');
+    }
+    return res.json();
+  },
+
+  async reviewAIWorkflow(mode, credentialId, workflow, execution = null, focus = '') {
+    const res = await customFetch(`${API_BASE}/ai/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode,
+        credential_id: credentialId,
+        workflow,
+        execution,
+        focus,
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(errText || 'Failed to review workflow with AI');
     }
     return res.json();
   },
