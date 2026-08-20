@@ -59,6 +59,22 @@ func TestBoundedReviewJSONRedactsSensitiveValues(t *testing.T) {
 	}
 }
 
+func TestBuildAIReviewMessagesRedactsHumanFocus(t *testing.T) {
+	handler := newTestAIHandler(t)
+	messages := handler.buildAIReviewMessages(aiReviewRequest{
+		Mode:     "workflow",
+		Focus:    "Optimize this output; api_key=super-secret-review-focus",
+		Workflow: validReviewerWorkflow(),
+	})
+	encoded, _ := json.Marshal(messages)
+	if strings.Contains(string(encoded), "super-secret-review-focus") {
+		t.Fatalf("review focus leaked a secret: %s", string(encoded))
+	}
+	if !strings.Contains(string(encoded), "[REDACTED]") {
+		t.Fatalf("expected redaction marker in reviewer focus: %s", string(encoded))
+	}
+}
+
 func validReviewerWorkflow() workflowDraft {
 	return workflowDraft{
 		Name: "Review target",
