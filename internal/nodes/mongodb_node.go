@@ -18,36 +18,81 @@ type MongoDBCommandExecutor struct{}
 
 func NewMongoDBCommandExecutor() *MongoDBCommandExecutor { return &MongoDBCommandExecutor{} }
 
-func parseMongoCommandNode(node *Node) (command string, filter, document bson.M, err error) {
-	dbName, _ := node.Params["database"].(string)
-	collectionName, _ := node.Params["collection"].(string)
-	if strings.TrimSpace(dbName) == "" || strings.TrimSpace(collectionName) == "" {
-		return "", nil, nil, fmt.Errorf("database and collection parameters are required")
-	}
-	command, _ = node.Params["command"].(string)
+func mongoCommandName(node *Node) (string, error) {
+	command, _ := node.Params["command"].(string)
 	command = strings.ToUpper(strings.TrimSpace(command))
 	if command == "" {
 		command = "FIND_ONE"
 	}
 	switch command {
 	case "FIND_ONE", "INSERT_ONE", "UPDATE_ONE", "DELETE_ONE":
+		return command, nil
 	default:
-		return "", nil, nil, fmt.Errorf("unsupported MongoDB command: %s", command)
+		return "", fmt.Errorf("unsupported MongoDB command: %s", command)
 	}
-	filter = bson.M{}
-	document = bson.M{}
-	for name, target := range map[string]*bson.M{"filter_json": &filter, "document_json": &document} {
-		text, _ := node.Params[name].(string)
-		text = strings.TrimSpace(text)
-		if text == "" {
-			continue
+}
+
+func validateMongoIdentity(node *Node) error {
+	dbName, _ := node.Params["database"].(string)
+	collectionName, _ := node.Params["collection"].(string)
+	if strings.TrimSpace(dbName) == "" || strings.TrimSpace(collectionName) == "" {
+		return fmt.Errorf("database and collection parameters are required")
+	}
+	if len(dbName) > 255 || len(collectionName) > 255 || strings.ContainsAny(dbName+collectionName, "\r\n\x00") {
+		return fmt.Errorf("database and collection names are invalid or too long")
+	}
+	_, err := mongoCommandName(node)
+	return err
+}
+
+func parseMongoJSONParam(raw interface{}, name string) (bson.M, error) {
+	if raw == nil {
+		return bson.M{}, nil
+	}
+	if structured, ok := raw.(map[string]interface{}); ok {
+		encoded, err := json.Marshal(structured)
+		if err != nil {
+			return nil, fmt.Errorf("MongoDB %s could not be encoded: %w", name, err)
 		}
-		if len(text) > maxMongoJSONBytes {
-			return "", nil, nil, fmt.Errorf("MongoDB %s exceeds %d byte limit", name, maxMongoJSONBytes)
+		if len(encoded) > maxMongoJSONBytes {
+			return nil, fmt.Errorf("MongoDB %s exceeds %d byte limit", name, maxMongoJSONBytes)
 		}
-		if err := json.Unmarshal([]byte(text), target); err != nil {
-			return "", nil, nil, fmt.Errorf("invalid %s: %w", name, err)
+		var parsed bson.M
+		if err := json.Unmarshal(encoded, &parsed); err != nil {
+			return nil, fmt.Errorf("invalid %s: %w", name, err)
 		}
+		return parsed, nil
+	}
+	text, ok := raw.(string)
+	if !ok {
+		return nil, fmt.Errorf("MongoDB %s must resolve to a JSON object", name)
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return bson.M{}, nil
+	}
+	if len(text) > maxMongoJSONBytes {
+		return nil, fmt.Errorf("MongoDB %s exceeds %d byte limit", name, maxMongoJSONBytes)
+	}
+	var parsed bson.M
+	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
+		return nil, fmt.Errorf("invalid %s: %w", name, err)
+	}
+	return parsed, nil
+}
+
+func parseMongoCommandNode(node *Node) (command string, filter, document bson.M, err error) {
+	if err := validateMongoIdentity(node); err != nil {
+		return "", nil, nil, err
+	}
+	command, _ = mongoCommandName(node)
+	filter, err = parseMongoJSONParam(node.Params["filter_json"], "filter_json")
+	if err != nil {
+		return "", nil, nil, err
+	}
+	document, err = parseMongoJSONParam(node.Params["document_json"], "document_json")
+	if err != nil {
+		return "", nil, nil, err
 	}
 	if (command == "INSERT_ONE" || command == "UPDATE_ONE") && len(document) == 0 {
 		return "", nil, nil, fmt.Errorf("document_json is required for %s", command)
@@ -126,13 +171,27 @@ func (e *MongoDBCommandExecutor) Execute(ctx *ExecutionContext, node *Node) (int
 }
 
 func (e *MongoDBCommandExecutor) Validate(node *Node) error {
+	if err := validateMongoIdentity(node); err != nil {
+		return err
+	}
+	command, _ := mongoCommandName(node)
 	for _, name := range []string{"filter_json", "document_json"} {
-		if text, ok := node.Params[name].(string); ok && containsTemplateExpression(text) {
+		raw := node.Params[name]
+		if text, ok := raw.(string); ok && containsTemplateExpression(text) {
+			if name == "document_json" && (command == "INSERT_ONE" || command == "UPDATE_ONE") && strings.TrimSpace(text) == "" {
+				return fmt.Errorf("document_json is required for %s", command)
+			}
 			continue
 		}
+		parsed, err := parseMongoJSONParam(raw, name)
+		if err != nil {
+			return err
+		}
+		if name == "document_json" && (command == "INSERT_ONE" || command == "UPDATE_ONE") && len(parsed) == 0 {
+			return fmt.Errorf("document_json is required for %s", command)
+		}
 	}
-	_, _, _, err := parseMongoCommandNode(node)
-	return err
+	return nil
 }
 
 func (e *MongoDBCommandExecutor) GetDefinition() NodeDefinition {
