@@ -44,14 +44,14 @@ func NewTelegramBotExecutorWithClient(client *http.Client, baseURL string) *Tele
 
 func normalizeTelegramParseMode(raw string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "", "plain", "plain text", "none":
+	case "", "plain", "plain text", "none", "văn bản thường", "van ban thuong":
 		return "", nil
 	case "html":
 		return "HTML", nil
 	case "markdownv2", "markdown v2":
 		return "MarkdownV2", nil
 	default:
-		return "", fmt.Errorf("Telegram parse_mode must be Plain text, HTML, or MarkdownV2")
+		return "", fmt.Errorf("Định dạng tin nhắn Telegram phải là Văn bản thường, HTML hoặc MarkdownV2")
 	}
 }
 
@@ -230,12 +230,12 @@ func (e *TelegramBotExecutor) GetDefinition() NodeDefinition {
 			},
 			{
 				Name:        "parse_mode",
-				Label:       "Parse Mode",
+				Label:       "Định dạng tin nhắn",
 				Type:        "select",
-				Default:     "Plain text",
-				Options:     []string{"Plain text", "HTML", "MarkdownV2"},
+				Default:     "Văn bản thường",
+				Options:     []string{"Văn bản thường", "HTML", "MarkdownV2"},
 				Required:    false,
-				Description: "Plain text sends content literally. Use HTML or MarkdownV2 only when the message is intentionally formatted.",
+				Description: "Văn bản thường gửi nguyên nội dung và an toàn nhất cho output AI. Chỉ chọn HTML hoặc MarkdownV2 khi bạn chủ động định dạng tin nhắn.",
 			},
 		},
 	}
