@@ -34,7 +34,7 @@ async function waitForNewSuccess(page, previousExecutions) {
     if (succeeded) {
       await page.reload();
       await expect(page.getByRole('heading', { name: 'DailyOps REST to Telegram', level: 2 })).toBeVisible();
-      await expect(page.getByLabel('Latest execution').getByText('SUCCESS')).toBeVisible();
+      await expect(page.getByLabel('Lần chạy gần nhất').getByText('THÀNH CÔNG')).toBeVisible();
       return succeeded;
     }
     await page.waitForTimeout(500);
@@ -54,55 +54,55 @@ test('DailyOps appliance completes real setup and execution with mocked Telegram
 
   await page.goto('/workflows');
   await expect(page.getByRole('heading', { name: 'DailyOps REST to Telegram', level: 1 })).toBeVisible();
-  await expect(page.getByText('Unsigned pack integrity')).toBeVisible();
+  await expect(page.getByText('Gói chưa ký số')).toBeVisible();
 
   await page.getByLabel('Source URL').fill(sourceURL);
   await page.getByLabel('Telegram chat ID').fill(chatID);
 
   await page.getByLabel('Source URL').fill(sourceURL.replace('/dailyops.json', '/html'));
-  await page.getByRole('button', { name: 'Test source' }).click();
+  await page.getByRole('button', { name: 'Kiểm tra nguồn' }).click();
   await expect(page.getByText('The source configuration or response is invalid.')).toBeVisible();
-  await expect(page.getByText('Invalid', { exact: true })).toBeVisible();
+  await expect(page.getByText('Không hợp lệ', { exact: true })).toBeVisible();
 
   await page.getByLabel('Source URL').fill(sourceURL.replace('/dailyops.json', '/missing'));
-  await page.getByRole('button', { name: 'Test source' }).click();
+  await page.getByRole('button', { name: 'Kiểm tra nguồn' }).click();
   await expect(page.getByText('The source data does not match the required contract.')).toBeVisible();
 
   await page.getByLabel('Source URL').fill(sourceURL);
-  await page.getByRole('button', { name: 'Test source' }).click();
+  await page.getByRole('button', { name: 'Kiểm tra nguồn' }).click();
   await expect(page.getByText('7 required fields valid')).toBeVisible();
-  await expect(page.getByText('Valid', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Hợp lệ', { exact: true }).first()).toBeVisible();
 
   await page.getByLabel('Telegram chat ID').fill('@inaccessible_dailyops_e2e');
   await page.locator('input[type="password"]').fill(`000000:invalid-${tokenParts[1]}`);
-  await page.getByRole('button', { name: 'Create' }).click();
-  await page.getByRole('button', { name: 'Test Telegram' }).click();
+  await page.getByRole('button', { name: 'Tạo' }).click();
+  await page.getByRole('button', { name: 'Kiểm tra Telegram' }).click();
   await expect(page.getByText('Telegram rejected the configured bot credential.')).toBeVisible();
   await expectNoSecret(page);
 
   await page.locator('input[type="password"]').fill(fakeToken());
-  await page.getByRole('button', { name: 'Replace' }).click();
-  await expect(page.getByText('Credential saved')).toBeVisible();
+  await page.getByRole('button', { name: 'Thay thế' }).click();
+  await expect(page.getByText('Đã lưu thông tin xác thực')).toBeVisible();
   await expectNoSecret(page);
 
-  await page.getByRole('button', { name: 'Test Telegram' }).click();
+  await page.getByRole('button', { name: 'Kiểm tra Telegram' }).click();
   await expect(page.getByText('Telegram could not access the configured destination.')).toBeVisible();
 
   await page.getByLabel('Telegram chat ID').fill(chatID);
-  await page.getByRole('button', { name: 'Test Telegram' }).click();
+  await page.getByRole('button', { name: 'Kiểm tra Telegram' }).click();
   await expect(page.getByText('Bot token is valid and the configured chat is accessible.')).toBeVisible();
-  await page.getByLabel('Enable scheduled report').check();
-  await page.getByLabel('Local daily time').fill('08:05');
-  await page.getByLabel('Timezone').fill('Asia/Bangkok');
-  await page.getByRole('button', { name: 'Complete setup' }).click();
+  await page.getByLabel('Bật lịch chạy mỗi ngày').check();
+  await page.getByLabel('Giờ chạy').fill('08:05');
+  await page.getByLabel('Múi giờ').fill('Asia/Bangkok');
+  await page.getByRole('button', { name: 'Hoàn tất thiết lập' }).click();
 
   await expect(page.getByRole('heading', { name: 'DailyOps REST to Telegram', level: 2 })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Daily schedule' })).toBeVisible();
-  await expect(page.getByText('Enabled', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lịch mỗi ngày' })).toBeVisible();
+  await expect(page.getByText('Đã bật', { exact: true })).toBeVisible();
   await expect(page.getByText('Asia/Bangkok', { exact: true })).toBeVisible();
   expect(await page.getByText('Run input').count()).toBe(0);
   const beforeManual = await executionSnapshot(page);
-  await page.getByRole('button', { name: 'Run now' }).click();
+  await page.getByRole('button', { name: 'Chạy ngay' }).click();
   const manual = await waitForNewSuccess(page, beforeManual);
   expect(manual.trigger_source).toBe('ui');
   const afterManual = await executionSnapshot(page);
@@ -136,13 +136,13 @@ test('DailyOps appliance completes real setup and execution with mocked Telegram
   expect(newExecutions).toHaveLength(1);
   expect(newExecutions[0].id).toBe(succeeded.id);
   expect(newExecutions[0].trigger_source).toBe('schedule');
-  await expect(page.getByLabel('Recent executions').getByText('SUCCESS').first()).toBeVisible();
-  await page.getByRole('button', { name: 'Refresh' }).click();
+  await expect(page.getByLabel('Các lần chạy gần đây').getByText('THÀNH CÔNG').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Làm mới' }).click();
   await expect(page.getByText('"secrets_hidden": true')).toBeVisible();
   await expect(page.getByText('"credential_ids_hidden": true')).toBeVisible();
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Download diagnostics' }).click(),
+    page.getByRole('button', { name: 'Tải chẩn đoán' }).click(),
   ]);
   expect(download.suggestedFilename()).toContain('diagnostics.json');
   const stream = await download.createReadStream();
@@ -162,9 +162,9 @@ test('DailyOps appliance restart preserves setup without exposing decrypted secr
 
   await page.goto('/workflows');
   await expect(page.getByRole('heading', { name: 'DailyOps REST to Telegram', level: 2 })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Reconfigure' })).toBeVisible();
-  await expect(page.getByLabel('Latest execution').getByText('SUCCESS')).toBeVisible();
-  await expect(page.getByLabel('Recent executions').getByText('SUCCESS').first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cấu hình lại' })).toBeVisible();
+  await expect(page.getByLabel('Lần chạy gần nhất').getByText('THÀNH CÔNG')).toBeVisible();
+  await expect(page.getByLabel('Các lần chạy gần đây').getByText('THÀNH CÔNG').first()).toBeVisible();
 
   const status = await page.request.get('/api/appliance/status');
   expect(status.ok()).toBeTruthy();
@@ -194,6 +194,6 @@ test('DailyOps appliance restart preserves setup without exposing decrypted secr
   expect((await tick.json()).Triggered).toBe(true);
   const succeeded = await waitForNewSuccess(page, previousExecutions);
   expect(succeeded.trigger_source).toBe('schedule');
-  await expect(page.getByLabel('Recent executions').getByText('SUCCESS')).toHaveCount(previousExecutions.length + 1);
+  await expect(page.getByLabel('Các lần chạy gần đây').getByText('THÀNH CÔNG')).toHaveCount(previousExecutions.length + 1);
   await expectNoSecret(page);
 });
