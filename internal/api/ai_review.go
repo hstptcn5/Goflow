@@ -13,7 +13,10 @@ import (
 	"goflow/internal/storage"
 )
 
-const maxAIReviewContextBytes = 120_000
+const (
+	maxAIReviewContextBytes = 120_000
+	maxAIReviewOutputTokens = 4096
+)
 
 type aiReviewRequest struct {
 	Mode         string                 `json:"mode"`
@@ -48,6 +51,8 @@ type aiReviewResult struct {
 	Provider                 string              `json:"provider"`
 	Model                    string              `json:"model"`
 	Mode                     string              `json:"mode"`
+	Fallback                 bool                `json:"fallback,omitempty"`
+	FallbackReason           string              `json:"fallback_reason,omitempty"`
 }
 
 func strictAIReviewProvider(cred *storage.Credential) (endpoint, model, provider string, ok bool) {
@@ -86,16 +91,24 @@ func strictAIReviewProvider(cred *storage.Credential) (endpoint, model, provider
 	}
 }
 
-func callStructuredChatCompletion(endpoint, apiKey, model string, messages []map[string]string, timeout time.Duration) (string, error) {
+func structuredReviewRequestBody(provider, model string, messages []map[string]string) map[string]interface{} {
 	body := map[string]interface{}{
 		"model":       model,
 		"messages":    messages,
 		"temperature": 0.1,
+		"max_tokens":  maxAIReviewOutputTokens,
 		"response_format": map[string]interface{}{
 			"type": "json_object",
 		},
 	}
-	payload, err := json.Marshal(body)
+	if provider == "deepseek" {
+		body["thinking"] = map[string]interface{}{"type": "disabled"}
+	}
+	return body
+}
+
+func callStructuredChatCompletionOnce(endpoint, apiKey, model, provider string, messages []map[string]string, timeout time.Duration) (string, error) {
+	payload, err := json.Marshal(structuredReviewRequestBody(provider, model, messages))
 	if err != nil {
 		return "", err
 	}
@@ -137,6 +150,22 @@ func callStructuredChatCompletion(endpoint, apiKey, model string, messages []map
 	return strings.TrimSpace(decoded.Choices[0].Message.Content), nil
 }
 
+func callStructuredChatCompletion(endpoint, apiKey, model, provider string, messages []map[string]string, timeout time.Duration) (string, error) {
+	content, err := callStructuredChatCompletionOnce(endpoint, apiKey, model, provider, messages, timeout)
+	if err == nil {
+		return content, nil
+	}
+	if provider != "deepseek" || !strings.Contains(err.Error(), "phản hồi rỗng") {
+		return "", err
+	}
+	retryMessages := append([]map[string]string{}, messages...)
+	retryMessages = append(retryMessages, map[string]string{
+		"role":    "user",
+		"content": "JSON Output vừa trả rỗng. Hãy trả đúng một JSON object hoàn chỉnh theo schema đã yêu cầu, không thêm markdown và không để content rỗng.",
+	})
+	return callStructuredChatCompletionOnce(endpoint, apiKey, model, provider, retryMessages, timeout)
+}
+
 func reviewJSONValue(value interface{}) interface{} {
 	raw, err := json.Marshal(value)
 	if err != nil {
@@ -174,6 +203,7 @@ func reviewAuthoritativeFacts(nodeType nodes.NodeType) []string {
 			"HTTP Request chỉ đọc parameter headers; headers_json không phải parameter hợp lệ.",
 			"Output runtime của HTTP Request luôn có đúng ba trường cấp cao: status_code, headers và data.",
 			"JSON response đã parse nằm trong data; không suy đoán rằng Goflow trả body thay cho data.",
+			"response_contract là tùy chọn; chuỗi rỗng hoặc chỉ có khoảng trắng được coi là chưa cấu hình contract.",
 		}
 	case nodes.TypeWebhookTrigger:
 		return []string{
@@ -191,10 +221,17 @@ func reviewAuthoritativeFacts(nodeType nodes.NodeType) []string {
 	}
 }
 
-func (h *AIHandler) compactReviewDefinitions() []map[string]interface{} {
+func (h *AIHandler) compactReviewDefinitionsForWorkflow(draft workflowDraft) []map[string]interface{} {
+	usedTypes := make(map[nodes.NodeType]bool, len(draft.Nodes))
+	for _, node := range draft.Nodes {
+		usedTypes[node.Type] = true
+	}
 	definitions := h.registry.ListDefinitions()
-	out := make([]map[string]interface{}, 0, len(definitions))
+	out := make([]map[string]interface{}, 0, len(usedTypes))
 	for _, def := range definitions {
+		if !usedTypes[def.Type] {
+			continue
+		}
 		params := make([]map[string]interface{}, 0, len(def.Params))
 		for _, param := range def.Params {
 			params = append(params, map[string]interface{}{
@@ -220,7 +257,7 @@ func (h *AIHandler) compactReviewDefinitions() []map[string]interface{} {
 func (h *AIHandler) buildAIReviewMessages(req aiReviewRequest) []map[string]string {
 	validationIssues := h.validateWorkflowDraft(req.Workflow)
 	workflowJSON := boundedReviewJSON(req.Workflow)
-	definitionsJSON := boundedReviewJSON(h.compactReviewDefinitions())
+	definitionsJSON := boundedReviewJSON(h.compactReviewDefinitionsForWorkflow(req.Workflow))
 	executionJSON := "null"
 	if req.Mode == "latest_run" && len(req.Execution) > 0 {
 		executionJSON = boundedReviewJSON(req.Execution)
@@ -592,6 +629,109 @@ func (h *AIHandler) parseAIReviewResult(content string, req aiReviewRequest, pro
 	return result, nil
 }
 
+func collectReviewFailureSignals(value interface{}, signals *[]string, depth int) {
+	if depth > 6 || len(*signals) >= 6 || value == nil {
+		return
+	}
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for key, item := range typed {
+			if len(*signals) >= 6 {
+				return
+			}
+			lowerKey := strings.ToLower(key)
+			if strings.Contains(lowerKey, "error") {
+				if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+					*signals = append(*signals, engine.RedactSensitiveString(strings.TrimSpace(text)))
+				}
+			}
+			collectReviewFailureSignals(item, signals, depth+1)
+		}
+	case []interface{}:
+		for _, item := range typed {
+			collectReviewFailureSignals(item, signals, depth+1)
+			if len(*signals) >= 6 {
+				return
+			}
+		}
+	}
+}
+
+func localReviewFinding(signal string, index int) aiReviewFinding {
+	clean := engine.RedactSensitiveString(strings.TrimSpace(signal))
+	lower := strings.ToLower(clean)
+	finding := aiReviewFinding{
+		ID:              fmt.Sprintf("local-%d", index+1),
+		Severity:        "medium",
+		Category:        "reliability",
+		Title:           "GoFlow phát hiện lỗi cấu hình hoặc lần chạy",
+		Why:             clean,
+		Impact:          "Workflow có thể không chạy đúng cho tới khi nguyên nhân này được xử lý.",
+		SuggestedChange: "Mở node liên quan, kiểm tra parameter được nêu trong bằng chứng rồi chạy lại workflow.",
+		Evidence:        clean,
+		Confidence:      100,
+	}
+	if strings.Contains(lower, "response_contract") && strings.Contains(lower, "eof") {
+		finding.Severity = "high"
+		finding.Title = "Response Contract đang rỗng hoặc chưa hoàn chỉnh"
+		finding.Why = "Runtime đã cố đọc response_contract như JSON nhưng nhận EOF. Trường response_contract là tùy chọn; chuỗi rỗng không nên làm node thất bại."
+		finding.Impact = "HTTP Request có thể dừng trước khi trả dữ liệu cho node kế tiếp."
+		finding.SuggestedChange = "Nếu không cần kiểm tra schema response, hãy để Response Contract trống. Nếu cần, nhập một JSON contract hoàn chỉnh rồi chạy lại. Bản hardening hiện tại đã sửa trường hợp chuỗi rỗng để coi như chưa cấu hình contract."
+	}
+	return finding
+}
+
+func (h *AIHandler) localAIReviewFallback(req aiReviewRequest, provider, model string, cause error) aiReviewResult {
+	signals := append([]string{}, h.validateWorkflowDraft(req.Workflow)...)
+	if req.Mode == "latest_run" {
+		collectReviewFailureSignals(req.Execution, &signals, 0)
+	}
+	focus := strings.TrimSpace(engine.RedactSensitiveString(req.Focus))
+	if focus != "" {
+		lower := strings.ToLower(focus)
+		if strings.Contains(lower, "error") || strings.Contains(lower, "lỗi") || strings.Contains(lower, "failed") || strings.Contains(lower, "thất bại") || strings.Contains(lower, "response_contract") {
+			signals = append(signals, focus)
+		}
+	}
+	seen := map[string]bool{}
+	findings := make([]aiReviewFinding, 0, 6)
+	for _, signal := range signals {
+		clean := strings.TrimSpace(signal)
+		if clean == "" || seen[clean] {
+			continue
+		}
+		seen[clean] = true
+		findings = append(findings, localReviewFinding(clean, len(findings)))
+		if len(findings) >= 6 {
+			break
+		}
+	}
+	causeText := engine.RedactSensitiveString(cause.Error())
+	if len(findings) == 0 {
+		findings = append(findings, aiReviewFinding{
+			ID:              "local-provider-unavailable",
+			Severity:        "low",
+			Category:        "reliability",
+			Title:           "AI Reviewer tạm thời không phản hồi",
+			Why:             "Provider AI không trả được review hoàn chỉnh trong lần gọi này.",
+			Impact:          "GoFlow chưa có đủ bằng chứng cục bộ để kết luận thêm về workflow.",
+			SuggestedChange: "Bạn có thể thử Reviewer lại sau; workflow không bị tự sửa, lưu hoặc chạy bởi fallback này.",
+			Evidence:        causeText,
+			Confidence:      100,
+		})
+	}
+	return aiReviewResult{
+		Summary:        "AI Reviewer không phản hồi ổn định nên GoFlow đã chuyển sang phân tích cục bộ an toàn. Các phát hiện bên dưới đến từ validation/lỗi runtime hiện có; không có proposal nào được tự áp dụng.",
+		Scores:         clampReviewScores(nil, req.Mode),
+		Findings:       normalizeReviewFindings(findings),
+		Provider:       "goflow-local",
+		Model:          "fallback-" + provider + "-" + model,
+		Mode:           req.Mode,
+		Fallback:       true,
+		FallbackReason: causeText,
+	}
+}
+
 func (h *AIHandler) ReviewWorkflow(w http.ResponseWriter, r *http.Request) {
 	if h.credStore == nil || h.registry == nil {
 		http.Error(w, "Reviewer AI chưa được cấu hình", http.StatusServiceUnavailable)
@@ -637,14 +777,14 @@ func (h *AIHandler) ReviewWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	content, err := callStructuredChatCompletion(endpoint, apiKey, model, h.buildAIReviewMessages(req), 75*time.Second)
+	content, err := callStructuredChatCompletion(endpoint, apiKey, model, provider, h.buildAIReviewMessages(req), 75*time.Second)
 	if err != nil {
-		http.Error(w, engine.RedactSensitiveString(err.Error()), http.StatusBadGateway)
+		renderJSON(w, http.StatusOK, h.localAIReviewFallback(req, provider, model, err))
 		return
 	}
 	result, err := h.parseAIReviewResult(content, req, provider, model)
 	if err != nil {
-		http.Error(w, engine.RedactSensitiveString(err.Error()), http.StatusBadGateway)
+		renderJSON(w, http.StatusOK, h.localAIReviewFallback(req, provider, model, err))
 		return
 	}
 	renderJSON(w, http.StatusOK, result)
