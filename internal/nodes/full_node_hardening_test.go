@@ -86,6 +86,20 @@ func TestJSONTransformAcceptsStructuredResolvedObject(t *testing.T) {
 	}
 }
 
+func TestMongoDesignValidationAllowsUnresolvedJSONExpression(t *testing.T) {
+	executor := NewMongoDBCommandExecutor()
+	node := &Node{Params: map[string]interface{}{
+		"database":      "app",
+		"collection":    "events",
+		"command":       "UPDATE_ONE",
+		"filter_json":   `{{source.data.filter}}`,
+		"document_json": `{{source.data.update}}`,
+	}}
+	if err := executor.Validate(node); err != nil {
+		t.Fatalf("unresolved MongoDB JSON expressions should be valid at design time: %v", err)
+	}
+}
+
 func TestConditionRejectsUnknownOperator(t *testing.T) {
 	executor := NewConditionIFExecutor()
 	if err := executor.Validate(&Node{Params: map[string]interface{}{"operator": "typo"}}); err == nil {
