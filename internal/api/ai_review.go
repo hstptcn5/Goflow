@@ -359,11 +359,19 @@ func proposalContainsSensitiveValue(proposal workflowDraft) bool {
 	if err != nil {
 		return true
 	}
-	redacted, err := json.Marshal(reviewJSONValue(proposal))
+	var normalized interface{}
+	if err := json.Unmarshal(raw, &normalized); err != nil {
+		return true
+	}
+	normalizedRaw, err := json.Marshal(normalized)
 	if err != nil {
 		return true
 	}
-	return !bytes.Equal(raw, redacted)
+	redactedRaw, err := json.Marshal(engine.RedactSensitive(normalized))
+	if err != nil {
+		return true
+	}
+	return !bytes.Equal(normalizedRaw, redactedRaw)
 }
 
 func cloneWorkflowDraft(input workflowDraft) workflowDraft {
