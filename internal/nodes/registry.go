@@ -10,6 +10,15 @@ type PluginRegistry struct {
 	mu        sync.RWMutex
 }
 
+type validatingExecutor struct{ NodeExecutor }
+
+func (e *validatingExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
+	if err := e.NodeExecutor.Validate(node); err != nil {
+		return nil, fmt.Errorf("invalid %s node configuration: %w", e.NodeExecutor.GetDefinition().Type, err)
+	}
+	return e.NodeExecutor.Execute(ctx, node)
+}
+
 type credentialDefinitionOverrideExecutor struct {
 	NodeExecutor
 	paramName string
@@ -100,7 +109,7 @@ func (r *PluginRegistry) Register(executor NodeExecutor) error {
 	if _, exists := r.executors[nodeType]; exists {
 		return fmt.Errorf("node type '%s' already registered", nodeType)
 	}
-	r.executors[nodeType] = executor
+	r.executors[nodeType] = &validatingExecutor{NodeExecutor: executor}
 	return nil
 }
 
