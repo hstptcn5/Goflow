@@ -48,6 +48,10 @@ func resolveGoogleAuth(ctx *ExecutionContext, node *Node) (googleAuthMaterial, e
 }
 
 func googleAccessToken(ctx context.Context, material googleAuthMaterial, scopes ...string) (string, error) {
+	return googleAccessTokenForSubject(ctx, material, "", scopes...)
+}
+
+func googleAccessTokenForSubject(ctx context.Context, material googleAuthMaterial, subject string, scopes ...string) (string, error) {
 	if strings.TrimSpace(material.AccessToken) != "" {
 		return strings.TrimSpace(material.AccessToken), nil
 	}
@@ -57,6 +61,9 @@ func googleAccessToken(ctx context.Context, material googleAuthMaterial, scopes 
 	jwtConfig, err := google.JWTConfigFromJSON([]byte(material.ServiceAccountJSON), scopes...)
 	if err != nil {
 		return "", fmt.Errorf("invalid service account JSON: %w", err)
+	}
+	if strings.TrimSpace(subject) != "" {
+		jwtConfig.Subject = strings.TrimSpace(subject)
 	}
 	if ctx == nil {
 		ctx = context.Background()
