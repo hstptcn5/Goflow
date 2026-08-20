@@ -59,7 +59,7 @@ func TestBoundedReviewJSONRedactsSensitiveValues(t *testing.T) {
 	}
 }
 
-func TestBuildAIReviewMessagesRedactsHumanFocus(t *testing.T) {
+func TestBuildAIReviewMessagesRedactsHumanFocusAndIncludesAuthoritativeFacts(t *testing.T) {
 	handler := newTestAIHandler(t)
 	messages := handler.buildAIReviewMessages(aiReviewRequest{
 		Mode:     "workflow",
@@ -67,11 +67,18 @@ func TestBuildAIReviewMessagesRedactsHumanFocus(t *testing.T) {
 		Workflow: validReviewerWorkflow(),
 	})
 	encoded, _ := json.Marshal(messages)
-	if strings.Contains(string(encoded), "super-secret-review-focus") {
-		t.Fatalf("review focus leaked a secret: %s", string(encoded))
+	text := string(encoded)
+	if strings.Contains(text, "super-secret-review-focus") {
+		t.Fatalf("review focus leaked a secret: %s", text)
 	}
-	if !strings.Contains(string(encoded), "[REDACTED]") {
-		t.Fatalf("expected redaction marker in reviewer focus: %s", string(encoded))
+	if !strings.Contains(text, "[REDACTED]") {
+		t.Fatalf("expected redaction marker in reviewer focus: %s", text)
+	}
+	if !strings.Contains(text, "status_code, headers và data") {
+		t.Fatalf("expected authoritative HTTP output contract in reviewer context: %s", text)
+	}
+	if !strings.Contains(text, "TẤT CẢ text dành cho người dùng phải viết bằng tiếng Việt") {
+		t.Fatalf("expected Vietnamese response requirement: %s", text)
 	}
 }
 
@@ -89,21 +96,31 @@ func validReviewerWorkflow() workflowDraft {
 	}
 }
 
-func TestParseAIReviewResultClampsScoresAndKeepsValidatedProposal(t *testing.T) {
+func score(t *testing.T, result aiReviewResult, key string) int {
+	t.Helper()
+	value, ok := result.Scores[key]
+	if !ok || value == nil {
+		t.Fatalf("score %q is unavailable: %#v", key, result.Scores)
+	}
+	return *value
+}
+
+func TestParseAIReviewResultClampsScoresUsesNAAndKeepsValidatedProposal(t *testing.T) {
 	handler := newTestAIHandler(t)
 	proposal := validReviewerWorkflow()
 	proposal.Name = "Improved"
 	payload := map[string]interface{}{
-		"summary": "The workflow is simple but can be made clearer.",
+		"summary": "Workflow cần một vài cải thiện.",
 		"scores": map[string]interface{}{
 			"reliability":      120,
 			"security":         -4,
 			"data_correctness": 80,
+			"output_quality":   77,
 		},
 		"findings": []map[string]interface{}{
-			{"severity": "urgent", "category": "reliability", "title": "Review", "why": "Reason", "impact": "Impact", "suggested_change": "Change"},
+			{"severity": "urgent", "category": "reliability", "title": "Kiểm tra", "why": "Lý do", "impact": "Tác động", "suggested_change": "Thay đổi", "evidence": "node http_1", "confidence": 120},
 		},
-		"proposal_summary":  "Keep the same validated graph.",
+		"proposal_summary":  "Giữ graph hợp lệ.",
 		"proposed_workflow": proposal,
 	}
 	raw, _ := json.Marshal(payload)
@@ -111,10 +128,13 @@ func TestParseAIReviewResultClampsScoresAndKeepsValidatedProposal(t *testing.T) 
 	if err != nil {
 		t.Fatalf("parse review: %v", err)
 	}
-	if result.Scores["reliability"] != 100 || result.Scores["security"] != 0 {
+	if score(t, result, "reliability") != 100 || score(t, result, "security") != 0 {
 		t.Fatalf("scores were not clamped: %#v", result.Scores)
 	}
-	if len(result.Findings) != 1 || result.Findings[0].Severity != "medium" {
+	if result.Scores["output_quality"] != nil {
+		t.Fatalf("workflow-only output quality must be unavailable, got %#v", result.Scores["output_quality"])
+	}
+	if len(result.Findings) != 1 || result.Findings[0].Severity != "medium" || result.Findings[0].Confidence != 100 {
 		t.Fatalf("finding was not normalized: %#v", result.Findings)
 	}
 	if result.ProposedWorkflow == nil || !result.ProposalValidated {
@@ -125,9 +145,9 @@ func TestParseAIReviewResultClampsScoresAndKeepsValidatedProposal(t *testing.T) 
 func TestParseAIReviewResultDropsInvalidProposalButKeepsFindings(t *testing.T) {
 	handler := newTestAIHandler(t)
 	payload := `{
-		"summary":"There is an issue worth fixing.",
+		"summary":"Có một vấn đề cần sửa.",
 		"scores":{"reliability":60},
-		"findings":[{"id":"f1","severity":"high","category":"reliability","title":"Invalid proposal","why":"The generated patch is invalid","impact":"Could not apply safely","suggested_change":"Review manually"}],
+		"findings":[{"id":"f1","severity":"high","category":"reliability","title":"Proposal không hợp lệ","why":"Patch sai","impact":"Không thể áp dụng an toàn","suggested_change":"Kiểm tra thủ công","evidence":"node bad","confidence":95}],
 		"proposed_workflow":{"name":"Broken","nodes":[{"id":"bad","type":"missingNode","name":"Bad","params":{}}],"edges":[]}
 	}`
 	result, err := handler.parseAIReviewResult(payload, aiReviewRequest{Mode: "workflow", Workflow: validReviewerWorkflow()}, "deepseek", "deepseek-v4-flash")
@@ -156,5 +176,44 @@ func TestStripProposalSecretsRemovesCredentialAndSecretParams(t *testing.T) {
 	}
 	if _, ok := proposal.Nodes[1].Params["credential_id"]; ok {
 		t.Fatal("credential_id must be removed from review proposal")
+	}
+}
+
+func TestValidateReviewProposalSupportsExplicitParamDeletionButProtectsCredentials(t *testing.T) {
+	handler := newTestAIHandler(t)
+	current := workflowDraft{
+		Name: "Sheets",
+		Nodes: []nodes.Node{{
+			ID:   "sheet_1",
+			Type: nodes.TypeGoogleSheets,
+			Name: "Sheets",
+			Params: map[string]interface{}{
+				"credential_id":        "cred-1",
+				"service_account_json": `{"private_key":"secret"}`,
+				"spreadsheet_id":       "sheet-id",
+				"sheet_name":           "Sheet1",
+				"action":               "APPEND",
+			},
+		}},
+	}
+	proposal := cloneWorkflowDraft(current)
+	delete(proposal.Nodes[0].Params, "service_account_json")
+	delete(proposal.Nodes[0].Params, "credential_id")
+
+	issues, deletes := handler.validateReviewProposal(current, &proposal, map[string][]string{
+		"sheet_1": {"service_account_json"},
+	})
+	if len(issues) != 0 {
+		t.Fatalf("expected explicit non-credential deletion to validate, got %#v", issues)
+	}
+	if len(deletes["sheet_1"]) != 1 || deletes["sheet_1"][0] != "service_account_json" {
+		t.Fatalf("unexpected delete params: %#v", deletes)
+	}
+
+	_, protectedDeletes := handler.validateReviewProposal(current, &proposal, map[string][]string{
+		"sheet_1": {"credential_id"},
+	})
+	if len(protectedDeletes) != 0 {
+		t.Fatalf("credential deletion must not be exposed: %#v", protectedDeletes)
 	}
 }
