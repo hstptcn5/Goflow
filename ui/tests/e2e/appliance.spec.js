@@ -101,7 +101,7 @@ test('appliance first-run setup and run flow is Vietnamese and hides submitted s
 
   await expect(page.getByRole('heading', { name: 'Example Appliance', level: 2 })).toBeVisible();
   await page.getByRole('button', { name: 'Chạy ngay' }).click();
-  await expect(page.getByLabel('Lần chạy gần nhất').getByText('SUCCESS')).toBeVisible();
+  await expect(page.getByLabel('Lần chạy gần nhất').getByText('THÀNH CÔNG')).toBeVisible();
   await page.getByRole('button', { name: 'Làm mới' }).click();
   await expect(page.getByText('"secrets_hidden": true')).toBeVisible();
   await expect(page.locator('body')).not.toContainText('secret-canary');
