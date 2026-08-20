@@ -197,7 +197,7 @@ func (h *AIHandler) buildAIReviewMessages(req aiReviewRequest) []map[string]stri
 	if req.Mode == "latest_run" && len(req.Execution) > 0 {
 		executionJSON = boundedReviewJSON(req.Execution)
 	}
-	focus := strings.TrimSpace(req.Focus)
+	focus := strings.TrimSpace(engine.RedactSensitiveString(req.Focus))
 	if focus == "" {
 		focus = "No extra focus was supplied. Review the workflow according to the rubric."
 	}
