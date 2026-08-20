@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -34,6 +35,27 @@ func TestStrictAIReviewProviderRequiresExplicitProviderMetadata(t *testing.T) {
 				t.Fatalf("provider = %q, want %q", provider, tt.provider)
 			}
 		})
+	}
+}
+
+func TestStructuredReviewRequestBodyHardensDeepSeekJSONMode(t *testing.T) {
+	messages := []map[string]string{{"role": "user", "content": "return json"}}
+	body := structuredReviewRequestBody("deepseek", "deepseek-v4-flash", messages)
+	if body["max_tokens"] != maxAIReviewOutputTokens {
+		t.Fatalf("max_tokens = %#v, want %d", body["max_tokens"], maxAIReviewOutputTokens)
+	}
+	thinking, ok := body["thinking"].(map[string]interface{})
+	if !ok || thinking["type"] != "disabled" {
+		t.Fatalf("DeepSeek reviewer must disable thinking for bounded JSON review, got %#v", body["thinking"])
+	}
+	format, ok := body["response_format"].(map[string]interface{})
+	if !ok || format["type"] != "json_object" {
+		t.Fatalf("reviewer must request JSON output, got %#v", body["response_format"])
+	}
+
+	openAI := structuredReviewRequestBody("openai", "gpt-4o", messages)
+	if _, exists := openAI["thinking"]; exists {
+		t.Fatalf("OpenAI request must not receive DeepSeek-only thinking field: %#v", openAI)
 	}
 }
 
@@ -76,6 +98,9 @@ func TestBuildAIReviewMessagesRedactsHumanFocusAndIncludesAuthoritativeFacts(t *
 	}
 	if !strings.Contains(text, "status_code, headers và data") {
 		t.Fatalf("expected authoritative HTTP output contract in reviewer context: %s", text)
+	}
+	if !strings.Contains(text, "chuỗi rỗng hoặc chỉ có khoảng trắng được coi là chưa cấu hình contract") {
+		t.Fatalf("expected blank response contract runtime fact in reviewer context: %s", text)
 	}
 	if !strings.Contains(text, "TẤT CẢ text dành cho người dùng phải viết bằng tiếng Việt") {
 		t.Fatalf("expected Vietnamese response requirement: %s", text)
@@ -162,6 +187,32 @@ func TestParseAIReviewResultDropsInvalidProposalButKeepsFindings(t *testing.T) {
 	}
 	if len(result.ProposalValidationIssues) == 0 {
 		t.Fatal("expected proposal validation issues")
+	}
+}
+
+func TestLocalAIReviewFallbackExplainsResponseContractEOF(t *testing.T) {
+	handler := newTestAIHandler(t)
+	result := handler.localAIReviewFallback(aiReviewRequest{
+		Mode:     "workflow",
+		Workflow: validReviewerWorkflow(),
+		Focus:    "Node chạy thất bại: invalid response_contract: response_contract is invalid: EOF",
+	}, "deepseek", "deepseek-v4-flash", fmt.Errorf("model Reviewer trả về phản hồi rỗng"))
+	if !result.Fallback || result.Provider != "goflow-local" {
+		t.Fatalf("expected local fallback result, got %#v", result)
+	}
+	if result.ProposedWorkflow != nil || result.ProposalValidated {
+		t.Fatalf("local fallback must never expose an apply proposal: %#v", result)
+	}
+	if len(result.Findings) == 0 || !strings.Contains(result.Findings[0].Title, "Response Contract") {
+		t.Fatalf("expected deterministic response_contract explanation, got %#v", result.Findings)
+	}
+	if !strings.Contains(result.Findings[0].SuggestedChange, "để Response Contract trống") {
+		t.Fatalf("expected actionable response_contract guidance, got %#v", result.Findings[0])
+	}
+	for key, value := range result.Scores {
+		if value != nil {
+			t.Fatalf("fallback score %q must be N/A without model evidence, got %v", key, *value)
+		}
 	}
 }
 
