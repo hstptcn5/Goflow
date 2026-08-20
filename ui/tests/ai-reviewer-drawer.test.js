@@ -71,7 +71,8 @@ describe('AI workflow reviewer drawer', () => {
 
     findButton(root, 'Review Latest Run').click();
     await nextFrame();
-    const reviewButton = findButton(root, 'Review');
+    const reviewButton = root.querySelector('.btn-send');
+    expect(reviewButton.textContent.trim()).toBe('Review');
     expect(reviewButton.disabled).toBe(false);
     reviewButton.click();
     await nextFrame();
