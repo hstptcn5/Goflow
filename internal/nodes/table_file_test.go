@@ -14,7 +14,7 @@ func TestTableFileCSVReadWrite(t *testing.T) {
 	executor := NewTableFileExecutorWithStore(store)
 	input := tablefile.Table{
 		Columns: []string{"sku", "qty"},
-		Rows: []map[string]interface{}{{"sku": "A", "qty": 2}, {"sku": "B", "qty": 3}},
+		Rows:    []map[string]interface{}{{"sku": "A", "qty": 2}, {"sku": "B", "qty": 3}},
 	}
 	written, err := executor.Execute(NewExecutionContext("wf", "exec"), &Node{Params: map[string]interface{}{
 		"operation": "WRITE", "format": "CSV", "name": "orders.csv", "table": input,
@@ -43,7 +43,7 @@ func TestTableFileXLSXReadWrite(t *testing.T) {
 	executor := NewTableFileExecutorWithStore(store)
 	input := tablefile.Table{
 		Columns: []string{"sku", "qty", "active"},
-		Rows: []map[string]interface{}{{"sku": "A", "qty": 2.5, "active": true}},
+		Rows:    []map[string]interface{}{{"sku": "A", "qty": 2.5, "active": true}},
 	}
 	written, err := executor.Execute(NewExecutionContext("wf", "exec"), &Node{Params: map[string]interface{}{
 		"operation": "WRITE", "format": "XLSX", "name": "orders.xlsx", "table": input,

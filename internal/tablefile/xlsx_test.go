@@ -45,7 +45,7 @@ func TestXLSXReadSharedStrings(t *testing.T) {
 	var buffer bytes.Buffer
 	zw := zip.NewWriter(&buffer)
 	files := map[string]string{
-		"xl/sharedStrings.xml": `<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>sku</t></si><si><t>A</t></si></sst>`,
+		"xl/sharedStrings.xml":     `<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>sku</t></si><si><t>A</t></si></sst>`,
 		"xl/worksheets/sheet1.xml": `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="inlineStr"><is><t>qty</t></is></c></row><row r="2"><c r="A2" t="s"><v>1</v></c><c r="B2"><v>4</v></c></row></sheetData></worksheet>`,
 	}
 	for name, content := range files {

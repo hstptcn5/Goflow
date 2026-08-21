@@ -24,7 +24,9 @@ type fileTriggerStamp struct {
 	ModUnix int64 `json:"mod_unix"`
 }
 
-func NewFileTriggerExecutor() *FileTriggerExecutor { return &FileTriggerExecutor{store: fileref.DefaultStore()} }
+func NewFileTriggerExecutor() *FileTriggerExecutor {
+	return &FileTriggerExecutor{store: fileref.DefaultStore()}
+}
 func NewFileTriggerExecutorWithStore(store *fileref.Store) *FileTriggerExecutor {
 	if store == nil {
 		store = fileref.DefaultStore()

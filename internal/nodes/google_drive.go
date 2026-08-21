@@ -21,7 +21,9 @@ type GoogleDriveExecutor struct {
 	store *fileref.Store
 }
 
-func NewGoogleDriveExecutor() *GoogleDriveExecutor { return &GoogleDriveExecutor{store: fileref.DefaultStore()} }
+func NewGoogleDriveExecutor() *GoogleDriveExecutor {
+	return &GoogleDriveExecutor{store: fileref.DefaultStore()}
+}
 func NewGoogleDriveExecutorWithStore(store *fileref.Store) *GoogleDriveExecutor {
 	if store == nil {
 		store = fileref.DefaultStore()

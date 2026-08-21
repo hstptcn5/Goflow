@@ -15,7 +15,9 @@ type TableFileExecutor struct {
 	store *fileref.Store
 }
 
-func NewTableFileExecutor() *TableFileExecutor { return &TableFileExecutor{store: fileref.DefaultStore()} }
+func NewTableFileExecutor() *TableFileExecutor {
+	return &TableFileExecutor{store: fileref.DefaultStore()}
+}
 func NewTableFileExecutorWithStore(store *fileref.Store) *TableFileExecutor {
 	if store == nil {
 		store = fileref.DefaultStore()

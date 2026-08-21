@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"goflow/internal/apperror"
+	"goflow/internal/fileref"
 	"goflow/internal/jsoncontract"
 	"goflow/internal/sourceprobe"
 )
@@ -26,6 +27,7 @@ const (
 
 type HTTPRequestExecutor struct {
 	client *http.Client
+	store  *fileref.Store
 }
 
 type httpPageResult struct {
@@ -35,7 +37,7 @@ type httpPageResult struct {
 }
 
 func NewHTTPRequestExecutor() *HTTPRequestExecutor {
-	return &HTTPRequestExecutor{client: &http.Client{Timeout: 30 * time.Second, CheckRedirect: sourceprobe.SafeRedirect}}
+	return &HTTPRequestExecutor{client: &http.Client{Timeout: 30 * time.Second, CheckRedirect: sourceprobe.SafeRedirect}, store: fileref.DefaultStore()}
 }
 
 func NewHTTPRequestExecutorWithClient(client *http.Client) *HTTPRequestExecutor {
@@ -44,7 +46,15 @@ func NewHTTPRequestExecutorWithClient(client *http.Client) *HTTPRequestExecutor 
 	}
 	bounded := *client
 	bounded.CheckRedirect = sourceprobe.SafeRedirect
-	return &HTTPRequestExecutor{client: &bounded}
+	return &HTTPRequestExecutor{client: &bounded, store: fileref.DefaultStore()}
+}
+
+func NewHTTPRequestExecutorWithClientAndStore(client *http.Client, store *fileref.Store) *HTTPRequestExecutor {
+	executor := NewHTTPRequestExecutorWithClient(client)
+	if store != nil {
+		executor.store = store
+	}
+	return executor
 }
 
 func declaredHTTPResponseContract(params map[string]interface{}) (interface{}, bool) {
@@ -190,7 +200,7 @@ func httpPageItems(data interface{}, itemsField string) []interface{} {
 
 func (e *HTTPRequestExecutor) executeHTTPPage(ctx *ExecutionContext, node *Node, method, requestURL string) (httpPageResult, error) {
 	contractRaw, strictContract := declaredHTTPResponseContract(node.Params)
-	body, contentType, err := buildHTTPRequestBody(node, method)
+	body, contentType, err := buildHTTPRequestBodyWithStore(node, method, e.store)
 	if err != nil {
 		return httpPageResult{}, err
 	}
@@ -276,6 +286,16 @@ func (e *HTTPRequestExecutor) executeHTTPPage(ctx *ExecutionContext, node *Node,
 			}
 		case "text":
 			data = string(respBytes)
+		case "file":
+			name := strings.TrimSpace(conditionValueString(node.Params["response_file_name"]))
+			if name == "" {
+				name = "response.bin"
+			}
+			ref, err := e.store.PutBytes(name, resp.Header.Get("Content-Type"), respBytes)
+			if err != nil {
+				return httpPageResult{}, fmt.Errorf("store HTTP response FileRef: %w", err)
+			}
+			data = ref
 		default:
 			return httpPageResult{}, fmt.Errorf("unsupported HTTP response mode %q", mode)
 		}
@@ -355,27 +375,29 @@ func (e *HTTPRequestExecutor) GetDefinition() NodeDefinition {
 		Params: []ParamDefinition{
 			{Name: "method", Label: "HTTP Method", Type: "select", Default: "GET", Options: []string{"GET", "HEAD", "POST", "PUT", "DELETE", "PATCH"}, Required: true, Description: "HTTP method"},
 			{Name: "url", Label: "Target URL", Type: "text", Default: "https://api.github.com", Required: true, Description: "Target request URL"},
-			{Name: "query_params", Label: "Query Parameters", Type: "json", Default: "{}", Required: false, Description: "Structured query parameters as a JSON object; array values become repeated query keys"},
-			{Name: "headers", Label: "Headers (JSON)", Type: "json", Default: "{}", Required: false, Description: "Custom non-secret headers as a JSON object"},
+			{Name: "query_params", Label: "Query Parameters", Type: "json", Default: "{}", Required: false, Control: "key-value", Description: "Structured query parameters as a JSON object; array values become repeated query keys"},
+			{Name: "headers", Label: "Headers (JSON)", Type: "json", Default: "{}", Required: false, Control: "key-value", Advanced: true, Description: "Custom non-secret headers as a JSON object"},
 			{Name: "auth_mode", Label: "Authentication", Type: "select", Default: "legacy", Options: []string{"legacy", "none", "bearer", "api_key", "basic", "oauth2", "custom_header"}, Required: false, Description: "Generic authentication mode. Legacy preserves existing credential_header/prefix workflows."},
 			{Name: "credential_id", Label: "Credential", Type: "credential", Default: "", Required: false, Description: "Encrypted credential used by the selected authentication mode"},
-			{Name: "auth_header", Label: "Auth Header", Type: "text", Default: "X-API-Key", Required: false, Description: "Header name for API Key or Custom Header authentication"},
-			{Name: "auth_prefix", Label: "Auth Prefix", Type: "text", Default: "", Required: false, Description: "Optional prefix for Custom Header authentication"},
-			{Name: "credential_header", Label: "Legacy Credential Header", Type: "text", Default: "Authorization", Required: false, Description: "Legacy header that receives the encrypted credential"},
-			{Name: "credential_prefix", Label: "Legacy Credential Prefix", Type: "text", Default: "Bearer ", Required: false, Description: "Legacy prefix placed before the encrypted credential"},
-			{Name: "body_mode", Label: "Request Body Mode", Type: "select", Default: "json", Options: []string{"json", "raw", "x-www-form-urlencoded", "multipart/form-data"}, Required: false, Description: "Body encoding. File mode is added when FileRef is available."},
-			{Name: "body", Label: "Request Body", Type: "textarea", Default: "", Required: false, Description: "JSON or raw request body"},
-			{Name: "content_type", Label: "Raw Content Type", Type: "text", Default: "text/plain; charset=utf-8", Required: false, Description: "Content-Type used for Raw body mode"},
-			{Name: "form_fields", Label: "Form Fields", Type: "json", Default: "{}", Required: false, Description: "Fields for urlencoded or multipart form bodies"},
-			{Name: "response_mode", Label: "Response Mode", Type: "select", Default: "auto", Options: []string{"auto", "json", "text"}, Required: false, Description: "Auto attempts JSON then falls back to text. File mode is added with FileRef."},
+			{Name: "auth_header", Label: "Auth Header", Type: "text", Default: "X-API-Key", Required: false, VisibleWhen: map[string][]string{"auth_mode": {"api_key", "custom_header"}}, Description: "Header name for API Key or Custom Header authentication"},
+			{Name: "auth_prefix", Label: "Auth Prefix", Type: "text", Default: "", Required: false, VisibleWhen: map[string][]string{"auth_mode": {"custom_header"}}, Description: "Optional prefix for Custom Header authentication"},
+			{Name: "credential_header", Label: "Legacy Credential Header", Type: "text", Default: "Authorization", Required: false, Advanced: true, VisibleWhen: map[string][]string{"auth_mode": {"legacy"}}, Description: "Legacy header that receives the encrypted credential"},
+			{Name: "credential_prefix", Label: "Legacy Credential Prefix", Type: "text", Default: "Bearer ", Required: false, Advanced: true, VisibleWhen: map[string][]string{"auth_mode": {"legacy"}}, Description: "Legacy prefix placed before the encrypted credential"},
+			{Name: "body_mode", Label: "Request Body Mode", Type: "select", Default: "json", Options: []string{"json", "raw", "x-www-form-urlencoded", "multipart/form-data", "file"}, Required: false, Description: "Body encoding, including managed FileRef bytes."},
+			{Name: "body", Label: "Request Body", Type: "textarea", Default: "", Required: false, VisibleWhen: map[string][]string{"body_mode": {"json", "raw"}}, Description: "JSON or raw request body"},
+			{Name: "file_ref", Label: "Request File", Type: "json", Default: "", Required: false, Control: "file-ref", VisibleWhen: map[string][]string{"body_mode": {"file"}}, Description: "Managed FileRef used as the request body"},
+			{Name: "content_type", Label: "Raw Content Type", Type: "text", Default: "text/plain; charset=utf-8", Required: false, VisibleWhen: map[string][]string{"body_mode": {"raw"}}, Description: "Content-Type used for Raw body mode"},
+			{Name: "form_fields", Label: "Form Fields", Type: "json", Default: "{}", Required: false, Control: "key-value", VisibleWhen: map[string][]string{"body_mode": {"x-www-form-urlencoded", "multipart/form-data"}}, Description: "Fields for urlencoded or multipart form bodies"},
+			{Name: "response_mode", Label: "Response Mode", Type: "select", Default: "auto", Options: []string{"auto", "json", "text", "file"}, Required: false, Description: "Auto attempts JSON then falls back to text; File stores response bytes as FileRef."},
+			{Name: "response_file_name", Label: "Response Filename", Type: "text", Default: "response.bin", Required: false, VisibleWhen: map[string][]string{"response_mode": {"file"}}, Description: "Managed filename for File response mode"},
 			{Name: "pagination_mode", Label: "Pagination", Type: "select", Default: "none", Options: []string{"none", "cursor", "page_number"}, Required: false, Description: "Bounded cursor or page-number pagination"},
-			{Name: "items_field", Label: "Items Field", Type: "text", Default: "items", Required: false, Description: "Dot path to the response array; direct array responses are also accepted"},
-			{Name: "max_pages", Label: "Maximum Pages", Type: "integer", Default: 5, Required: false, Description: "Maximum pagination requests, up to 100"},
-			{Name: "cursor_query_param", Label: "Cursor Query Parameter", Type: "text", Default: "cursor", Required: false},
-			{Name: "cursor_start", Label: "Initial Cursor", Type: "text", Default: "", Required: false},
-			{Name: "next_cursor_field", Label: "Next Cursor Field", Type: "text", Default: "next_cursor", Required: false, Description: "Dot path to the next cursor in a cursor response"},
-			{Name: "page_query_param", Label: "Page Query Parameter", Type: "text", Default: "page", Required: false},
-			{Name: "start_page", Label: "Start Page", Type: "integer", Default: 1, Required: false},
+			{Name: "items_field", Label: "Items Field", Type: "text", Default: "items", Required: false, Advanced: true, VisibleWhen: map[string][]string{"pagination_mode": {"cursor", "page_number"}}, Description: "Dot path to the response array; direct array responses are also accepted"},
+			{Name: "max_pages", Label: "Maximum Pages", Type: "integer", Default: 5, Required: false, Advanced: true, VisibleWhen: map[string][]string{"pagination_mode": {"cursor", "page_number"}}, Description: "Maximum pagination requests, up to 100"},
+			{Name: "cursor_query_param", Label: "Cursor Query Parameter", Type: "text", Default: "cursor", Required: false, Advanced: true, VisibleWhen: map[string][]string{"pagination_mode": {"cursor"}}},
+			{Name: "cursor_start", Label: "Initial Cursor", Type: "text", Default: "", Required: false, Advanced: true, VisibleWhen: map[string][]string{"pagination_mode": {"cursor"}}},
+			{Name: "next_cursor_field", Label: "Next Cursor Field", Type: "text", Default: "next_cursor", Required: false, Advanced: true, VisibleWhen: map[string][]string{"pagination_mode": {"cursor"}}, Description: "Dot path to the next cursor in a cursor response"},
+			{Name: "page_query_param", Label: "Page Query Parameter", Type: "text", Default: "page", Required: false, Advanced: true, VisibleWhen: map[string][]string{"pagination_mode": {"page_number"}}},
+			{Name: "start_page", Label: "Start Page", Type: "integer", Default: 1, Required: false, Advanced: true, VisibleWhen: map[string][]string{"pagination_mode": {"page_number"}}},
 			{Name: "response_contract", Label: "JSON Response Contract", Type: "json", Default: "", Required: false, Description: "Optional required JSON fields and type constraints"},
 		},
 	}

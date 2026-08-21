@@ -265,11 +265,11 @@ func (e *PythonCodeExecutor) GetDefinition() NodeDefinition {
 		Type: TypePythonCode, Name: "Python Code", Description: "Runs trusted local Python in an external CPython environment for custom computation", Icon: "Code2", Category: "LOGIC & UTILITY", Retryable: false,
 		Params: []ParamDefinition{
 			{Name: "environment", Label: "Python Environment", Type: "text", Default: "default", Required: false, Description: "Named profile from GOFLOW_PYTHON_PROFILES_JSON; default auto-discovers CPython"},
-			{Name: "interpreter", Label: "Interpreter Path", Type: "text", Default: "", Required: false, Description: "Optional direct python/python.exe path overriding the environment profile"},
+			{Name: "interpreter", Label: "Interpreter Path", Type: "text", Default: "", Required: false, Advanced: true, Description: "Optional direct python/python.exe path overriding the environment profile"},
 			{Name: "input", Label: "Input Value", Type: "json", Default: "null", Required: false, Description: "Value exposed to code as input"},
-			{Name: "code", Label: "Python Code", Type: "textarea", Default: "output = {\"status\": \"processed\"}", Required: true, Description: "Set the variable output to a JSON-compatible result. Trusted code runs with the Goflow OS account permissions."},
-			{Name: "timeout", Label: "Execution Timeout (Seconds)", Type: "number", Default: 10, Required: false, Description: "Maximum runtime, between 1 and 120 seconds"},
-			{Name: "working_directory", Label: "Working Directory", Type: "text", Default: "", Required: false, Description: "Optional working directory. Python v1 is trusted local code, not a security sandbox."},
+			{Name: "code", Label: "Python Code", Type: "textarea", Default: "output = {\"status\": \"processed\"}", Required: true, Control: "code", Language: "python", Description: "Set the variable output to a JSON-compatible result. Trusted code runs with the Goflow OS account permissions."},
+			{Name: "timeout", Label: "Execution Timeout (Seconds)", Type: "number", Default: 10, Required: false, Advanced: true, Description: "Maximum runtime, between 1 and 120 seconds"},
+			{Name: "working_directory", Label: "Working Directory", Type: "text", Default: "", Required: false, Advanced: true, Description: "Optional working directory. Python v1 is trusted local code, not a security sandbox."},
 		},
 	}
 }

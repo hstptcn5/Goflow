@@ -16,7 +16,9 @@ type LocalFileExecutor struct {
 	store *fileref.Store
 }
 
-func NewLocalFileExecutor() *LocalFileExecutor { return &LocalFileExecutor{store: fileref.DefaultStore()} }
+func NewLocalFileExecutor() *LocalFileExecutor {
+	return &LocalFileExecutor{store: fileref.DefaultStore()}
+}
 func NewLocalFileExecutorWithStore(store *fileref.Store) *LocalFileExecutor {
 	if store == nil {
 		store = fileref.DefaultStore()

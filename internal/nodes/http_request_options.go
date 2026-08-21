@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"goflow/internal/fileref"
 )
 
 const (
@@ -195,6 +197,10 @@ func parseBasicCredential(secret string) (string, string, error) {
 }
 
 func buildHTTPRequestBody(node *Node, method string) (io.Reader, string, error) {
+	return buildHTTPRequestBodyWithStore(node, method, fileref.DefaultStore())
+}
+
+func buildHTTPRequestBodyWithStore(node *Node, method string, store *fileref.Store) (io.Reader, string, error) {
 	if method != "POST" && method != "PUT" && method != "PATCH" && method != "DELETE" {
 		return nil, "", nil
 	}
@@ -238,6 +244,23 @@ func buildHTTPRequestBody(node *Node, method string) (io.Reader, string, error) 
 			return nil, "", fmt.Errorf("HTTP form body exceeds %d byte limit", maxHTTPRequestBytes)
 		}
 		return strings.NewReader(encoded), "application/x-www-form-urlencoded", nil
+	case "file":
+		ref, err := fileref.Parse(node.Params["file_ref"])
+		if err != nil {
+			return nil, "", fmt.Errorf("HTTP file_ref: %w", err)
+		}
+		data, err := store.ReadAll(ref)
+		if err != nil {
+			return nil, "", err
+		}
+		if int64(len(data)) > maxHTTPRequestBytes {
+			return nil, "", fmt.Errorf("HTTP FileRef request body exceeds %d byte limit", maxHTTPRequestBytes)
+		}
+		contentType := strings.TrimSpace(ref.MIME)
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		return bytes.NewReader(data), contentType, nil
 	case "multipart/form-data", "multipart":
 		fields, err := parseHTTPObject(node.Params["form_fields"], "form_fields")
 		if err != nil {

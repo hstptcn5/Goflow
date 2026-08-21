@@ -142,9 +142,15 @@ func (e *ReusableCodeExecutor) Validate(node *Node) error {
 }
 
 func (e *ReusableCodeExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
-	input := make(map[string]interface{}, len(e.manifest.Inputs))
-	for _, definition := range e.manifest.Inputs {
-		input[definition.Name] = node.Params[definition.Name]
+	var input interface{}
+	if len(e.manifest.Inputs) == 1 && e.manifest.Inputs[0].Name == "input" {
+		input = node.Params["input"]
+	} else {
+		mapped := make(map[string]interface{}, len(e.manifest.Inputs))
+		for _, definition := range e.manifest.Inputs {
+			mapped[definition.Name] = node.Params[definition.Name]
+		}
+		input = mapped
 	}
 	runtimeName := strings.ToLower(strings.TrimSpace(e.manifest.Runtime))
 	if runtimeName == "python" {

@@ -28,7 +28,9 @@ const (
 
 type EmailSMTPExecutor struct{ store *fileref.Store }
 
-func NewEmailSMTPExecutor() *EmailSMTPExecutor { return &EmailSMTPExecutor{store: fileref.DefaultStore()} }
+func NewEmailSMTPExecutor() *EmailSMTPExecutor {
+	return &EmailSMTPExecutor{store: fileref.DefaultStore()}
+}
 func NewEmailSMTPExecutorWithStore(store *fileref.Store) *EmailSMTPExecutor {
 	if store == nil {
 		store = fileref.DefaultStore()

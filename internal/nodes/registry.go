@@ -99,6 +99,16 @@ func NewBuiltinRegistryWithTelegramExecutor(telegramExecutor NodeExecutor) *Plug
 	_ = registry.Register(NewGitCommandExecutor())
 	_ = registry.Register(NewGithubWebhookExecutor())
 	_ = registry.Register(NewGoflowPluginExecutor())
+	if discovered, _ := DiscoverPluginNodeExecutors("plugins"); len(discovered) > 0 {
+		for _, executor := range discovered {
+			_ = registry.RegisterOrReplaceCustom(executor)
+		}
+	}
+	if discovered, _ := DiscoverReusableCodeExecutors(DefaultReusableCodeDir()); len(discovered) > 0 {
+		for _, executor := range discovered {
+			_ = registry.RegisterOrReplaceCustom(executor)
+		}
+	}
 	return registry
 }
 
