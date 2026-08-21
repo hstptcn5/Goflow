@@ -4,11 +4,11 @@ import "testing"
 
 func TestMaxAttemptsForNodeMixedOperationSafety(t *testing.T) {
 	tests := []struct {
-		name     string
-		typeID   NodeType
-		params   map[string]interface{}
+		name      string
+		typeID    NodeType
+		params    map[string]interface{}
 		retryable bool
-		want     int
+		want      int
 	}{
 		{name: "http get retries", typeID: TypeHTTPRequest, params: map[string]interface{}{"method": "GET"}, retryable: true, want: 3},
 		{name: "http head retries", typeID: TypeHTTPRequest, params: map[string]interface{}{"method": "HEAD"}, retryable: true, want: 3},
