@@ -53,8 +53,8 @@ func DefinitionWithErrorPolicy(def NodeDefinition) NodeDefinition {
 		Type:        "select",
 		Default:     ErrorPolicyStopLabel,
 		Options:     []string{ErrorPolicyStopLabel, ErrorPolicyContinueLabel, ErrorPolicyErrorOutputLabel},
-		Required:    true,
-		Description: "Choose whether this node stops the workflow, continues normally, or routes failure through the error output.",
+		Required:    false,
+		Description: "Choose whether this node stops the workflow, continues normally, or routes failure through the error output. Existing workflows without this setting default to Stop workflow.",
 	})
 	return def
 }
