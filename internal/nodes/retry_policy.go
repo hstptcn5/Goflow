@@ -3,7 +3,7 @@ package nodes
 import "strings"
 
 const (
-	defaultNodeAttempts = 1
+	defaultNodeAttempts   = 1
 	retryableNodeAttempts = 3
 )
 
