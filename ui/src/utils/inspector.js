@@ -161,7 +161,16 @@ export function rowsForTable(value) {
   return { columns, rows: data.slice(0, 50) };
 }
 
-export function classifyParams(params = []) {
+export function paramIsVisible(param, values = {}) {
+  const rules = param?.visible_when;
+  if (!rules || typeof rules !== 'object') return true;
+  return Object.entries(rules).every(([key, allowed]) => {
+    const candidates = Array.isArray(allowed) ? allowed : [allowed];
+    return candidates.map((value) => String(value)).includes(String(values?.[key] ?? ''));
+  });
+}
+
+export function classifyParams(params = [], values = {}) {
   const groups = {
     credential: [],
     resource: [],
@@ -171,6 +180,7 @@ export function classifyParams(params = []) {
     advanced: [],
   };
   params.forEach((param) => {
+    if (!paramIsVisible(param, values)) return;
     const name = String(param.name || '').toLowerCase();
     if (param.type === 'credential') groups.credential.push(param);
     else if (name.includes('resource')) groups.resource.push(param);

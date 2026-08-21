@@ -124,7 +124,7 @@ func (s *Server) registerDynamicWorkflowTools(server *mcp.Server) {
 			Name:         toolName,
 			Title:        workflow.Name,
 			Description:  dynamicToolDescription(workflow),
-			InputSchema:  schemaOrEmptyObject(workflow.InputSchemaJSON),
+			InputSchema:  dynamicWorkflowInputSchema(workflow.InputSchemaJSON),
 			OutputSchema: dynamicWorkflowOutputSchema(),
 		}, s.dynamicWorkflowHandler(workflow))
 	}

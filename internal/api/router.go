@@ -78,6 +78,8 @@ func NewRouter(
 	oauth2Handler := NewOAuth2Handler(credStore)
 	wsHandler := NewWSHandler(eventBus, apiKey)
 	aiHandler := NewAIHandler(credStore, registry)
+	httpImportHandler := NewHTTPImportHandler()
+	customNodeHandler := NewCustomNodeHandler(registry)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(authMiddleware(apiKey, tokenStore, auditStore, true))
@@ -112,9 +114,12 @@ func NewRouter(
 		r.Get("/audit-events", auditHandler.ListAuditEvents)
 
 		r.Get("/nodes/definitions", nodeHandler.ListDefinitions)
+		r.Post("/http/import-curl", httpImportHandler.ImportCURL)
+		r.Post("/custom-nodes/promote", customNodeHandler.PromoteCode)
 
 		r.Post("/ai/generate", aiHandler.GenerateWorkflow)
 		r.Post("/ai/configure-node", aiHandler.ConfigureNode)
+		r.Post("/ai/code", aiHandler.AssistCode)
 		r.Post("/ai/review", aiHandler.ReviewWorkflow)
 	})
 

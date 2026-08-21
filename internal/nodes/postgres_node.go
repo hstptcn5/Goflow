@@ -43,6 +43,9 @@ func parseSQLNode(node *Node, engine string) (query, queryType string, err error
 	if strings.TrimSpace(connectionString) == "" && strings.TrimSpace(credentialID) == "" {
 		return "", "", fmt.Errorf("%s connection string or encrypted credential is required", engine)
 	}
+	if _, err := parseSQLParameters(node.Params["parameters"]); err != nil {
+		return "", "", fmt.Errorf("%s parameters are invalid: %w", engine, err)
+	}
 	return query, queryType, nil
 }
 
@@ -95,6 +98,10 @@ func (e *PostgresQueryExecutor) Execute(ctx *ExecutionContext, node *Node) (inte
 	if err != nil {
 		return nil, err
 	}
+	parameters, err := parseSQLParameters(node.Params["parameters"])
+	if err != nil {
+		return nil, err
+	}
 	connStr, err := resolveNodeCredential(ctx, node, "connection_string", "PostgreSQL connection string")
 	if err != nil {
 		return nil, err
@@ -110,14 +117,14 @@ func (e *PostgresQueryExecutor) Execute(ctx *ExecutionContext, node *Node) (inte
 		return nil, fmt.Errorf("failed to ping postgres database: %w", err)
 	}
 	if queryType == "SELECT" {
-		rows, err := db.QueryContext(runCtx, query)
+		rows, err := db.QueryContext(runCtx, query, parameters...)
 		if err != nil {
 			return nil, fmt.Errorf("SQL query execution failed: %w", err)
 		}
 		defer rows.Close()
 		return scanSQLRows(rows)
 	}
-	res, err := db.ExecContext(runCtx, query)
+	res, err := db.ExecContext(runCtx, query, parameters...)
 	if err != nil {
 		return nil, fmt.Errorf("SQL statement execution failed: %w", err)
 	}
@@ -137,7 +144,8 @@ func (e *PostgresQueryExecutor) GetDefinition() NodeDefinition {
 			{Name: "credential_id", Label: "Select Encrypted Credential", Type: "credential", Required: false, Description: "Encrypted PostgreSQL connection string"},
 			{Name: "connection_string", Label: "Postgres Connection String (legacy)", Type: "password", Default: "", Required: false, Description: "Legacy direct connection string. Prefer an encrypted credential."},
 			{Name: "query_type", Label: "Query Type", Type: "select", Default: "SELECT", Options: []string{"SELECT", "EXECUTE"}, Required: true, Description: "SELECT returns up to 5,000 rows; EXECUTE returns affected row count"},
-			{Name: "query", Label: "SQL Statement", Type: "textarea", Default: "SELECT 1;", Required: true, Description: "SQL statement. Supports placeholders such as {{node.path}}"},
+			{Name: "query", Label: "SQL Statement", Type: "textarea", Default: "SELECT 1;", Required: true, Description: "SQL statement. Prefer database placeholders such as $1 for user-controlled values."},
+			{Name: "parameters", Label: "Parameters", Type: "json", Default: "[]", Required: false, Description: "JSON array or mapped array bound separately to SQL placeholders; values are never concatenated into the query by this field."},
 		},
 	}
 }

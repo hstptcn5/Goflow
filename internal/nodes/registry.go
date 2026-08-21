@@ -64,6 +64,7 @@ func NewBuiltinRegistryWithTelegramExecutor(telegramExecutor NodeExecutor) *Plug
 	_ = registry.Register(NewWebhookTriggerExecutor())
 	_ = registry.Register(NewCronTriggerExecutor())
 	_ = registry.Register(NewManualTriggerExecutor())
+	_ = registry.Register(NewFileTriggerExecutor())
 	_ = registry.Register(NewHTTPRequestExecutor())
 	_ = registry.Register(NewNormalizedHTTPSourceExecutor())
 	_ = registry.Register(NewRSSFeedSourceExecutor())
@@ -72,6 +73,10 @@ func NewBuiltinRegistryWithTelegramExecutor(telegramExecutor NodeExecutor) *Plug
 	_ = registry.Register(NewZaloOAExecutor())
 	_ = registry.Register(NewJSONTransformExecutor())
 	_ = registry.Register(NewConditionIFExecutor())
+	_ = registry.Register(NewSwitchExecutor())
+	_ = registry.Register(NewWorkflowStateExecutor())
+	_ = registry.Register(NewLocalFileExecutor())
+	_ = registry.Register(NewTableFileExecutor())
 	_ = registry.Register(NewEmailSMTPExecutor())
 	_ = registry.Register(NewDelaySleepExecutor())
 	_ = registry.Register(NewOpenAIGPTExecutor())
@@ -80,6 +85,7 @@ func NewBuiltinRegistryWithTelegramExecutor(telegramExecutor NodeExecutor) *Plug
 	_ = registry.Register(NewDiscordBotExecutor())
 	_ = registry.Register(NewSlackBotExecutor())
 	_ = registry.Register(NewJSCodeRunnerExecutor())
+	_ = registry.Register(NewPythonCodeExecutor())
 	_ = registry.Register(NewSubWorkflowExecutor())
 	_ = registry.Register(NewPostgresQueryExecutor())
 	_ = registry.Register(NewRedisCommandExecutor())
@@ -93,6 +99,16 @@ func NewBuiltinRegistryWithTelegramExecutor(telegramExecutor NodeExecutor) *Plug
 	_ = registry.Register(NewGitCommandExecutor())
 	_ = registry.Register(NewGithubWebhookExecutor())
 	_ = registry.Register(NewGoflowPluginExecutor())
+	if discovered, _ := DiscoverPluginNodeExecutors("plugins"); len(discovered) > 0 {
+		for _, executor := range discovered {
+			_ = registry.RegisterOrReplaceCustom(executor)
+		}
+	}
+	if discovered, _ := DiscoverReusableCodeExecutors(DefaultReusableCodeDir()); len(discovered) > 0 {
+		for _, executor := range discovered {
+			_ = registry.RegisterOrReplaceCustom(executor)
+		}
+	}
 	return registry
 }
 

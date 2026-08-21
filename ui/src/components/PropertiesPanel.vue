@@ -5,6 +5,7 @@ import { useWorkflowStore } from '@/stores/workflowStore';
 import { useExecutionStore } from '@/stores/executionStore';
 import { nodeHelpMap } from './NodeHelpData';
 import { api } from '@/services/api';
+import KeyValueEditor from './KeyValueEditor.vue';
 import {
   buildJsonTree,
   classifyParams,
@@ -51,6 +52,9 @@ const aiHelperPrompt = ref('');
 const aiHelperLoading = ref(false);
 const aiHelperError = ref(null);
 const copiedMessage = ref('');
+const curlImportText = ref('');
+const curlImportMessage = ref('');
+const codeActionMessage = ref('');
 
 function isAICredential(cred) {
   const provider = String(cred?.provider || '').trim().toLowerCase();
@@ -154,7 +158,7 @@ const rawInputJSON = computed(() => safeJSONStringify(activeSourceData.value));
 const rawOutputJSON = computed(() => safeJSONStringify(outputData.value));
 const logsJSON = computed(() => safeJSONStringify(redactValue(nodeExecutionResult.value || {})));
 
-const paramGroups = computed(() => classifyParams(nodeDef.value?.params || []));
+const paramGroups = computed(() => classifyParams(nodeDef.value?.params || [], props.selectedNode?.params || {}));
 const fieldErrors = computed(() => {
   const errors = {};
   (nodeDef.value?.params || []).forEach((param) => {
@@ -447,6 +451,76 @@ async function runAIHelper() {
     aiHelperLoading.value = false;
   }
 }
+async function importCurlIntoHTTPNode() {
+  if (props.selectedNode?.type !== 'httpRequest' || !curlImportText.value.trim()) return;
+  curlImportMessage.value = '';
+  try {
+    const imported = await api.importCurl(curlImportText.value);
+    const params = { ...(props.selectedNode.params || {}), ...(imported.params || {}) };
+    if (imported.credential_secret) {
+      const credential = await api.createCredential({
+        name: `cURL import - ${imported.credential_hint || 'HTTP credential'}`,
+        type: 'api_key',
+        data: imported.credential_secret,
+      });
+      params.credential_id = credential.id;
+      curlImportMessage.value = 'Imported cURL and moved its secret into encrypted Credentials.';
+    } else {
+      curlImportMessage.value = 'Imported cURL. No inline secret was found.';
+    }
+    emit('updateNodeParams', props.selectedNode.id, params);
+    curlImportText.value = '';
+  } catch (err) {
+    curlImportMessage.value = `Import failed: ${err.message}`;
+  }
+}
+
+async function assistCode(param, action) {
+  if (!aiCredentialId.value) {
+    codeActionMessage.value = 'Add an OpenAI or DeepSeek credential first.';
+    return;
+  }
+  codeActionMessage.value = '';
+  try {
+    const language = param.language === 'python' || props.selectedNode?.type === 'pythonCode' ? 'python' : 'js';
+    const prompt = aiHelperPrompt.value.trim() || (action === 'fix' ? 'Fix this code while preserving its intended behavior.' : 'Generate a small transformation for the sample input.');
+    const result = await api.assistCode({
+      credential_id: aiCredentialId.value,
+      language,
+      action,
+      prompt,
+      existing_code: currentValue(param),
+      sample_input: redactValue(activeSourceData.value || null),
+    });
+    handleParamChange(param.name, result.code);
+    codeActionMessage.value = 'AI returned code to the editor. It has not been executed.';
+  } catch (err) {
+    codeActionMessage.value = `AI code assist failed: ${err.message}`;
+  }
+}
+
+async function promoteCurrentCode(param) {
+  const runtime = props.selectedNode?.type === 'pythonCode' ? 'python' : 'js';
+  const base = String(props.selectedNode?.name || `${runtime} helper`).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'code_helper';
+  const typeName = `user.${base}`;
+  try {
+    const result = await api.promoteCodeNode({
+      schema_version: 1,
+      type: typeName,
+      name: props.selectedNode?.name || `${runtime.toUpperCase()} helper`,
+      version: '1.0.0',
+      description: `Reusable node promoted from ${props.selectedNode?.id || 'code node'}`,
+      runtime,
+      code: currentValue(param),
+      inputs: [{ name: 'input', label: 'Input', type: 'json', required: false, default: 'null' }],
+      outputs: [{ name: 'output', type: 'json' }],
+    });
+    codeActionMessage.value = `Registered ${result.type} v${result.version}. Refresh the node picker to use it.`;
+  } catch (err) {
+    codeActionMessage.value = `Promotion failed: ${err.message}`;
+  }
+}
+
 </script>
 
 <template>
@@ -501,6 +575,13 @@ async function runAIHelper() {
           />
         </div>
 
+        <div v-if="selectedNode.type === 'httpRequest'" class="form-group curl-import-box">
+          <label for="curl-import">Import cURL</label>
+          <textarea id="curl-import" v-model="curlImportText" class="form-textarea code-field" rows="3" placeholder="curl https://api.example.com ..."></textarea>
+          <div class="field-actions"><button type="button" class="mini-btn" :disabled="!curlImportText.trim()" @click="importCurlIntoHTTPNode">Import safely</button></div>
+          <p v-if="curlImportMessage" class="param-desc">{{ curlImportMessage }}</p>
+        </div>
+
         <template v-if="nodeDef?.params?.length">
           <section v-for="groupName in ['credential', 'resource', 'operation', 'required', 'common']" :key="groupName" class="param-group" v-show="paramGroups[groupName].length">
             <h4 class="section-title">{{ groupName === 'required' ? 'Required parameters' : groupName === 'common' ? 'Common parameters' : groupName }}</h4>
@@ -514,8 +595,36 @@ async function runAIHelper() {
               </div>
               <span v-if="param.description" class="param-desc">{{ param.description }}</span>
 
+              <KeyValueEditor
+                v-if="param.control === 'key-value'"
+                :value="currentValue(param)"
+                :aria-label="param.label || param.name"
+                @change="handleParamChange(param.name, $event)"
+              />
+              <div v-else-if="param.control === 'code'" class="code-control">
+                <div class="code-language">{{ param.language || 'code' }}</div>
+                <textarea
+                  :id="`param-${param.name}`"
+                  :value="currentValue(param)"
+                  class="form-textarea code-field code-editor"
+                  rows="12"
+                  :aria-label="param.label || param.name"
+                  spellcheck="false"
+                  @input="handleParamChange(param.name, $event.target.value)"
+                ></textarea>
+              </div>
+              <textarea
+                v-else-if="param.control === 'file-ref'"
+                :id="`param-${param.name}`"
+                :value="currentValue(param)"
+                class="form-textarea code-field"
+                rows="3"
+                :aria-label="param.label || param.name"
+                spellcheck="false"
+                @input="handleParamChange(param.name, $event.target.value)"
+              ></textarea>
               <select
-                v-if="param.type === 'credential'"
+                v-else-if="param.type === 'credential'"
                 :id="`param-${param.name}`"
                 :value="currentValue(param)"
                 class="form-select"
@@ -571,7 +680,11 @@ async function runAIHelper() {
                 <button v-if="param.type === 'credential' && fieldErrors[param.name]" type="button" class="mini-btn" @click="createCredential">Create credential</button>
                 <button v-if="param.type === 'json'" type="button" class="mini-btn" @click="formatJSON(param)">Format JSON</button>
                 <button v-if="supportsExpression(param)" type="button" class="mini-btn" @click="mappingField = param.name">Pick data</button>
+                <button v-if="param.control === 'code'" type="button" class="mini-btn" @click="assistCode(param, 'generate')">AI generate</button>
+                <button v-if="param.control === 'code'" type="button" class="mini-btn" @click="assistCode(param, 'fix')">AI fix</button>
+                <button v-if="param.control === 'code' && ['jsCodeRunner', 'pythonCode'].includes(selectedNode.type)" type="button" class="mini-btn" @click="promoteCurrentCode(param)">Promote to node</button>
               </div>
+              <p v-if="param.control === 'code' && codeActionMessage" class="param-desc">{{ codeActionMessage }}</p>
               <p v-if="fieldErrors[param.name]" class="field-error" role="alert">{{ fieldErrors[param.name] }}</p>
               <div v-if="mappingField === param.name" class="expression-preview">
                 <strong>Expression preview</strong>
@@ -599,8 +712,35 @@ async function runAIHelper() {
                     <button type="button" :class="{ active: isExpressionValue(param) }" @click="switchParamMode(param, 'expression')">Expression</button>
                   </div>
                 </div>
+                <KeyValueEditor
+                  v-if="param.control === 'key-value'"
+                  :value="currentValue(param)"
+                  :aria-label="param.label || param.name"
+                  @change="handleParamChange(param.name, $event)"
+                />
+                <div v-else-if="param.control === 'code'" class="code-control">
+                  <div class="code-language">{{ param.language || 'code' }}</div>
+                  <textarea :id="`param-${param.name}`" :value="currentValue(param)" class="form-textarea code-field code-editor" rows="10" @input="handleParamChange(param.name, $event.target.value)"></textarea>
+                </div>
                 <textarea
-                  v-if="param.type === 'textarea' || param.type === 'json'"
+                  v-else-if="param.control === 'file-ref'"
+                  :id="`param-${param.name}`"
+                  :value="currentValue(param)"
+                  class="form-textarea code-field"
+                  rows="3"
+                  @input="handleParamChange(param.name, $event.target.value)"
+                ></textarea>
+                <select
+                  v-else-if="param.type === 'select'"
+                  :id="`param-${param.name}`"
+                  :value="currentValue(param)"
+                  class="form-select"
+                  @change="handleParamChange(param.name, $event.target.value)"
+                >
+                  <option v-for="opt in param.options" :key="opt" :value="opt">{{ opt }}</option>
+                </select>
+                <textarea
+                  v-else-if="param.type === 'textarea' || param.type === 'json'"
                   :id="`param-${param.name}`"
                   :value="currentValue(param)"
                   class="form-textarea code-field"

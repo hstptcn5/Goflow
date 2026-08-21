@@ -230,7 +230,7 @@ Credentials are not automatically exposed.
 
 ## GF-PY-003 - Python Code node UI
 
-Add environment selector, code editor, input/output preview and actionable errors.
+Add environment selector, code editor, existing inspector input/output preview and actionable errors.
 
 ## GF-PY-004 - Python runtime controls
 
@@ -284,11 +284,11 @@ Delete
 
 Must enforce allowed roots, traversal protection and bounded sizes.
 
-## GF-FILE-003 - File Trigger
+## GF-FILE-003 - File Watch (Polling)
 
-Watch a local path/pattern for bounded events such as Created/Modified.
+Detect Created/Modified files by comparing a persistent snapshot of a bounded local path/pattern. Schedule the polling node with the existing Cron trigger rather than adding an OS-specific watcher service in v1.
 
-This is a high-priority local-first capability.
+This preserves the single-binary/local-first model while still supporting restart-safe folder automation. A native event-driven watcher remains optional future work if real use proves polling insufficient.
 
 ---
 
@@ -346,20 +346,19 @@ Add FileRef-backed attachments to supported email paths.
 
 ## GF-NODE-001 - Rich parameter schema
 
-Add metadata needed for powerful nodes without giant forms:
+Add metadata and controls needed for powerful nodes without giant forms:
 
 ```text
 advanced
 visibleWhen
-group
 placeholder
-codeEditor
-keyValueList
-filePicker
-dynamicOptions
+code control
+key-value control
+FileRef control
+server-populated select options
 ```
 
-Keep runtime node definitions as the source of truth.
+Keep runtime node definitions as the source of truth. Prefer simple server-populated options over a separate dynamic-option protocol until a connector proves it is needed.
 
 ---
 
@@ -369,16 +368,7 @@ Keep runtime node definitions as the source of truth.
 
 Build on the existing executable plugin JSON stdin/stdout protocol.
 
-Allow a plugin directory such as:
-
-```text
-plugins/
-  normalize-invoice/
-    node.json
-    normalize.exe
-```
-
-The manifest supplies node name, version, category, parameter schema and executable metadata so the plugin appears as a first-class node rather than a generic filename field.
+Allow first-class manifests next to executables so custom plugin nodes can declare node type, name, version, category, parameters, outputs and capabilities instead of relying on the generic plugin filename field.
 
 ---
 

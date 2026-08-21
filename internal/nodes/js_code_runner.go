@@ -127,8 +127,8 @@ func (e *JSCodeRunnerExecutor) GetDefinition() NodeDefinition {
 		Type: TypeJSCodeRunner, Name: "JS Code Runner", Description: "Runs bounded custom JavaScript or JSON expressions to transform data", Icon: "Code", Category: "LOGIC & UTILITY", Retryable: true,
 		Params: []ParamDefinition{
 			{Name: "input", Label: "Input Value", Type: "text", Default: "", Required: false, Description: "Optional setup-bound value exposed to code as input"},
-			{Name: "code", Label: "JavaScript Code / JSON Expression", Type: "textarea", Default: "{\n  \"status\": \"processed\",\n  \"message\": \"Custom Code Execution\"\n}", Required: true, Description: "JavaScript code or JSON expression to execute"},
-			{Name: "timeout", Label: "Execution Timeout (Seconds)", Type: "text", Default: "5", Required: false, Description: "Maximum script runtime, between 1 and 30 seconds"},
+			{Name: "code", Label: "JavaScript Code / JSON Expression", Type: "textarea", Control: "code", Language: "javascript", Default: "{\n  \"status\": \"processed\",\n  \"message\": \"Custom Code Execution\"\n}", Required: true, Description: "JavaScript code or JSON expression to execute"},
+			{Name: "timeout", Label: "Execution Timeout (Seconds)", Type: "text", Default: "5", Required: false, Advanced: true, Description: "Maximum script runtime, between 1 and 30 seconds"},
 		},
 	}
 }

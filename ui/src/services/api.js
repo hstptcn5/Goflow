@@ -232,6 +232,36 @@ export const api = {
     return res.json();
   },
 
+  async importCurl(command) {
+    const res = await customFetch(`${API_BASE}/http/import-curl`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command }),
+    });
+    if (!res.ok) throw new Error((await res.text()) || 'Không import được cURL');
+    return res.json();
+  },
+
+  async assistCode(payload) {
+    const res = await customFetch(`${API_BASE}/ai/code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error((await res.text()) || 'AI không tạo được code');
+    return res.json();
+  },
+
+  async promoteCodeNode(manifest) {
+    const res = await customFetch(`${API_BASE}/custom-nodes/promote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(manifest),
+    });
+    if (!res.ok) throw new Error((await res.text()) || 'Không tạo được reusable node');
+    return res.json();
+  },
+
   async reviewAIWorkflow(mode, credentialId, workflow, execution = null, focus = '') {
     const res = await customFetch(`${API_BASE}/ai/review`, {
       method: 'POST',

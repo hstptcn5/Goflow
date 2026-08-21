@@ -12,6 +12,7 @@ const (
 	TypeWebhookTrigger       NodeType = "webhookTrigger"
 	TypeCronTrigger          NodeType = "cronTrigger"
 	TypeManualTrigger        NodeType = "manualTrigger"
+	TypeFileTrigger          NodeType = "fileTrigger"
 	TypeHTTPRequest          NodeType = "httpRequest"
 	TypeNormalizedHTTPSource NodeType = "normalizedHttpSource"
 	TypeRSSFeedSource        NodeType = "rssFeedSource"
@@ -19,6 +20,10 @@ const (
 	TypeTelegramBot          NodeType = "telegramBot"
 	TypeJSONTransform        NodeType = "jsonTransform"
 	TypeConditionIF          NodeType = "conditionIf"
+	TypeSwitch               NodeType = "switch"
+	TypeWorkflowState        NodeType = "workflowState"
+	TypeLocalFile            NodeType = "localFile"
+	TypeTableFile            NodeType = "tableFile"
 	TypeEmailSMTP            NodeType = "emailSMTP"
 	TypeDelaySleep           NodeType = "delaySleep"
 	TypeOpenAIGPT            NodeType = "openAIGPT"
@@ -26,6 +31,7 @@ const (
 	TypeDiscordBot           NodeType = "discordBot"
 	TypeSlackBot             NodeType = "slackBot"
 	TypeJSCodeRunner         NodeType = "jsCodeRunner"
+	TypePythonCode           NodeType = "pythonCode"
 	TypeSubWorkflow          NodeType = "subWorkflow"
 	TypePostgresQuery        NodeType = "postgresQuery"
 	TypeRedisCommand         NodeType = "redisCommand"
@@ -83,6 +89,12 @@ type ExecutionContext struct {
 
 	// RefreshCredential refreshes an expired credential when the storage layer supports it.
 	RefreshCredential func(id string) (string, error)
+
+	// State callbacks expose persistent state without giving nodes raw database access.
+	StateGet       func(scope, key string) (interface{}, bool, error)
+	StateSet       func(scope, key string, value interface{}) error
+	StateDelete    func(scope, key string) (bool, error)
+	StateIncrement func(scope, key string, delta float64) (float64, error)
 }
 
 func NewExecutionContext(workflowID, executionID string) *ExecutionContext {
@@ -129,26 +141,34 @@ func (ctx *ExecutionContext) GetOutputs() map[string]interface{} {
 
 // ParamDefinition describes one configurable UI parameter.
 type ParamDefinition struct {
-	Name                string   `json:"name"`
-	Label               string   `json:"label"`
-	Type                string   `json:"type"`
-	Default             any      `json:"default,omitempty"`
-	Options             []string `json:"options,omitempty"`
-	Required            bool     `json:"required"`
-	Description         string   `json:"description,omitempty"`
-	CredentialKinds     []string `json:"credential_kinds,omitempty"`
-	CredentialProviders []string `json:"credential_providers,omitempty"`
+	Name                string              `json:"name"`
+	Label               string              `json:"label"`
+	Type                string              `json:"type"`
+	Default             any                 `json:"default,omitempty"`
+	Options             []string            `json:"options,omitempty"`
+	Required            bool                `json:"required"`
+	Description         string              `json:"description,omitempty"`
+	CredentialKinds     []string            `json:"credential_kinds,omitempty"`
+	CredentialProviders []string            `json:"credential_providers,omitempty"`
+	VisibleWhen         map[string][]string `json:"visible_when,omitempty"`
+	Advanced            bool                `json:"advanced,omitempty"`
+	Control             string              `json:"control,omitempty"`
+	Language            string              `json:"language,omitempty"`
+	Placeholder         string              `json:"placeholder,omitempty"`
 }
 
 // NodeDefinition contains UI metadata for a node type.
 type NodeDefinition struct {
-	Type        NodeType          `json:"type"`
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Icon        string            `json:"icon"`
-	Category    string            `json:"category"`
-	Retryable   bool              `json:"retryable"` // False disables retry for non-idempotent side effects.
-	Params      []ParamDefinition `json:"params"`
+	Type         NodeType                 `json:"type"`
+	Name         string                   `json:"name"`
+	Description  string                   `json:"description"`
+	Icon         string                   `json:"icon"`
+	Category     string                   `json:"category"`
+	Retryable    bool                     `json:"retryable"` // False disables retry for non-idempotent side effects.
+	Version      string                   `json:"version,omitempty"`
+	Capabilities []string                 `json:"capabilities,omitempty"`
+	Outputs      []PluginOutputDefinition `json:"outputs,omitempty"`
+	Params       []ParamDefinition        `json:"params"`
 }
 
 // NodeExecutor is implemented by every built-in node and plugin node.

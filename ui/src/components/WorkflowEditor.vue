@@ -68,6 +68,12 @@ function getNodeIcon(type) {
     telegramBot: 'Telegram',
     jsonTransform: 'JSON',
     conditionIf: 'IF',
+    switch: 'Switch',
+    workflowState: 'State',
+    localFile: 'File',
+    fileTrigger: 'File trigger',
+    tableFile: 'Table',
+    pythonCode: 'Python',
     emailSMTP: 'SMTP',
     delaySleep: 'Delay',
     openAIGPT: 'OpenAI',
@@ -104,6 +110,23 @@ function getNodeCategory(type) {
   if (aiNodes.includes(type)) return 'category-ai';
   if (devNodes.includes(type)) return 'category-dev';
   return 'category-logic';
+}
+
+function switchHandles(data) {
+  let cases = data?.params?.cases_json ?? [];
+  if (typeof cases === 'string') {
+    try { cases = JSON.parse(cases || '[]'); } catch { cases = []; }
+  }
+  if (!Array.isArray(cases)) cases = [];
+  const seen = new Set();
+  const handles = cases.slice(0, 16).map((item, index) => {
+    const candidate = String(item?.handle || `case_${index + 1}`).trim();
+    const id = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(candidate) && !['default', 'error'].includes(candidate) && !seen.has(candidate) ? candidate : `case_${index + 1}`;
+    seen.add(id);
+    return { id, label: id };
+  });
+  handles.push({ id: 'default', label: 'default' });
+  return handles;
 }
 
 function getNodeStatusClass(nodeId) {
@@ -1138,6 +1161,18 @@ function handleEditorShortcut(event) {
               <span class="handle-label handle-label-true">true</span>
               <Handle type="source" id="false" :position="Position.Bottom" style="left: 70%; background: #ef4444; border-color: #ffffff;" />
               <span class="handle-label handle-label-false">false</span>
+            </template>
+            <template v-else-if="data.type === 'switch'">
+              <Handle type="target" :position="Position.Top" />
+              <template v-for="(branch, branchIndex) in switchHandles(data)" :key="branch.id">
+                <Handle
+                  type="source"
+                  :id="branch.id"
+                  :position="Position.Bottom"
+                  :style="{ left: `${((branchIndex + 1) / (switchHandles(data).length + 1)) * 100}%` }"
+                />
+                <span class="handle-label" :style="{ left: `${((branchIndex + 1) / (switchHandles(data).length + 1)) * 100}%` }">{{ branch.label }}</span>
+              </template>
             </template>
             <!-- Standard Node Handles -->
             <template v-else>
