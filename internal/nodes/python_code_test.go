@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -76,13 +77,20 @@ output = 1`,
 }
 
 func TestPythonProfilesFromEnvironment(t *testing.T) {
-	t.Setenv("GOFLOW_PYTHON_PROFILES_JSON", `{"data":"/opt/data-python"}`)
+	t.Setenv("GOFLOW_PYTHON_PROFILES_JSON", `{"zeta":"/opt/zeta-python","data":"/opt/data-python","default":"/opt/default-python"}`)
 	profiles, err := pythonProfiles()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if profiles["data"] != "/opt/data-python" {
 		t.Fatalf("profiles = %#v", profiles)
+	}
+	if got, want := pythonEnvironmentOptions(), []string{"default", "data", "zeta"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("environment options = %#v, want %#v", got, want)
+	}
+	definition := NewPythonCodeExecutor().GetDefinition()
+	if len(definition.Params) == 0 || definition.Params[0].Type != "select" || !reflect.DeepEqual(definition.Params[0].Options, []string{"default", "data", "zeta"}) {
+		t.Fatalf("Python environment selector definition = %#v", definition.Params[0])
 	}
 	if _, err := resolvePythonInterpreter(&Node{Params: map[string]interface{}{"environment": "missing"}}); err == nil {
 		t.Fatal("missing named Python environment was accepted")
