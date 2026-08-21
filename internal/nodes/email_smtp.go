@@ -1,22 +1,42 @@
 package nodes
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/textproto"
 	"strconv"
 	"strings"
 	"time"
+
+	"goflow/internal/fileref"
 )
 
-const maxSMTPMessageBytes = 1 << 20
+const (
+	maxSMTPBodyBytes       = 1 << 20
+	maxSMTPMessageBytes    = 25 << 20
+	maxSMTPAttachments     = 10
+	maxSMTPAttachmentBytes = 20 << 20
+)
 
-type EmailSMTPExecutor struct{}
+type EmailSMTPExecutor struct {
+	store *fileref.Store
+}
 
-func NewEmailSMTPExecutor() *EmailSMTPExecutor { return &EmailSMTPExecutor{} }
+func NewEmailSMTPExecutor() *EmailSMTPExecutor { return &EmailSMTPExecutor{store: fileref.DefaultStore()} }
+func NewEmailSMTPExecutorWithStore(store *fileref.Store) *EmailSMTPExecutor {
+	if store == nil {
+		store = fileref.DefaultStore()
+	}
+	return &EmailSMTPExecutor{store: store}
+}
 
 func (e *EmailSMTPExecutor) Execute(ctx *ExecutionContext, node *Node) (interface{}, error) {
 	params, err := parseSMTPParams(node)
@@ -27,14 +47,21 @@ func (e *EmailSMTPExecutor) Execute(ctx *ExecutionContext, node *Node) (interfac
 	if err != nil {
 		return nil, err
 	}
-	msg := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s", params.Username, strings.Join(params.Recipients, ", "), params.Subject, params.Body))
+	attachments, err := parseSMTPAttachmentRefs(node.Params["attachments"])
+	if err != nil {
+		return nil, err
+	}
+	msg, err := buildSMTPMessage(params, attachments, e.store)
+	if err != nil {
+		return nil, err
+	}
 	if len(msg) > maxSMTPMessageBytes {
 		return nil, fmt.Errorf("SMTP message exceeds %d byte limit", maxSMTPMessageBytes)
 	}
 	if err := sendSMTPWithContext(ctx.Context, params.Host, params.Port, params.Username, password, params.Recipients, msg); err != nil {
 		return nil, fmt.Errorf("failed to send SMTP email: %w", err)
 	}
-	return map[string]interface{}{"status": "sent", "recipients": params.Recipients, "subject": params.Subject}, nil
+	return map[string]interface{}{"status": "sent", "recipients": params.Recipients, "subject": params.Subject, "attachments": len(attachments)}, nil
 }
 
 type smtpParams struct {
@@ -91,8 +118,8 @@ func parseSMTPParams(node *Node) (smtpParams, error) {
 	if len([]rune(out.Subject)) > 998 {
 		return out, fmt.Errorf("SMTP subject is too long")
 	}
-	if len(out.Body) > maxSMTPMessageBytes {
-		return out, fmt.Errorf("SMTP body exceeds %d byte limit", maxSMTPMessageBytes)
+	if len(out.Body) > maxSMTPBodyBytes {
+		return out, fmt.Errorf("SMTP body exceeds %d byte limit", maxSMTPBodyBytes)
 	}
 	credentialID, _ := node.Params["credential_id"].(string)
 	password, _ := node.Params["password"].(string)
@@ -100,6 +127,131 @@ func parseSMTPParams(node *Node) (smtpParams, error) {
 		return out, fmt.Errorf("SMTP password or encrypted credential is required")
 	}
 	return out, nil
+}
+
+func parseSMTPAttachmentRefs(raw interface{}) ([]fileref.Ref, error) {
+	if raw == nil || strings.TrimSpace(conditionValueString(raw)) == "" {
+		return nil, nil
+	}
+	var values []interface{}
+	if text, ok := raw.(string); ok {
+		if err := json.Unmarshal([]byte(text), &values); err != nil {
+			// Also accept one FileRef object encoded as JSON.
+			var single interface{}
+			if errSingle := json.Unmarshal([]byte(text), &single); errSingle != nil {
+				return nil, fmt.Errorf("SMTP attachments must be a FileRef or JSON array of FileRefs")
+			}
+			values = []interface{}{single}
+		}
+	} else if array, ok := raw.([]interface{}); ok {
+		values = array
+	} else {
+		values = []interface{}{raw}
+	}
+	if len(values) > maxSMTPAttachments {
+		return nil, fmt.Errorf("SMTP supports at most %d attachments", maxSMTPAttachments)
+	}
+	refs := make([]fileref.Ref, 0, len(values))
+	for _, value := range values {
+		ref, err := fileref.Parse(value)
+		if err != nil {
+			return nil, err
+		}
+		if ref.Size > maxSMTPAttachmentBytes {
+			return nil, fmt.Errorf("SMTP attachment %q exceeds %d byte limit", ref.Name, maxSMTPAttachmentBytes)
+		}
+		refs = append(refs, ref)
+	}
+	return refs, nil
+}
+
+func buildSMTPMessage(params smtpParams, attachments []fileref.Ref, store *fileref.Store) ([]byte, error) {
+	var buffer bytes.Buffer
+	fmt.Fprintf(&buffer, "From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\n", params.Username, strings.Join(params.Recipients, ", "), params.Subject)
+	if len(attachments) == 0 {
+		fmt.Fprintf(&buffer, "Content-Type: text/html; charset=UTF-8\r\n\r\n%s", params.Body)
+		return buffer.Bytes(), nil
+	}
+
+	writer := multipart.NewWriter(&buffer)
+	fmt.Fprintf(&buffer, "Content-Type: multipart/mixed; boundary=%q\r\n\r\n", writer.Boundary())
+	bodyHeader := make(textproto.MIMEHeader)
+	bodyHeader.Set("Content-Type", "text/html; charset=UTF-8")
+	bodyHeader.Set("Content-Transfer-Encoding", "8bit")
+	bodyPart, err := writer.CreatePart(bodyHeader)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := bodyPart.Write([]byte(params.Body)); err != nil {
+		return nil, err
+	}
+	for _, ref := range attachments {
+		data, err := store.ReadAll(ref)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) > maxSMTPAttachmentBytes {
+			return nil, fmt.Errorf("SMTP attachment %q exceeds %d byte limit", ref.Name, maxSMTPAttachmentBytes)
+		}
+		header := make(textproto.MIMEHeader)
+		mimeType := strings.TrimSpace(ref.MIME)
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+		header.Set("Content-Type", fmt.Sprintf("%s; name=%q", mimeType, ref.Name))
+		header.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", ref.Name))
+		header.Set("Content-Transfer-Encoding", "base64")
+		part, err := writer.CreatePart(header)
+		if err != nil {
+			return nil, err
+		}
+		encoder := base64.NewEncoder(base64.StdEncoding, newMIMEBase64Writer(part))
+		if _, err := encoder.Write(data); err != nil {
+			return nil, err
+		}
+		if err := encoder.Close(); err != nil {
+			return nil, err
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
+}
+
+type mimeBase64Writer struct {
+	writer ioWriter
+	column int
+}
+
+type ioWriter interface {
+	Write([]byte) (int, error)
+}
+
+func newMIMEBase64Writer(writer ioWriter) *mimeBase64Writer { return &mimeBase64Writer{writer: writer} }
+
+func (w *mimeBase64Writer) Write(p []byte) (int, error) {
+	original := len(p)
+	for len(p) > 0 {
+		remaining := 76 - w.column
+		if remaining == 0 {
+			if _, err := w.writer.Write([]byte("\r\n")); err != nil {
+				return 0, err
+			}
+			w.column = 0
+			remaining = 76
+		}
+		n := len(p)
+		if n > remaining {
+			n = remaining
+		}
+		if _, err := w.writer.Write(p[:n]); err != nil {
+			return 0, err
+		}
+		w.column += n
+		p = p[n:]
+	}
+	return original, nil
 }
 
 func sendSMTPWithContext(ctx context.Context, host string, port int, username, password string, recipients []string, msg []byte) error {
@@ -136,7 +288,6 @@ func sendSMTPWithContext(ctx context.Context, host string, port int, username, p
 			if err := client.StartTLS(tlsConfig); err != nil {
 				return err
 			}
-		}
 	}
 	if username != "" {
 		if err := client.Auth(smtp.PlainAuth("", username, password, host)); err != nil {
@@ -166,13 +317,16 @@ func sendSMTPWithContext(ctx context.Context, host string, port int, username, p
 }
 
 func (e *EmailSMTPExecutor) Validate(node *Node) error {
-	_, err := parseSMTPParams(node)
+	if _, err := parseSMTPParams(node); err != nil {
+		return err
+	}
+	_, err := parseSMTPAttachmentRefs(node.Params["attachments"])
 	return err
 }
 
 func (e *EmailSMTPExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
-		Type: TypeEmailSMTP, Name: "SMTP Email", Description: "Sends email through SMTP providers such as Gmail or a custom SMTP server", Icon: "Mail", Category: "ACTION",
+		Type: TypeEmailSMTP, Name: "SMTP Email", Description: "Sends HTML email with optional managed FileRef attachments through SMTP", Icon: "Mail", Category: "ACTION",
 		Params: []ParamDefinition{
 			{Name: "host", Label: "SMTP Host", Type: "text", Default: "smtp.gmail.com", Required: true, Description: "SMTP server address"},
 			{Name: "port", Label: "SMTP Port", Type: "text", Default: "587", Required: true, Description: "Usually 587 for STARTTLS or 465 for implicit TLS"},
@@ -182,6 +336,7 @@ func (e *EmailSMTPExecutor) GetDefinition() NodeDefinition {
 			{Name: "to", Label: "Recipients (To)", Type: "text", Default: "", Required: true, Description: "Comma-separated recipient email addresses"},
 			{Name: "subject", Label: "Email Subject", Type: "text", Default: "Goflow Notification", Required: true, Description: "Email subject"},
 			{Name: "body", Label: "Email Body (HTML)", Type: "textarea", Default: "<h3>Goflow Notification</h3><p>Your workflow completed successfully!</p>", Required: true, Description: "Email body in HTML"},
+			{Name: "attachments", Label: "Attachments", Type: "json", Default: "", Required: false, Description: "One FileRef or JSON array of managed FileRefs"},
 		},
 	}
 }
