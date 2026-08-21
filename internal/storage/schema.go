@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -19,6 +20,10 @@ func (db *DB) InitSchema() error {
 }
 
 func (db *DB) RunMigrations() error {
+	ordered, err := validateAndOrderMigrations(migrations)
+	if err != nil {
+		return err
+	}
 	if _, err := db.WriteDB.Exec(`
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version INTEGER PRIMARY KEY,
@@ -28,11 +33,11 @@ func (db *DB) RunMigrations() error {
 	`); err != nil {
 		return fmt.Errorf("failed to create schema_migrations: %w", err)
 	}
-	if err := db.validateMigrationHistory(); err != nil {
+	if err := db.validateMigrationHistory(ordered); err != nil {
 		return err
 	}
 
-	for _, m := range migrations {
+	for _, m := range ordered {
 		applied, err := db.isMigrationApplied(m.version)
 		if err != nil {
 			return err
@@ -61,9 +66,31 @@ func (db *DB) RunMigrations() error {
 	return nil
 }
 
-func (db *DB) validateMigrationHistory() error {
-	expected := make(map[int]string, len(migrations))
-	for _, m := range migrations {
+func validateAndOrderMigrations(input []migration) ([]migration, error) {
+	ordered := append([]migration(nil), input...)
+	sort.Slice(ordered, func(i, j int) bool {
+		return ordered[i].version < ordered[j].version
+	})
+	for i, m := range ordered {
+		if m.version < 1 {
+			return nil, fmt.Errorf("database migration version must be positive")
+		}
+		if strings.TrimSpace(m.name) == "" {
+			return nil, fmt.Errorf("database migration %04d has an empty name", m.version)
+		}
+		if m.up == nil {
+			return nil, fmt.Errorf("database migration %04d_%s has no implementation", m.version, m.name)
+		}
+		if i > 0 && ordered[i-1].version == m.version {
+			return nil, fmt.Errorf("duplicate database migration version %04d (%q and %q)", m.version, ordered[i-1].name, m.name)
+		}
+	}
+	return ordered, nil
+}
+
+func (db *DB) validateMigrationHistory(ordered []migration) error {
+	expected := make(map[int]string, len(ordered))
+	for _, m := range ordered {
 		expected[m.version] = m.name
 	}
 	rows, err := db.WriteDB.Query(`SELECT version, name FROM schema_migrations ORDER BY version`)
