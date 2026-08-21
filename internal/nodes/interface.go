@@ -19,6 +19,7 @@ const (
 	TypeTelegramBot          NodeType = "telegramBot"
 	TypeJSONTransform        NodeType = "jsonTransform"
 	TypeConditionIF          NodeType = "conditionIf"
+	TypeSwitch               NodeType = "switch"
 	TypeEmailSMTP            NodeType = "emailSMTP"
 	TypeDelaySleep           NodeType = "delaySleep"
 	TypeOpenAIGPT            NodeType = "openAIGPT"
