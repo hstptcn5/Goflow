@@ -612,7 +612,9 @@ schedulerLoop:
 					return
 				}
 
-				// Resolve parameters dynamically using ctx before execution
+				// Resolve parameters dynamically using ctx before execution.
+				// Retry safety must be evaluated from these resolved parameters because
+				// the operation itself may be supplied through an expression.
 				resolvedParams := nodes.ResolveParams(ctx, nodeObj.Params)
 				evaluatedNode := &nodes.Node{
 					ID:       nodeObj.ID,
@@ -622,12 +624,7 @@ schedulerLoop:
 					Params:   resolvedParams,
 				}
 
-				// Auto-retry Loop: chỉ retry cho các node có Retryable=true (an toàn khi thực thi lại)
-				// Các node có side-effect (gửi email, tin nhắn) mặc định Retryable=false → chỉ chạy 1 lần
-				maxRetries := 1
-				if executor.GetDefinition().Retryable {
-					maxRetries = 3
-				}
+				maxRetries := nodes.MaxAttemptsForNode(evaluatedNode, executor.GetDefinition())
 				var lastErr error
 				var output interface{}
 				attemptsUsed := 0
