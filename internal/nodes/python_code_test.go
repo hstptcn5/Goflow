@@ -27,8 +27,9 @@ func TestPythonCodeNodeExecutesJSONProtocol(t *testing.T) {
 	out, err := executor.Execute(ctx, &Node{Params: map[string]interface{}{
 		"interpreter": python,
 		"input":       map[string]interface{}{"n": 4},
-		"code":        `print("debug line")\noutput = {"sum": input["n"] + outputs["source"]["value"], "trigger": trigger["name"]}`,
-		"timeout":     5,
+		"code": `print("debug line")
+output = {"sum": input["n"] + outputs["source"]["value"], "trigger": trigger["name"]}`,
+		"timeout": 5,
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -61,8 +62,10 @@ func TestPythonCodeNodeTimeout(t *testing.T) {
 	start := time.Now()
 	_, err := NewPythonCodeExecutor().Execute(NewExecutionContext("wf", "exec"), &Node{Params: map[string]interface{}{
 		"interpreter": python,
-		"code":        `import time\ntime.sleep(10)\noutput = 1`,
-		"timeout":     1,
+		"code": `import time
+time.sleep(10)
+output = 1`,
+		"timeout": 1,
 	}})
 	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "timed out") {
 		t.Fatalf("expected timeout error, got %v", err)
