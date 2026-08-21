@@ -433,10 +433,10 @@ try {
     Assert-Equal $stateOutput.found $true "Workflow State disappeared after restart"
     Assert-Equal $stateOutput.value 2 "Workflow State value changed after restart"
 
-    $watchExec = Invoke-QAWorkflow $watchWorkflow.id
+    $watchExec = Invoke-QAWorkflow "wf-smoke-file-watch"
     Assert-Equal (Get-NodeLog $watchExec "watch").output.count 0 "File Watch snapshot did not survive restart"
 
-    $customExec = Invoke-QAWorkflow $customWorkflow.id
+    $customExec = Invoke-QAWorkflow "wf-smoke-custom"
     Assert-Equal $customExec.status "SUCCESS" "promoted reusable node was not rediscovered after restart"
     Assert-Equal (Get-NodeLog $customExec "custom").output 42 "rediscovered reusable node returned wrong output"
   }
