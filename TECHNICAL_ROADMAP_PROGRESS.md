@@ -76,6 +76,17 @@ Implementation direction:
 - Mutating operations covered by the audit are restricted to a single implicit attempt.
 - Uniform node types still retain their existing `Retryable` behavior.
 
+Verification gate before `DONE`:
+
+```text
+[ ] gofmt clean across repository
+[ ] go test ./...
+[ ] go test -race ./...
+[ ] go vet non-release packages
+[ ] PR CI green
+[ ] merged commit recorded here
+```
+
 ## Progress Log
 
 ### 2026-08-21
@@ -89,5 +100,6 @@ Implementation direction:
 - Wired the policy into the engine after expression/parameter resolution (`b1c5f6d2`).
 - Added table-driven coverage for HTTP, PostgreSQL, MySQL, Google Sheets, Google Drive, MongoDB and Redis, plus expression-resolved operation coverage (`472609c3`).
 - Ran local `gofmt` against new Go files before committing formatting fixes. Full repository tests cannot be run in the current container because the public GitHub host is unavailable from that runtime; GitHub Actions verification is still pending/not observed for these connector-created commits.
+- Added an explicit verification gate so a future continuation can determine exactly what remains before `GF-CORE-001` becomes `DONE`.
 
 Future entries should record checkpoint transitions, PR numbers, merge commits and verification commands/results.
