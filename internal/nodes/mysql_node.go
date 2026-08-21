@@ -16,6 +16,10 @@ func (e *MySQLQueryExecutor) Execute(ctx *ExecutionContext, node *Node) (interfa
 	if err != nil {
 		return nil, err
 	}
+	parameters, err := parseSQLParameters(node.Params["parameters"])
+	if err != nil {
+		return nil, err
+	}
 	connStr, err := resolveNodeCredential(ctx, node, "connection_string", "MySQL connection string")
 	if err != nil {
 		return nil, err
@@ -31,14 +35,14 @@ func (e *MySQLQueryExecutor) Execute(ctx *ExecutionContext, node *Node) (interfa
 		return nil, fmt.Errorf("failed to ping mysql database: %w", err)
 	}
 	if queryType == "SELECT" {
-		rows, err := db.QueryContext(runCtx, query)
+		rows, err := db.QueryContext(runCtx, query, parameters...)
 		if err != nil {
 			return nil, fmt.Errorf("SQL query execution failed: %w", err)
 		}
 		defer rows.Close()
 		return scanSQLRows(rows)
 	}
-	res, err := db.ExecContext(runCtx, query)
+	res, err := db.ExecContext(runCtx, query, parameters...)
 	if err != nil {
 		return nil, fmt.Errorf("SQL statement execution failed: %w", err)
 	}
@@ -58,7 +62,8 @@ func (e *MySQLQueryExecutor) GetDefinition() NodeDefinition {
 			{Name: "credential_id", Label: "Select Encrypted Credential", Type: "credential", Required: false, Description: "Encrypted MySQL connection string"},
 			{Name: "connection_string", Label: "MySQL Connection String (legacy)", Type: "password", Default: "", Required: false, Description: "Legacy direct connection string. Prefer an encrypted credential."},
 			{Name: "query_type", Label: "Query Type", Type: "select", Default: "SELECT", Options: []string{"SELECT", "EXECUTE"}, Required: true, Description: "SELECT returns up to 5,000 rows; EXECUTE returns affected row count"},
-			{Name: "query", Label: "SQL Statement", Type: "textarea", Default: "SELECT 1;", Required: true, Description: "SQL statement. Supports placeholders such as {{node.path}}"},
+			{Name: "query", Label: "SQL Statement", Type: "textarea", Default: "SELECT 1;", Required: true, Description: "SQL statement. Prefer ? placeholders for user-controlled values."},
+			{Name: "parameters", Label: "Parameters", Type: "json", Default: "[]", Required: false, Description: "JSON array or mapped array bound separately to SQL placeholders; values are never concatenated into the query by this field."},
 		},
 	}
 }
