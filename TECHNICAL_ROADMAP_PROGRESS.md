@@ -13,116 +13,102 @@ Status values:
 Rules:
 
 1. Every implementation PR must name one or more checkpoint IDs.
-2. Update this ledger in the same PR whenever a checkpoint status changes.
-3. Do not mark `DONE` before merge; record the final merged commit afterward if the merge SHA differs.
-4. Add short verification evidence instead of vague completion claims.
-5. If sequencing changes, explain why in the Notes column and update `TECHNICAL_ROADMAP.md` if the change is strategic.
+2. Update this ledger whenever checkpoint status changes.
+3. Do not mark `DONE` before merge; record the final merged commit afterward.
+4. Record concrete verification evidence, not vague completion claims.
+5. If implementation deliberately changes the roadmap shape, update `TECHNICAL_ROADMAP.md` so the plan remains truthful.
 
 ## Current Summary
 
 Technical roadmap adopted: 2026-08-21.
 
-Current focus: Phase 0 correctness foundation. Active implementation checkpoint: `GF-CORE-002`.
+Current focus: final verification and merge of PR #40, which consolidates the remaining technical-capability checkpoints after `GF-CORE-002`.
+
+Verified code head before final audit adjustments: `c096fcae2e6f9ff4be46212bc373f448323f6cd0`.
+
+Verification evidence on that head:
+
+- CI #456: `success` — formatting, backend unit tests, race tests, vet, vulnerability scan, frontend tests/build, Pack contracts, DailyOps, Playwright/appliance E2E, Linux/macOS/Windows Community builds, and Windows DailyOps pilot.
+- Vietnam Morning Brief Windows Pilot #180: `success`.
+- Daily Business Report Public Beta #232: `success`.
+
+Final audit adjustments made after that green head:
+
+- Python environment is now a real selector populated from configured runtime profiles.
+- File automation is documented and labeled accurately as restart-safe polling (`File Watch (Polling)`) intended to run after Cron, not as an OS event watcher.
+- Technical roadmap metadata scope was aligned with the actual rich-parameter implementation instead of claiming an unused dynamic-option protocol.
+
+These final audit commits require their own latest-head CI before PR #40 can be merged.
+
+## Checkpoint Ledger
 
 | Checkpoint | Phase | Outcome | Status | PR / Commit | Verification / Notes |
-|---|---|---|---|---|---|
-| `GF-CORE-001` | 0 | Operation-aware retry | `DONE` | PR #37; squash merge `f3648925a34bbdb1e9ac394b588e0b8087af3c01` | CI #374 green on tested head `f2c80669249899f180826e949fdae7c4b5870f41`: formatting, `go test ./...`, race tests, vet, vulnerability scan, frontend tests/build, Pack/DailyOps, Playwright/E2E, multi-platform Community builds and Windows DailyOps pilot all passed. |
-| `GF-CORE-002` | 0 | Node error policy/routing | `IN_PROGRESS` | PR #39; branch `gf-core-002-error-policy` | Implementation adds common `on_error` policy with backward-compatible Stop default, Continue normal-path semantics, explicit `error` output routing, redacted error envelopes, and fail-closed behavior when an error route is missing. Focused tests added; CI #378 pending. |
-| `GF-DB-001` | 0 | Parameterized PostgreSQL/MySQL queries | `PLANNED` | - | Preserve expression mapping while binding values separately. |
-| `GF-LOGIC-001` | 1 | Typed IF | `PLANNED` | - | Avoid using Python for basic typed comparisons. |
-| `GF-LOGIC-002` | 1 | Switch | `PLANNED` | - | Multi-branch routing with default path. |
-| `GF-LOGIC-003` | 1 | Subworkflow error collection | `PLANNED` | - | Extend existing bounded sequential/parallel loop. |
-| `GF-HTTP-001` | 2 | Structured query + generic auth | `PLANNED` | - | Make HTTP the long-tail integration primitive. |
-| `GF-HTTP-002` | 2 | Request/response modes | `PLANNED` | - | File modes depend on FileRef; JSON/raw/form can land earlier. |
-| `GF-HTTP-003` | 2 | Pagination | `PLANNED` | - | Reuse lessons from normalized HTTP source cursor pagination. |
-| `GF-HTTP-004` | 2 | Import cURL | `PLANNED` | - | Secrets should be migrated to Credentials, not persisted inline. |
-| `GF-STATE-001` | 3 | Persistent workflow/global state | `PLANNED` | - | SQLite-backed GET/SET/DELETE/INCREMENT. |
-| `GF-PY-001` | 4 | Python runtime profiles | `PLANNED` | - | External CPython; no bundled runtime or pip management in v1. |
-| `GF-PY-002` | 4 | Python execution protocol | `PLANNED` | - | JSON stdin/stdout child process; credentials not auto-exposed. |
-| `GF-PY-003` | 4 | Python node UI | `PLANNED` | - | Environment selector, code editor, input/output preview. |
-| `GF-PY-004` | 4 | Python runtime controls | `PLANNED` | - | Timeout, cancel, stderr/stdout bounds, process kill. Trusted code, not sandbox. |
-| `GF-FILE-001` | 5 | FileRef data model | `PLANNED` | - | Prevent binary/base64 expansion in execution context/logs. |
-| `GF-FILE-002` | 6 | Local File node | `PLANNED` | - | Initial Read/Write/List with root/path/size bounds. |
-| `GF-FILE-003` | 6 | Local File Trigger | `PLANNED` | - | High-value local-first capability. |
-| `GF-TABLE-001` | 7 | CSV read/write | `PLANNED` | - | Structured rows; transformations remain JS/Python. |
-| `GF-TABLE-002` | 7 | XLSX read/write | `PLANNED` | - | Structured rows; avoid many spreadsheet convenience nodes. |
-| `GF-SHEETS-001` | 8 | Google Sheets v2 | `PLANNED` | - | READ/APPEND/UPDATE/UPSERT + multi-row. |
-| `GF-DRIVE-001` | 8 | Google Drive + FileRef | `PLANNED` | - | LIST/DOWNLOAD/UPLOAD/DELETE. |
-| `GF-MAIL-001` | 8 | File attachments | `PLANNED` | - | Depends on FileRef. |
-| `GF-NODE-001` | 9 | Rich parameter schema/UI | `PLANNED` | - | visibleWhen, advanced, key-value, code/file controls. |
-| `GF-PLUGIN-001` | 10 | First-class custom node manifest | `PLANNED` | - | Build on existing executable plugin stdin/stdout protocol. |
-| `GF-CODE-001` | 11 | Promote code to reusable node | `PLANNED` | - | Versioned declared inputs/outputs. |
-| `GF-AI-001` | 12 | AI-assisted JS/Python code | `PLANNED` | - | Generate/fix against sample input; no silent production execution. |
-| `GF-MCP-001` | 13 | Workflow-as-tool refinement | `PLANNED` | - | MCP stays scoped interface to approved workflows. |
-| `GF-PACK-001` | 14 | Pack capability tiers | `PLANNED` | - | Distinguish bounded/declarative capabilities from trusted external execution. |
+|---|---:|---|---|---|---|
+| `GF-CORE-001` | 0 | Operation-aware retry | `DONE` | PR #37; merge `f3648925a34bbdb1e9ac394b588e0b8087af3c01` | CI #374 green. Safe/read operations retain retry; audited mutating operations default to one implicit attempt. |
+| `GF-CORE-002` | 0 | Node error policy/routing | `DONE` | PR #39; merge `90931c4b1b7fea162478dd6edce97ad9522647ad` | CI #385 green. Stop / Continue / explicit error-output routing with backward-compatible Stop default. |
+| `GF-DB-001` | 0 | Parameterized PostgreSQL/MySQL queries | `IN_PROGRESS` | PR #40 | Driver-bound parameter arrays; legacy SQL without parameters remains supported. |
+| `GF-LOGIC-001` | 1 | Typed IF | `IN_PROGRESS` | PR #40 | Typed general/number/string/regex/boolean comparisons. |
+| `GF-LOGIC-002` | 1 | Switch | `IN_PROGRESS` | PR #40 | Ordered cases, dynamic editor handles and default route. |
+| `GF-LOGIC-003` | 1 | Subworkflow error collection | `IN_PROGRESS` | PR #40 | Stop all / Continue / Collect errors while preserving existing bounded loop engine. |
+| `GF-HTTP-001` | 2 | Structured query + generic auth | `IN_PROGRESS` | PR #40 | Query object plus None/Bearer/API-key/Basic/OAuth2/custom-header modes. |
+| `GF-HTTP-002` | 2 | Request/response modes | `IN_PROGRESS` | PR #40 | JSON/raw/urlencoded/multipart fields/FileRef request; Auto/JSON/Text/FileRef response. |
+| `GF-HTTP-003` | 2 | Pagination | `IN_PROGRESS` | PR #40 | Bounded cursor and page-number pagination. |
+| `GF-HTTP-004` | 2 | Import cURL | `IN_PROGRESS` | PR #40 | Parser + editor import; discovered auth secret is moved into encrypted Credentials rather than workflow params. |
+| `GF-STATE-001` | 3 | Persistent workflow/global state | `IN_PROGRESS` | PR #40 | SQLite GET/SET/DELETE/INCREMENT; migration hardened against duplicate versions. |
+| `GF-PY-001` | 4 | Python runtime profiles | `IN_PROGRESS` | PR #40 | External CPython profiles; no bundled Python or pip manager. |
+| `GF-PY-002` | 4 | Python execution protocol | `IN_PROGRESS` | PR #40 | Bounded child process using JSON stdin/stdout; credentials not auto-exposed. |
+| `GF-PY-003` | 4 | Python node UI | `IN_PROGRESS` | PR #40 | Profile selector, code control and existing inspector input/output preview. |
+| `GF-PY-004` | 4 | Python runtime controls | `IN_PROGRESS` | PR #40 | Timeout/cancel/process kill/stdout-stderr-output bounds; explicitly trusted code, not a sandbox. |
+| `GF-FILE-001` | 5 | FileRef data model | `IN_PROGRESS` | PR #40 | Managed UUID references with MIME/size/SHA metadata; binary bytes remain outside workflow JSON/logs. |
+| `GF-FILE-002` | 6 | Local File | `IN_PROGRESS` | PR #40 | Read/Write/List with allowed roots, traversal/symlink protection and size bounds; Windows path portability fixed. |
+| `GF-FILE-003` | 6 | File Watch (Polling) | `IN_PROGRESS` | PR #40 | Restart-safe Created/Modified detection via Workflow State; schedule with Cron. Native OS watcher intentionally not required in v1. |
+| `GF-TABLE-001` | 7 | CSV read/write | `IN_PROGRESS` | PR #40 | Structured rows via FileRef. |
+| `GF-TABLE-002` | 7 | XLSX read/write | `IN_PROGRESS` | PR #40 | First-sheet structured rows using ZIP/XML without a new runtime dependency. |
+| `GF-SHEETS-001` | 8 | Google Sheets v2 | `IN_PROGRESS` | PR #40 | READ/APPEND/UPDATE/UPSERT with multi-row support. |
+| `GF-DRIVE-001` | 8 | Google Drive + FileRef | `IN_PROGRESS` | PR #40 | LIST/DOWNLOAD/UPLOAD/DELETE; FileRef used for bytes. |
+| `GF-MAIL-001` | 8 | File attachments | `IN_PROGRESS` | PR #40 | SMTP MIME attachments backed by FileRef with count/size limits. |
+| `GF-NODE-001` | 9 | Rich parameter schema/UI | `IN_PROGRESS` | PR #40 | visibleWhen, Advanced, placeholder metadata, code/key-value/FileRef controls and server-populated select options. |
+| `GF-PLUGIN-001` | 10 | First-class custom node manifest | `IN_PROGRESS` | PR #40 | `custom.*` manifests declare identity/version/params/outputs/capabilities while built-in types remain immutable. |
+| `GF-CODE-001` | 11 | Promote code to reusable node | `IN_PROGRESS` | PR #40 | Versioned `user.*` JS/Python manifests with declared inputs/outputs. |
+| `GF-AI-001` | 12 | AI-assisted JS/Python code | `IN_PROGRESS` | PR #40 | Generate/fix endpoint returns code only and explicitly reports `executed:false`. |
+| `GF-MCP-001` | 13 | Workflow-as-tool refinement | `IN_PROGRESS` | PR #40 | MCP tool schema now declares `_goflow.idempotency_key`; existing scope/allowlist execution model is retained. |
+| `GF-PACK-001` | 14 | Pack capability tiers | `IN_PROGRESS` | PR #40 | `bounded` vs `trusted_external`; Python/plugin/SSH/Git/custom code require explicit trusted tier + capability. |
 
-## GF-CORE-001 Audit Notes
+## Final Audit Notes for PR #40
 
-Audit performed against the pre-implementation `main`:
+Risk-focused audit areas reviewed before merge:
 
-- Engine previously assigned up to 3 attempts whenever `executor.GetDefinition().Retryable` was true.
-- PostgreSQL and MySQL node types combine `SELECT` and `EXECUTE` under one retry flag.
-- Google Sheets combines `READ` and `APPEND` under one retry flag.
-- Google Drive combines `LIST` and `UPLOAD` under one retry flag.
-- MongoDB combines `FIND_ONE` with write operations under one retry flag.
-- Redis combines read and mutating commands under one retry flag.
-- HTTP Request supports safe and potentially non-idempotent methods under one retry flag.
+- external Python process boundaries and credential exposure;
+- custom/plugin node type replacement boundaries;
+- cURL secret handling and authenticated API routing;
+- FileRef storage and local path containment;
+- SQLite migration ordering/duplicate detection and persistent state;
+- SQL driver parameter binding;
+- HTTP auth/body/response/pagination/FileRef paths;
+- Pack fail-closed trusted-execution classification;
+- editor Switch/error handles and rich parameter rendering;
+- Windows portability via dedicated pilot workflows.
 
-Implemented behavior:
+Issues found and fixed during verification:
 
-- `nodes.MaxAttemptsForNode` is the central policy.
-- The engine calls the policy only after dynamic parameters are resolved, so an expression-supplied operation such as `{{$trigger.method}}` is classified correctly.
-- HTTP GET/HEAD, SQL SELECT, Sheets READ, Drive LIST, Mongo FIND_ONE, and Redis GET/EXISTS/HGET retain automatic retry when the node definition permits it.
-- Mutating operations covered by the audit are restricted to a single implicit attempt.
-- Uniform node types retain their existing `Retryable` behavior.
+1. duplicate database migration version for workflow state;
+2. `:memory:` SQLite test mismatch with Goflow's dual DB connections;
+3. Windows Local File containment failure caused by path canonicalization differences;
+4. Python environment UI was text rather than the roadmap's intended selector;
+5. file-watch semantics were named too broadly and are now explicitly documented as polling.
 
-Verification completed:
-
-```text
-[x] gofmt clean across repository
-[x] go test ./...
-[x] go test -race ./...
-[x] go vet non-release packages
-[x] PR CI green (CI #374)
-[x] merged commit recorded: f3648925a34bbdb1e9ac394b588e0b8087af3c01
-```
-
-## GF-CORE-002 Implementation Notes
-
-- `on_error` is a common non-trigger node parameter injected through node definitions; persisted workflow JSON needs no schema migration.
-- Missing or unknown policy values fail closed to `Stop workflow`, preserving existing workflows.
-- `Continue` keeps the failed node visible as `FAILED`, exposes a redacted failure envelope in execution context, and activates only the standard/default output path.
-- `Continue via error output` activates only edges whose `sourceHandle` is `error`.
-- If error-output mode has no explicit error edge, the failure remains workflow-fatal rather than being silently swallowed.
-- Normal successful execution never activates the reserved `error` edge.
-- Cancellation and executor panics remain workflow-fatal regardless of node policy.
-
-Verification gate before `DONE`:
-
-```text
-[ ] gofmt clean across repository
-[ ] go test ./...
-[ ] go test -race ./...
-[ ] go vet non-release packages
-[ ] PR CI green
-[ ] merged commit recorded here
-```
+No checkpoint in PR #40 is marked `DONE` until the final audited head passes CI and the PR is merged.
 
 ## Progress Log
 
 ### 2026-08-21
 
-- Adopted the technical capability roadmap.
-- Created branch `goflow-core-roadmap-foundation` from `main`.
-- Added `TECHNICAL_ROADMAP.md` and this progress ledger.
-- Audited mixed read/write retry behavior and implemented central operation-aware retry policy.
-- Wired retry classification after expression/parameter resolution.
-- Added table-driven coverage for HTTP, PostgreSQL, MySQL, Google Sheets, Google Drive, MongoDB and Redis, including expression-resolved operations.
-- CI #374 passed formatting, backend unit/race/vet/vulnerability checks, frontend tests/build, Pack contracts/DailyOps, Playwright/appliance E2E, Community builds on Linux/macOS/Windows, and the Windows DailyOps pilot appliance job.
-- Squash-merged PR #37 to `main` as `f3648925a34bbdb1e9ac394b588e0b8087af3c01`.
-- Marked `GF-CORE-001` `DONE`.
-- Started `GF-CORE-002` on branch `gf-core-002-error-policy` and opened PR #39.
-- Added per-node Stop / Continue / Continue-via-error-output execution semantics, common node-definition configuration, redacted failure envelopes, and focused routing tests.
-- CI #378 is the verification gate for the current PR.
+- Adopted `TECHNICAL_ROADMAP.md` and created this canonical ledger.
+- Completed and merged `GF-CORE-001` through PR #37.
+- Completed and merged `GF-CORE-002` through PR #39.
+- Consolidated the remaining capability roadmap into PR #40, with focused tests for the new primitives and integration paths.
+- CI #456 passed on code head `c096fcae2e6f9ff4be46212bc373f448323f6cd0` after migration, SQLite test and Windows path fixes.
+- Dedicated Vietnam Morning Brief Windows Pilot #180 and Daily Business Report #232 also passed on that head.
+- Final audit tightened Python profile UX and documentation semantics before the merge gate.
 
-Future entries should record checkpoint transitions, PR numbers, merge commits and verification commands/results.
+After PR #40 merges, create a small ledger-only follow-up that marks the PR #40 checkpoints `DONE` and records the squash merge SHA plus final CI run.
