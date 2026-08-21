@@ -15,7 +15,7 @@ const (
 )
 
 func init() {
-	migrations = append(migrations, migration{version: 6, name: "workflow_state", up: migrationWorkflowState})
+	migrations = append(migrations, migration{version: 7, name: "workflow_state", up: migrationWorkflowState})
 }
 
 func migrationWorkflowState(tx *sql.Tx) error {
