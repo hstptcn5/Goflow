@@ -50,6 +50,22 @@ node tests/run-e2e.mjs tests/e2e/milestone4-debugging.spec.js --reporter=line --
 Remove-Item Env:\GOFLOW_E2E_BINARY
 ```
 
+## Technical Roadmap Smoke
+
+For one-command verification of the deep-core roadmap on Windows, run from the repository root:
+
+```powershell
+.\scripts\technical-roadmap-smoke.ps1
+```
+
+The script builds a temporary Goflow binary, starts an isolated SQLite instance, creates temporary QA workflows through the public API, exercises representative runtime capabilities, restarts Goflow to verify persistence, prints a compact PASS/FAIL/SKIP summary, and removes its temporary data.
+
+It covers rich node definitions, typed IF, Switch, handled error routing, local HTTP plus cURL secret separation, Workflow State persistence, external Python execution and timeout when CPython is available, FileRef/XLSX round-trip, Local File root protection, File Watch persistence, reusable custom code discovery after restart, and Pack validation.
+
+Use `-RequirePython` when Python is mandatory for the environment. Use `-KeepTemp` only when debugging a failure. External services such as PostgreSQL/MySQL, Google APIs, SMTP, and AI providers are intentionally not contacted by this local smoke; deterministic contract/unit tests cover those integration paths in CI.
+
+A focused `Technical Roadmap Smoke` GitHub Actions workflow runs this same script on Windows with CPython provisioned whenever core roadmap paths change.
+
 ## Release Smoke
 
 From the repository root:
