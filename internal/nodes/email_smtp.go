@@ -26,9 +26,7 @@ const (
 	maxSMTPAttachmentBytes = 20 << 20
 )
 
-type EmailSMTPExecutor struct {
-	store *fileref.Store
-}
+type EmailSMTPExecutor struct{ store *fileref.Store }
 
 func NewEmailSMTPExecutor() *EmailSMTPExecutor { return &EmailSMTPExecutor{store: fileref.DefaultStore()} }
 func NewEmailSMTPExecutorWithStore(store *fileref.Store) *EmailSMTPExecutor {
@@ -75,10 +73,8 @@ type smtpParams struct {
 
 func parseSMTPParams(node *Node) (smtpParams, error) {
 	var out smtpParams
-	out.Host, _ = node.Params["host"].(string)
-	out.Host = strings.TrimSpace(out.Host)
-	portStr, _ := node.Params["port"].(string)
-	portStr = strings.TrimSpace(portStr)
+	out.Host = strings.TrimSpace(conditionValueString(node.Params["host"]))
+	portStr := strings.TrimSpace(conditionValueString(node.Params["port"]))
 	if portStr == "" {
 		portStr = "587"
 	}
@@ -87,11 +83,10 @@ func parseSMTPParams(node *Node) (smtpParams, error) {
 		return out, fmt.Errorf("SMTP port must be an integer between 1 and 65535")
 	}
 	out.Port = port
-	out.Username, _ = node.Params["username"].(string)
-	out.Username = strings.TrimSpace(out.Username)
-	to, _ := node.Params["to"].(string)
-	out.Subject, _ = node.Params["subject"].(string)
-	out.Body, _ = node.Params["body"].(string)
+	out.Username = strings.TrimSpace(conditionValueString(node.Params["username"]))
+	to := conditionValueString(node.Params["to"])
+	out.Subject = conditionValueString(node.Params["subject"])
+	out.Body = conditionValueString(node.Params["body"])
 	if out.Host == "" || out.Username == "" || strings.TrimSpace(to) == "" {
 		return out, fmt.Errorf("SMTP host, username/sender, and destination 'to' address are required")
 	}
@@ -121,9 +116,9 @@ func parseSMTPParams(node *Node) (smtpParams, error) {
 	if len(out.Body) > maxSMTPBodyBytes {
 		return out, fmt.Errorf("SMTP body exceeds %d byte limit", maxSMTPBodyBytes)
 	}
-	credentialID, _ := node.Params["credential_id"].(string)
-	password, _ := node.Params["password"].(string)
-	if strings.TrimSpace(credentialID) == "" && strings.TrimSpace(password) == "" {
+	credentialID := strings.TrimSpace(conditionValueString(node.Params["credential_id"]))
+	password := strings.TrimSpace(conditionValueString(node.Params["password"]))
+	if credentialID == "" && password == "" {
 		return out, fmt.Errorf("SMTP password or encrypted credential is required")
 	}
 	return out, nil
@@ -135,13 +130,14 @@ func parseSMTPAttachmentRefs(raw interface{}) ([]fileref.Ref, error) {
 	}
 	var values []interface{}
 	if text, ok := raw.(string); ok {
-		if err := json.Unmarshal([]byte(text), &values); err != nil {
-			// Also accept one FileRef object encoded as JSON.
-			var single interface{}
-			if errSingle := json.Unmarshal([]byte(text), &single); errSingle != nil {
-				return nil, fmt.Errorf("SMTP attachments must be a FileRef or JSON array of FileRefs")
-			}
-			values = []interface{}{single}
+		var decoded interface{}
+		if err := json.Unmarshal([]byte(text), &decoded); err != nil {
+			return nil, fmt.Errorf("SMTP attachments must be a FileRef or JSON array of FileRefs")
+		}
+		if array, ok := decoded.([]interface{}); ok {
+			values = array
+		} else {
+			values = []interface{}{decoded}
 		}
 	} else if array, ok := raw.([]interface{}); ok {
 		values = array
@@ -172,12 +168,10 @@ func buildSMTPMessage(params smtpParams, attachments []fileref.Ref, store *filer
 		fmt.Fprintf(&buffer, "Content-Type: text/html; charset=UTF-8\r\n\r\n%s", params.Body)
 		return buffer.Bytes(), nil
 	}
-
 	writer := multipart.NewWriter(&buffer)
 	fmt.Fprintf(&buffer, "Content-Type: multipart/mixed; boundary=%q\r\n\r\n", writer.Boundary())
 	bodyHeader := make(textproto.MIMEHeader)
 	bodyHeader.Set("Content-Type", "text/html; charset=UTF-8")
-	bodyHeader.Set("Content-Transfer-Encoding", "8bit")
 	bodyPart, err := writer.CreatePart(bodyHeader)
 	if err != nil {
 		return nil, err
@@ -193,11 +187,11 @@ func buildSMTPMessage(params smtpParams, attachments []fileref.Ref, store *filer
 		if len(data) > maxSMTPAttachmentBytes {
 			return nil, fmt.Errorf("SMTP attachment %q exceeds %d byte limit", ref.Name, maxSMTPAttachmentBytes)
 		}
-		header := make(textproto.MIMEHeader)
 		mimeType := strings.TrimSpace(ref.MIME)
 		if mimeType == "" {
 			mimeType = "application/octet-stream"
 		}
+		header := make(textproto.MIMEHeader)
 		header.Set("Content-Type", fmt.Sprintf("%s; name=%q", mimeType, ref.Name))
 		header.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", ref.Name))
 		header.Set("Content-Transfer-Encoding", "base64")
@@ -205,11 +199,14 @@ func buildSMTPMessage(params smtpParams, attachments []fileref.Ref, store *filer
 		if err != nil {
 			return nil, err
 		}
-		encoder := base64.NewEncoder(base64.StdEncoding, newMIMEBase64Writer(part))
-		if _, err := encoder.Write(data); err != nil {
-			return nil, err
+		encoded := base64.StdEncoding.EncodeToString(data)
+		for len(encoded) > 76 {
+			if _, err := fmt.Fprintf(part, "%s\r\n", encoded[:76]); err != nil {
+				return nil, err
+			}
+			encoded = encoded[76:]
 		}
-		if err := encoder.Close(); err != nil {
+		if _, err := fmt.Fprintf(part, "%s\r\n", encoded); err != nil {
 			return nil, err
 		}
 	}
@@ -217,41 +214,6 @@ func buildSMTPMessage(params smtpParams, attachments []fileref.Ref, store *filer
 		return nil, err
 	}
 	return buffer.Bytes(), nil
-}
-
-type mimeBase64Writer struct {
-	writer ioWriter
-	column int
-}
-
-type ioWriter interface {
-	Write([]byte) (int, error)
-}
-
-func newMIMEBase64Writer(writer ioWriter) *mimeBase64Writer { return &mimeBase64Writer{writer: writer} }
-
-func (w *mimeBase64Writer) Write(p []byte) (int, error) {
-	original := len(p)
-	for len(p) > 0 {
-		remaining := 76 - w.column
-		if remaining == 0 {
-			if _, err := w.writer.Write([]byte("\r\n")); err != nil {
-				return 0, err
-			}
-			w.column = 0
-			remaining = 76
-		}
-		n := len(p)
-		if n > remaining {
-			n = remaining
-		}
-		if _, err := w.writer.Write(p[:n]); err != nil {
-			return 0, err
-		}
-		w.column += n
-		p = p[n:]
-	}
-	return original, nil
 }
 
 func sendSMTPWithContext(ctx context.Context, host string, port int, username, password string, recipients []string, msg []byte) error {
@@ -288,6 +250,7 @@ func sendSMTPWithContext(ctx context.Context, host string, port int, username, p
 			if err := client.StartTLS(tlsConfig); err != nil {
 				return err
 			}
+		}
 	}
 	if username != "" {
 		if err := client.Auth(smtp.PlainAuth("", username, password, host)); err != nil {
