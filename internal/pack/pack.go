@@ -61,6 +61,7 @@ type Manifest struct {
 	CredentialRequirements []CredentialRequirement `json:"credential_requirements,omitempty"`
 	Bindings               []Binding               `json:"bindings,omitempty"`
 	RequiredCapabilities   []string                `json:"required_capabilities,omitempty"`
+	ExecutionTier          string                  `json:"execution_tier,omitempty"`
 	OfflineTestFixture     string                  `json:"offline_test_fixture,omitempty"`
 }
 
@@ -174,6 +175,9 @@ func Load(dir string) (*Pack, error) {
 		return nil, err
 	}
 	if err := rejectPackEmbeddedSecrets(workflowDef.NodesJSON); err != nil {
+		return nil, err
+	}
+	if err := validatePackExecutionTier(manifest, workflowDef.NodesJSON); err != nil {
 		return nil, err
 	}
 

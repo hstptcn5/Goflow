@@ -11,13 +11,13 @@ import (
 const (
 	ExecutionTierBounded         = "bounded"
 	ExecutionTierTrustedExternal = "trusted_external"
-	CapabilityTrustedExternalV1 = "goflow.execution.trusted-external.v1"
+	CapabilityTrustedExternalV1  = "goflow.execution.trusted-external.v1"
 )
 
 type ExecutionTierAssessment struct {
-	Tier              string   `json:"tier"`
-	TrustedNodeIDs    []string `json:"trusted_node_ids,omitempty"`
-	TrustedNodeTypes  []string `json:"trusted_node_types,omitempty"`
+	Tier             string   `json:"tier"`
+	TrustedNodeIDs   []string `json:"trusted_node_ids,omitempty"`
+	TrustedNodeTypes []string `json:"trusted_node_types,omitempty"`
 }
 
 func normalizedExecutionTier(raw string) (string, error) {
