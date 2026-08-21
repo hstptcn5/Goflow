@@ -85,6 +85,9 @@ func parseSubWorkflowPayload(raw interface{}) (interface{}, error) {
 }
 
 func parseSubWorkflowLoopErrorPolicy(raw interface{}) (SubWorkflowLoopErrorPolicy, error) {
+	if raw == nil {
+		return SubWorkflowStopAll, nil
+	}
 	value := strings.ToLower(strings.TrimSpace(fmt.Sprint(raw)))
 	switch value {
 	case "", "stop all", "stop_all", "stop":
