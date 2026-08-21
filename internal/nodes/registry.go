@@ -125,7 +125,7 @@ func (r *PluginRegistry) ListDefinitions() []NodeDefinition {
 	defer r.mu.RUnlock()
 	defs := make([]NodeDefinition, 0, len(r.executors))
 	for _, exec := range r.executors {
-		defs = append(defs, exec.GetDefinition())
+		defs = append(defs, DefinitionWithErrorPolicy(exec.GetDefinition()))
 	}
 	return defs
 }
