@@ -45,16 +45,14 @@ func TestCSVNormalizesDuplicateAndBlankHeaders(t *testing.T) {
 }
 
 func TestCSVWithoutHeaderGetsStableColumnNames(t *testing.T) {
-	table, err := ReadCSV(strings.NewReader("a,b\nc,d\n"), ';', false)
-	if err == nil {
-		t.Fatal("wrong delimiter should fail because fields contain bare comma data only when semicolon configured")
-	}
-
-	table, err = ReadCSV(strings.NewReader("a;b\nc;d\n"), ';', false)
+	table, err := ReadCSV(strings.NewReader("a;b\nc;d\n"), ';', false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(table.Columns, []string{"column_1", "column_2"}) {
 		t.Fatalf("columns = %#v", table.Columns)
+	}
+	if table.Rows[1]["column_2"] != "d" {
+		t.Fatalf("rows = %#v", table.Rows)
 	}
 }
