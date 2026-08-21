@@ -157,18 +157,41 @@ type ParamDefinition struct {
 	Placeholder         string              `json:"placeholder,omitempty"`
 }
 
+// OutputReferenceContract describes how a node's runtime value is exposed to
+// downstream template expressions. It exists so UI and AI clients do not have
+// to guess whether executors add an extra envelope around their returned value.
+type OutputReferenceContract struct {
+	RootMode      string   `json:"root_mode"`
+	Pattern       string   `json:"pattern"`
+	DynamicFields bool     `json:"dynamic_fields,omitempty"`
+	Description   string   `json:"description,omitempty"`
+	Examples      []string `json:"examples,omitempty"`
+}
+
+// TriggerContract describes how a trigger node is invoked at runtime. In
+// particular, it separates editor parameters from the actual public endpoint.
+type TriggerContract struct {
+	Invocation       string   `json:"invocation"`
+	EndpointTemplate string   `json:"endpoint_template,omitempty"`
+	RequiresActive   bool     `json:"requires_active,omitempty"`
+	PayloadRoot      string   `json:"payload_root,omitempty"`
+	Notes            []string `json:"notes,omitempty"`
+}
+
 // NodeDefinition contains UI metadata for a node type.
 type NodeDefinition struct {
-	Type         NodeType                 `json:"type"`
-	Name         string                   `json:"name"`
-	Description  string                   `json:"description"`
-	Icon         string                   `json:"icon"`
-	Category     string                   `json:"category"`
-	Retryable    bool                     `json:"retryable"` // False disables retry for non-idempotent side effects.
-	Version      string                   `json:"version,omitempty"`
-	Capabilities []string                 `json:"capabilities,omitempty"`
-	Outputs      []PluginOutputDefinition `json:"outputs,omitempty"`
-	Params       []ParamDefinition        `json:"params"`
+	Type            NodeType                 `json:"type"`
+	Name            string                   `json:"name"`
+	Description     string                   `json:"description"`
+	Icon            string                   `json:"icon"`
+	Category        string                   `json:"category"`
+	Retryable       bool                     `json:"retryable"` // False disables retry for non-idempotent side effects.
+	Version         string                   `json:"version,omitempty"`
+	Capabilities    []string                 `json:"capabilities,omitempty"`
+	Outputs         []PluginOutputDefinition `json:"outputs,omitempty"`
+	OutputReference *OutputReferenceContract `json:"output_reference,omitempty"`
+	TriggerContract *TriggerContract         `json:"trigger_contract,omitempty"`
+	Params          []ParamDefinition        `json:"params"`
 }
 
 // NodeExecutor is implemented by every built-in node and plugin node.

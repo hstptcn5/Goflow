@@ -19,6 +19,14 @@ func (e *validatingExecutor) Execute(ctx *ExecutionContext, node *Node) (interfa
 	return e.NodeExecutor.Execute(ctx, node)
 }
 
+// GetDefinition is deliberately enriched here instead of only inside
+// ListDefinitions. This keeps the schema advertised to AI/UI clients identical
+// to the schema used by workflow validation (including common on_error policy
+// and runtime output/trigger contracts).
+func (e *validatingExecutor) GetDefinition() NodeDefinition {
+	return DefinitionWithRuntimeContract(DefinitionWithErrorPolicy(e.NodeExecutor.GetDefinition()))
+}
+
 type credentialDefinitionOverrideExecutor struct {
 	NodeExecutor
 	paramName string
@@ -141,7 +149,7 @@ func (r *PluginRegistry) ListDefinitions() []NodeDefinition {
 	defer r.mu.RUnlock()
 	defs := make([]NodeDefinition, 0, len(r.executors))
 	for _, exec := range r.executors {
-		defs = append(defs, DefinitionWithErrorPolicy(exec.GetDefinition()))
+		defs = append(defs, exec.GetDefinition())
 	}
 	return defs
 }
