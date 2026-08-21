@@ -82,6 +82,7 @@ func NewBuiltinRegistryWithTelegramExecutor(telegramExecutor NodeExecutor) *Plug
 	_ = registry.Register(NewDiscordBotExecutor())
 	_ = registry.Register(NewSlackBotExecutor())
 	_ = registry.Register(NewJSCodeRunnerExecutor())
+	_ = registry.Register(NewPythonCodeExecutor())
 	_ = registry.Register(NewSubWorkflowExecutor())
 	_ = registry.Register(NewPostgresQueryExecutor())
 	_ = registry.Register(NewRedisCommandExecutor())
