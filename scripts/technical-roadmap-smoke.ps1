@@ -71,7 +71,15 @@ function Invoke-GoflowApi {
     $params.ContentType = "application/json"
     $params.Body = ($Body | ConvertTo-Json -Depth 40)
   }
-  Invoke-RestMethod @params
+  try {
+    Invoke-RestMethod @params
+  } catch {
+    $detail = $_.ErrorDetails.Message
+    if ([string]::IsNullOrWhiteSpace($detail)) {
+      $detail = $_.Exception.Message
+    }
+    throw "$Method $Path failed: $detail"
+  }
 }
 
 function New-QAWorkflow {
@@ -194,7 +202,7 @@ try {
   Invoke-SmokeCase "Rich node definitions" {
     $definitions = @(Invoke-GoflowApi -Method Get -Path "/api/v1/nodes/definitions")
     foreach ($type in @("conditionIf", "switch", "workflowState", "pythonCode", "localFile", "fileTrigger", "tableFile", "httpRequest")) {
-      Assert-True (($definitions | Where-Object { $_.type -eq $type }).Count -eq 1) "missing node definition $type"
+      Assert-True (@($definitions | Where-Object { $_.type -eq $type }).Count -eq 1) "missing node definition $type"
     }
     $python = $definitions | Where-Object { $_.type -eq "pythonCode" } | Select-Object -First 1
     $pythonEnvironment = $python.params | Where-Object { $_.name -eq "environment" } | Select-Object -First 1
