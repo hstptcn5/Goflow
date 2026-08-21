@@ -46,6 +46,13 @@
   background: #ffe0e0 !important;
 }
 
+/* Nodes configured for explicit error routing expose a second output port. */
+.goflow-canvas .custom-node-card > .vue-flow__handle.source[data-handleid='error'] {
+  top: 76% !important;
+  background: #fee2e2 !important;
+  border-color: #dc2626 !important;
+}
+
 /* Keep the quick-add affordance away from the actual output port and wire. */
 .goflow-canvas .custom-node-card > .quick-add-button {
   right: -13px !important;
@@ -74,4 +81,10 @@
 
 .goflow-canvas .custom-node-card > .handle-label-false {
   top: calc(68% - 8px) !important;
+}
+
+.goflow-canvas .custom-node-card > .handle-label-error {
+  top: calc(76% - 8px) !important;
+  border-color: #dc2626 !important;
+  color: #991b1b !important;
 }
