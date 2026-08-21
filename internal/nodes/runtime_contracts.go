@@ -1,9 +1,6 @@
 package nodes
 
-import (
-	"fmt"
-	"strings"
-)
+import "strings"
 
 type runtimeContractSeed struct {
 	outputs         []PluginOutputDefinition
@@ -130,45 +127,10 @@ func appendUniqueCapability(values []string, value string) []string {
 	return append(values, value)
 }
 
-func appendRuntimeContractHint(description string, def NodeDefinition) string {
-	var hints []string
-	if def.OutputReference != nil {
-		hint := fmt.Sprintf("output_reference(root_mode=%s, pattern=%s)", def.OutputReference.RootMode, def.OutputReference.Pattern)
-		if def.OutputReference.Description != "" {
-			hint += ": " + def.OutputReference.Description
-		}
-		hints = append(hints, hint)
-	}
-	if def.TriggerContract != nil {
-		hint := fmt.Sprintf("trigger(invocation=%s", def.TriggerContract.Invocation)
-		if def.TriggerContract.EndpointTemplate != "" {
-			hint += ", endpoint=" + def.TriggerContract.EndpointTemplate
-		}
-		if def.TriggerContract.RequiresActive {
-			hint += ", requires_active=true"
-		}
-		hint += ")"
-		if len(def.TriggerContract.Notes) > 0 {
-			hint += ": " + strings.Join(def.TriggerContract.Notes, " ")
-		}
-		hints = append(hints, hint)
-	}
-	if len(hints) == 0 {
-		return description
-	}
-	base := strings.TrimSpace(description)
-	if base != "" && !strings.HasSuffix(base, ".") {
-		base += "."
-	}
-	if base != "" {
-		base += " "
-	}
-	return base + "Runtime contract: " + strings.Join(hints, " | ")
-}
-
 // DefinitionWithRuntimeContract enriches the public node schema from one
-// canonical contract table. ListDefinitions, AI validation and any UI client
-// therefore observe the same parameter/output semantics.
+// canonical contract table. Structured fields remain suitable for UI/API use,
+// while compact capability tags carry the same facts into Agent Lab without
+// bloating user-facing node descriptions.
 func DefinitionWithRuntimeContract(def NodeDefinition) NodeDefinition {
 	seed, ok := builtinRuntimeContractSeeds[def.Type]
 	if ok {
@@ -197,13 +159,37 @@ func DefinitionWithRuntimeContract(def NodeDefinition) NodeDefinition {
 	if def.OutputReference != nil {
 		def.Capabilities = appendUniqueCapability(def.Capabilities, "output_reference:"+def.OutputReference.RootMode)
 		def.Capabilities = appendUniqueCapability(def.Capabilities, "output_pattern:"+def.OutputReference.Pattern)
+		if def.OutputReference.DynamicFields {
+			def.Capabilities = appendUniqueCapability(def.Capabilities, "output_dynamic_fields:true")
+		}
+		if def.OutputReference.Description != "" {
+			def.Capabilities = appendUniqueCapability(def.Capabilities, "output_note:"+def.OutputReference.Description)
+		}
+		for _, example := range def.OutputReference.Examples {
+			def.Capabilities = appendUniqueCapability(def.Capabilities, "output_example:"+example)
+		}
+	}
+	for _, output := range def.Outputs {
+		tag := "output_field:" + output.Name
+		if output.Type != "" {
+			tag += ":" + output.Type
+		}
+		def.Capabilities = appendUniqueCapability(def.Capabilities, tag)
 	}
 	if def.TriggerContract != nil {
 		def.Capabilities = appendUniqueCapability(def.Capabilities, "trigger:"+def.TriggerContract.Invocation)
 		if def.TriggerContract.EndpointTemplate != "" {
 			def.Capabilities = appendUniqueCapability(def.Capabilities, "trigger_endpoint:"+def.TriggerContract.EndpointTemplate)
 		}
+		if def.TriggerContract.RequiresActive {
+			def.Capabilities = appendUniqueCapability(def.Capabilities, "trigger_requires_active:true")
+		}
+		if def.TriggerContract.PayloadRoot != "" {
+			def.Capabilities = appendUniqueCapability(def.Capabilities, "trigger_payload_root:"+def.TriggerContract.PayloadRoot)
+		}
+		for _, note := range def.TriggerContract.Notes {
+			def.Capabilities = appendUniqueCapability(def.Capabilities, "trigger_note:"+note)
+		}
 	}
-	def.Description = appendRuntimeContractHint(def.Description, def)
 	return def
 }
