@@ -170,7 +170,7 @@ func (e *FileTriggerExecutor) Validate(node *Node) error {
 
 func (e *FileTriggerExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
-		Type: TypeFileTrigger, Name: "File Trigger", Description: "Detects created or modified local files using a restart-safe polling snapshot; commonly placed after a Cron trigger", Icon: "FolderSearch", Category: "TRIGGER", Retryable: false,
+		Type: TypeFileTrigger, Name: "File Watch (Polling)", Description: "Detects created or modified local files by comparing a restart-safe snapshot; schedule it with Cron for periodic watching", Icon: "FolderSearch", Category: "TRIGGER", Retryable: false,
 		Params: []ParamDefinition{
 			{Name: "path", Label: "Folder", Type: "text", Default: "", Required: true, Description: "Folder constrained by GOFLOW_FILE_ALLOWED_ROOTS"},
 			{Name: "pattern", Label: "Pattern", Type: "text", Default: "*", Required: false, Description: "Glob such as *.xlsx"},
