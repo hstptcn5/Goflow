@@ -150,6 +150,7 @@ func NewRouter(
 						fileServer.ServeHTTP(w, r)
 						return
 					}
+				}
 			}
 			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 			w.Header().Set("Pragma", "no-cache")
