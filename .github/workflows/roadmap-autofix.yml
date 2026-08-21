@@ -1,4 +1,4 @@
-name: Roadmap branch gofmt autofix
+name: Roadmap branch patch and gofmt
 
 on:
   push:
@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  gofmt:
-    if: ${{ !contains(github.event.head_commit.message, 'chore: gofmt roadmap branch') }}
+  patch-and-format:
+    if: ${{ !contains(github.event.head_commit.message, 'chore: apply roadmap patch') }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout roadmap branch
@@ -22,17 +22,23 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Apply roadmap patch if present
+        shell: bash
+        run: |
+          if [ -f scripts/roadmap_patch.py ]; then
+            python3 scripts/roadmap_patch.py
+          fi
       - name: Format Go sources
         run: gofmt -w .
-      - name: Commit formatting if needed
+      - name: Commit patch if needed
         shell: bash
         run: |
           if git diff --quiet; then
-            echo "No formatting changes needed"
+            echo "No patch or formatting changes needed"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- '*.go'
-          git commit -m "chore: gofmt roadmap branch"
+          git add -- '*.go' '*.js' '*.vue' '*.md' '*.json'
+          git commit -m "chore: apply roadmap patch"
           git push origin HEAD:goflow-phase01-workflow-language
