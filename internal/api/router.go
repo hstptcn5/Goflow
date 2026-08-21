@@ -78,6 +78,7 @@ func NewRouter(
 	oauth2Handler := NewOAuth2Handler(credStore)
 	wsHandler := NewWSHandler(eventBus, apiKey)
 	aiHandler := NewAIHandler(credStore, registry)
+	agentHandler := NewAIAgentHandler(credStore, registry, wfStore, eng)
 	httpImportHandler := NewHTTPImportHandler()
 	customNodeHandler := NewCustomNodeHandler(registry)
 
@@ -121,6 +122,7 @@ func NewRouter(
 		r.Post("/ai/configure-node", aiHandler.ConfigureNode)
 		r.Post("/ai/code", aiHandler.AssistCode)
 		r.Post("/ai/review", aiHandler.ReviewWorkflow)
+		r.Post("/ai/agent/iterate", agentHandler.Iterate)
 	})
 
 	r.Post("/webhook/{workflowId}", wfHandler.TriggerWebhook)
