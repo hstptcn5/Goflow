@@ -60,13 +60,42 @@ func localFileAllowedRoots() ([]string, error) {
 }
 
 func pathWithinRoot(path, root string) bool {
-	path = filepath.Clean(path)
-	root = filepath.Clean(root)
-	if path == root {
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	if rel == "." {
 		return true
 	}
-	prefix := root + string(os.PathSeparator)
-	return strings.HasPrefix(path, prefix)
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && !filepath.IsAbs(rel)
+}
+
+// canonicalizeWritePath resolves every symlink/junction in the existing prefix
+// of a path, then appends the not-yet-created suffix. Resolving only the direct
+// parent is insufficient on Windows because a temporary directory may be
+// represented through an 8.3/alias path while EvalSymlinks returns its long
+// canonical form. It also preserves the fail-closed symlink-escape check when
+// one of the existing ancestors is a link outside an allowed root.
+func canonicalizeWritePath(abs string) (string, error) {
+	abs = filepath.Clean(abs)
+	probe := abs
+	for {
+		if resolved, err := filepath.EvalSymlinks(probe); err == nil {
+			rel, relErr := filepath.Rel(probe, abs)
+			if relErr != nil {
+				return "", relErr
+			}
+			if rel == "." {
+				return filepath.Clean(resolved), nil
+			}
+			return filepath.Clean(filepath.Join(resolved, rel)), nil
+		}
+		parent := filepath.Dir(probe)
+		if parent == probe {
+			return abs, nil
+		}
+		probe = parent
+	}
 }
 
 func resolveLocalFilePath(raw string, forWrite bool) (string, error) {
@@ -80,9 +109,9 @@ func resolveLocalFilePath(raw string, forWrite bool) (string, error) {
 	abs = filepath.Clean(abs)
 	candidate := abs
 	if forWrite {
-		parent := filepath.Dir(abs)
-		if resolvedParent, err := filepath.EvalSymlinks(parent); err == nil {
-			candidate = filepath.Join(resolvedParent, filepath.Base(abs))
+		candidate, err = canonicalizeWritePath(abs)
+		if err != nil {
+			return "", err
 		}
 	} else if resolved, err := filepath.EvalSymlinks(abs); err == nil {
 		candidate = resolved
