@@ -34,6 +34,15 @@ func hasOutput(def NodeDefinition, name string) bool {
 	return false
 }
 
+func hasCapabilityContaining(def NodeDefinition, fragment string) bool {
+	for _, capability := range def.Capabilities {
+		if strings.Contains(capability, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestBuiltinRuntimeContractsGroundPythonWebhookAndSwitch(t *testing.T) {
 	registry := NewBuiltinRegistry()
 
@@ -44,12 +53,18 @@ func TestBuiltinRuntimeContractsGroundPythonWebhookAndSwitch(t *testing.T) {
 	if pythonDef.OutputReference.RootMode != "direct" {
 		t.Fatalf("python root mode = %q, want direct", pythonDef.OutputReference.RootMode)
 	}
-	pythonContract := pythonDef.OutputReference.Description + " " + strings.Join(pythonDef.OutputReference.Examples, " ") + " " + pythonDef.Description
+	pythonContract := pythonDef.OutputReference.Description + " " + strings.Join(pythonDef.OutputReference.Examples, " ")
 	if !strings.Contains(pythonContract, "{{<node_id>.category}}") {
 		t.Fatalf("python contract does not teach direct category reference: %s", pythonContract)
 	}
 	if !strings.Contains(pythonContract, "not {{<node_id>.output.category}}") {
 		t.Fatalf("python contract does not explicitly reject the invented output envelope: %s", pythonContract)
+	}
+	if strings.Contains(pythonDef.Description, "Runtime contract:") {
+		t.Fatalf("runtime hints must not bloat UI description: %s", pythonDef.Description)
+	}
+	if !hasCapabilityContaining(pythonDef, "output_example:{{<node_id>.category}}") {
+		t.Fatalf("python Agent capability hints are missing direct reference example: %#v", pythonDef.Capabilities)
 	}
 
 	webhookDef := definitionByType(t, registry, TypeWebhookTrigger)
@@ -65,8 +80,11 @@ func TestBuiltinRuntimeContractsGroundPythonWebhookAndSwitch(t *testing.T) {
 	if !hasOutput(webhookDef, "body") || !hasOutput(webhookDef, "query") {
 		t.Fatalf("webhook outputs are incomplete: %#v", webhookDef.Outputs)
 	}
-	if !strings.Contains(webhookDef.Description, "Do not instruct users to POST directly to the node path parameter") {
-		t.Fatalf("webhook description does not carry invocation warning: %s", webhookDef.Description)
+	if !hasCapabilityContaining(webhookDef, "Do not instruct users to POST directly to the node path parameter") {
+		t.Fatalf("webhook Agent hints do not carry invocation warning: %#v", webhookDef.Capabilities)
+	}
+	if strings.Contains(webhookDef.Description, "/webhook/{workflow_id}") {
+		t.Fatalf("webhook runtime endpoint should remain structured/hinted, not appended to UI description: %s", webhookDef.Description)
 	}
 
 	switchDef := definitionByType(t, registry, TypeSwitch)
@@ -114,5 +132,8 @@ func TestPluginDeclaredOutputsReceiveDirectReferenceContract(t *testing.T) {
 	}
 	if grounded.OutputReference.RootMode != "direct" {
 		t.Fatalf("custom node output root mode = %q", grounded.OutputReference.RootMode)
+	}
+	if !hasCapabilityContaining(grounded, "output_field:result:string") {
+		t.Fatalf("custom output field should be present in Agent capability hints: %#v", grounded.Capabilities)
 	}
 }
