@@ -28,11 +28,11 @@ type AIAgentHandler struct {
 }
 
 type aiAgentRequest struct {
-	Goal         string                 `json:"goal"`
-	CredentialID string                 `json:"credential_id"`
-	Workflow     workflowDraft          `json:"workflow"`
-	Execution    map[string]interface{} `json:"execution,omitempty"`
-	MaxIterations int                  `json:"max_iterations,omitempty"`
+	Goal          string                 `json:"goal"`
+	CredentialID  string                 `json:"credential_id"`
+	Workflow      workflowDraft          `json:"workflow"`
+	Execution     map[string]interface{} `json:"execution,omitempty"`
+	MaxIterations int                    `json:"max_iterations,omitempty"`
 }
 
 type aiAgentModelProposal struct {
