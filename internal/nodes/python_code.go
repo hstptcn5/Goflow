@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -123,6 +124,23 @@ func pythonProfiles() (map[string]string, error) {
 		}
 	}
 	return profiles, nil
+}
+
+func pythonEnvironmentOptions() []string {
+	options := []string{"default"}
+	profiles, err := pythonProfiles()
+	if err != nil {
+		return options
+	}
+	names := make([]string, 0, len(profiles))
+	for name := range profiles {
+		name = strings.TrimSpace(name)
+		if name != "" && name != "default" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return append(options, names...)
 }
 
 func resolvePythonInterpreter(node *Node) (string, error) {
@@ -264,7 +282,7 @@ func (e *PythonCodeExecutor) GetDefinition() NodeDefinition {
 	return NodeDefinition{
 		Type: TypePythonCode, Name: "Python Code", Description: "Runs trusted local Python in an external CPython environment for custom computation", Icon: "Code2", Category: "LOGIC & UTILITY", Retryable: false,
 		Params: []ParamDefinition{
-			{Name: "environment", Label: "Python Environment", Type: "text", Default: "default", Required: false, Description: "Named profile from GOFLOW_PYTHON_PROFILES_JSON; default auto-discovers CPython"},
+			{Name: "environment", Label: "Python Environment", Type: "select", Options: pythonEnvironmentOptions(), Default: "default", Required: false, Description: "Named profile from GOFLOW_PYTHON_PROFILES_JSON; default auto-discovers CPython"},
 			{Name: "interpreter", Label: "Interpreter Path", Type: "text", Default: "", Required: false, Advanced: true, Description: "Optional direct python/python.exe path overriding the environment profile"},
 			{Name: "input", Label: "Input Value", Type: "json", Default: "null", Required: false, Description: "Value exposed to code as input"},
 			{Name: "code", Label: "Python Code", Type: "textarea", Default: "output = {\"status\": \"processed\"}", Required: true, Control: "code", Language: "python", Description: "Set the variable output to a JSON-compatible result. Trusted code runs with the Goflow OS account permissions."},
