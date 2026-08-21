@@ -1,12 +1,21 @@
 package storage
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
-func TestStateStoreWorkflowAndGlobalScopes(t *testing.T) {
-	db, err := NewDB(":memory:")
+func newStateTestDB(t *testing.T) *DB {
+	t.Helper()
+	db, err := NewDB(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	return db
+}
+
+func TestStateStoreWorkflowAndGlobalScopes(t *testing.T) {
+	db := newStateTestDB(t)
 	defer db.Close()
 	store := NewStateStore(db)
 
@@ -34,10 +43,7 @@ func TestStateStoreWorkflowAndGlobalScopes(t *testing.T) {
 }
 
 func TestStateStoreIncrementIsPersistentAndTyped(t *testing.T) {
-	db, err := NewDB(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := newStateTestDB(t)
 	defer db.Close()
 	store := NewStateStore(db)
 
@@ -58,10 +64,7 @@ func TestStateStoreIncrementIsPersistentAndTyped(t *testing.T) {
 }
 
 func TestStateStoreDeleteAndValidation(t *testing.T) {
-	db, err := NewDB(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := newStateTestDB(t)
 	defer db.Close()
 	store := NewStateStore(db)
 	if err := store.Set("workflow", "wf", "key", true); err != nil {
