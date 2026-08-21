@@ -82,7 +82,7 @@ func newErrorPolicyEngine(t *testing.T) (*Engine, *storage.WorkflowStore, *polic
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { db.Close() })
 	wfStore := storage.NewWorkflowStore(db)
 	eng := NewEngine(registry, storage.NewExecutionStore(db), storage.NewCredentialStore(db, nil), NewEventBus(), wfStore)
 	return eng, wfStore, recorder
