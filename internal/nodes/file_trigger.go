@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +40,17 @@ func fileTriggerStateKey(path, pattern string) string {
 	return "file_trigger:" + hex.EncodeToString(sum[:16])
 }
 
+func decodeFileTriggerInt64(raw interface{}) (int64, bool) {
+	switch typed := raw.(type) {
+	case string:
+		value, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		return value, err == nil
+	default:
+		value, ok := conditionNumber(raw)
+		return int64(value), ok
+	}
+}
+
 func decodeFileTriggerSnapshot(raw interface{}) map[string]fileTriggerStamp {
 	result := map[string]fileTriggerStamp{}
 	if raw == nil {
@@ -50,9 +62,12 @@ func decodeFileTriggerSnapshot(raw interface{}) map[string]fileTriggerStamp {
 			if !ok {
 				continue
 			}
-			size, _ := conditionNumber(item["size"])
-			mod, _ := conditionNumber(item["mod_unix"])
-			result[name] = fileTriggerStamp{Size: int64(size), ModUnix: int64(mod)}
+			size, sizeOK := decodeFileTriggerInt64(item["size"])
+			mod, modOK := decodeFileTriggerInt64(item["mod_unix"])
+			if !sizeOK || !modOK {
+				continue
+			}
+			result[name] = fileTriggerStamp{Size: size, ModUnix: mod}
 		}
 	}
 	return result
@@ -61,7 +76,12 @@ func decodeFileTriggerSnapshot(raw interface{}) map[string]fileTriggerStamp {
 func encodeFileTriggerSnapshot(snapshot map[string]fileTriggerStamp) map[string]interface{} {
 	result := make(map[string]interface{}, len(snapshot))
 	for name, stamp := range snapshot {
-		result[name] = map[string]interface{}{"size": stamp.Size, "mod_unix": stamp.ModUnix}
+		// Store int64 values as decimal strings so JSON round-trips do not lose
+		// nanosecond timestamp precision through float64 decoding.
+		result[name] = map[string]interface{}{
+			"size":     strconv.FormatInt(stamp.Size, 10),
+			"mod_unix": strconv.FormatInt(stamp.ModUnix, 10),
+		}
 	}
 	return result
 }
