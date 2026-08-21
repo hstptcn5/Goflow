@@ -69,3 +69,31 @@ func TestMaxAttemptsForNodeUsesResolvedOperationDefaults(t *testing.T) {
 		})
 	}
 }
+
+func TestMaxAttemptsForNodeUsesResolvedOperation(t *testing.T) {
+	ctx := NewExecutionContext("wf", "exec")
+	ctx.SetOutput("$trigger", map[string]interface{}{
+		"method":     "POST",
+		"query_type": "EXECUTE",
+	})
+
+	tests := []struct {
+		name   string
+		typeID NodeType
+		param  string
+		path   string
+	}{
+		{name: "resolved HTTP POST is single attempt", typeID: TypeHTTPRequest, param: "method", path: "{{$trigger.method}}"},
+		{name: "resolved SQL EXECUTE is single attempt", typeID: TypePostgresQuery, param: "query_type", path: "{{$trigger.query_type}}"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := &Node{Type: tt.typeID, Params: map[string]interface{}{tt.param: tt.path}}
+			evaluated := &Node{Type: raw.Type, Params: ResolveParams(ctx, raw.Params)}
+			if got := MaxAttemptsForNode(evaluated, NodeDefinition{Retryable: true}); got != 1 {
+				t.Fatalf("MaxAttemptsForNode() = %d, want 1", got)
+			}
+		})
+	}
+}
