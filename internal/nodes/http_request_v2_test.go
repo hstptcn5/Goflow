@@ -31,11 +31,11 @@ func TestHTTPRequestStructuredQueryAndBearerAuth(t *testing.T) {
 	ctx := NewExecutionContextWithContext(context.Background(), "wf", "exec")
 	ctx.Credentials["cred"] = "private-token"
 	node := &Node{Params: map[string]interface{}{
-		"method":       "GET",
-		"url":          server.URL,
-		"query_params": map[string]interface{}{"status": "open", "tag": []interface{}{"a", "b"}},
-		"headers":      "{}",
-		"auth_mode":    "bearer",
+		"method":        "GET",
+		"url":           server.URL,
+		"query_params":  map[string]interface{}{"status": "open", "tag": []interface{}{"a", "b"}},
+		"headers":       "{}",
+		"auth_mode":     "bearer",
 		"credential_id": "cred",
 	}}
 	if _, err := NewHTTPRequestExecutor().Execute(ctx, node); err != nil {
@@ -51,7 +51,7 @@ func TestHTTPRequestBasicAndCustomHeaderAuth(t *testing.T) {
 		check  func(*testing.T, *http.Request)
 	}{
 		{
-			name: "basic",
+			name:   "basic",
 			params: map[string]interface{}{"auth_mode": "basic"},
 			secret: `{"username":"alice","password":"secret"}`,
 			check: func(t *testing.T, r *http.Request) {
@@ -62,7 +62,7 @@ func TestHTTPRequestBasicAndCustomHeaderAuth(t *testing.T) {
 			},
 		},
 		{
-			name: "custom header",
+			name:   "custom header",
 			params: map[string]interface{}{"auth_mode": "custom_header", "auth_header": "X-Token", "auth_prefix": "Token "},
 			secret: "abc",
 			check: func(t *testing.T, r *http.Request) {
