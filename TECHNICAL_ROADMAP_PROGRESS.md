@@ -22,12 +22,12 @@ Rules:
 
 Technical roadmap adopted: 2026-08-21.
 
-Current focus: Phase 0 correctness foundation. Next implementation checkpoint: `GF-CORE-002`.
+Current focus: Phase 0 correctness foundation. Active implementation checkpoint: `GF-CORE-002`.
 
 | Checkpoint | Phase | Outcome | Status | PR / Commit | Verification / Notes |
 |---|---|---|---|---|---|
 | `GF-CORE-001` | 0 | Operation-aware retry | `DONE` | PR #37; squash merge `f3648925a34bbdb1e9ac394b588e0b8087af3c01` | CI #374 green on tested head `f2c80669249899f180826e949fdae7c4b5870f41`: formatting, `go test ./...`, race tests, vet, vulnerability scan, frontend tests/build, Pack/DailyOps, Playwright/E2E, multi-platform Community builds and Windows DailyOps pilot all passed. |
-| `GF-CORE-002` | 0 | Node error policy/routing | `PLANNED` | - | Next checkpoint. Add explicit Stop / Continue / Error output semantics while preserving current stop-on-error behavior by default. |
+| `GF-CORE-002` | 0 | Node error policy/routing | `IN_PROGRESS` | PR #39; branch `gf-core-002-error-policy` | Implementation adds common `on_error` policy with backward-compatible Stop default, Continue normal-path semantics, explicit `error` output routing, redacted error envelopes, and fail-closed behavior when an error route is missing. Focused tests added; CI #378 pending. |
 | `GF-DB-001` | 0 | Parameterized PostgreSQL/MySQL queries | `PLANNED` | - | Preserve expression mapping while binding values separately. |
 | `GF-LOGIC-001` | 1 | Typed IF | `PLANNED` | - | Avoid using Python for basic typed comparisons. |
 | `GF-LOGIC-002` | 1 | Switch | `PLANNED` | - | Multi-branch routing with default path. |
@@ -87,6 +87,27 @@ Verification completed:
 [x] merged commit recorded: f3648925a34bbdb1e9ac394b588e0b8087af3c01
 ```
 
+## GF-CORE-002 Implementation Notes
+
+- `on_error` is a common non-trigger node parameter injected through node definitions; persisted workflow JSON needs no schema migration.
+- Missing or unknown policy values fail closed to `Stop workflow`, preserving existing workflows.
+- `Continue` keeps the failed node visible as `FAILED`, exposes a redacted failure envelope in execution context, and activates only the standard/default output path.
+- `Continue via error output` activates only edges whose `sourceHandle` is `error`.
+- If error-output mode has no explicit error edge, the failure remains workflow-fatal rather than being silently swallowed.
+- Normal successful execution never activates the reserved `error` edge.
+- Cancellation and executor panics remain workflow-fatal regardless of node policy.
+
+Verification gate before `DONE`:
+
+```text
+[ ] gofmt clean across repository
+[ ] go test ./...
+[ ] go test -race ./...
+[ ] go vet non-release packages
+[ ] PR CI green
+[ ] merged commit recorded here
+```
+
 ## Progress Log
 
 ### 2026-08-21
@@ -99,6 +120,9 @@ Verification completed:
 - Added table-driven coverage for HTTP, PostgreSQL, MySQL, Google Sheets, Google Drive, MongoDB and Redis, including expression-resolved operations.
 - CI #374 passed formatting, backend unit/race/vet/vulnerability checks, frontend tests/build, Pack contracts/DailyOps, Playwright/appliance E2E, Community builds on Linux/macOS/Windows, and the Windows DailyOps pilot appliance job.
 - Squash-merged PR #37 to `main` as `f3648925a34bbdb1e9ac394b588e0b8087af3c01`.
-- Marked `GF-CORE-001` `DONE`. Next checkpoint is `GF-CORE-002`.
+- Marked `GF-CORE-001` `DONE`.
+- Started `GF-CORE-002` on branch `gf-core-002-error-policy` and opened PR #39.
+- Added per-node Stop / Continue / Continue-via-error-output execution semantics, common node-definition configuration, redacted failure envelopes, and focused routing tests.
+- CI #378 is the verification gate for the current PR.
 
 Future entries should record checkpoint transitions, PR numbers, merge commits and verification commands/results.
