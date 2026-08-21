@@ -78,6 +78,7 @@ func NewRouter(
 	oauth2Handler := NewOAuth2Handler(credStore)
 	wsHandler := NewWSHandler(eventBus, apiKey)
 	aiHandler := NewAIHandler(credStore, registry)
+	agentHandler := NewAIAgentHandler(credStore, registry, wfStore, eng)
 	httpImportHandler := NewHTTPImportHandler()
 	customNodeHandler := NewCustomNodeHandler(registry)
 
@@ -121,6 +122,7 @@ func NewRouter(
 		r.Post("/ai/configure-node", aiHandler.ConfigureNode)
 		r.Post("/ai/code", aiHandler.AssistCode)
 		r.Post("/ai/review", aiHandler.ReviewWorkflow)
+		r.Post("/ai/agent/iterate", agentHandler.Iterate)
 	})
 
 	r.Post("/webhook/{workflowId}", wfHandler.TriggerWebhook)
@@ -148,7 +150,6 @@ func NewRouter(
 						fileServer.ServeHTTP(w, r)
 						return
 					}
-				}
 			}
 			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 			w.Header().Set("Pragma", "no-cache")
