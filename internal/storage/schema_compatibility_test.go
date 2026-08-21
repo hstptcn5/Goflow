@@ -36,3 +36,28 @@ func TestNewDBFailsClosedOnRenamedMigration(t *testing.T) {
 		t.Fatalf("expected migration-name failure, got %v", err)
 	}
 }
+
+func TestValidateAndOrderMigrationsRejectsDuplicateVersions(t *testing.T) {
+	noop := func(*sql.Tx) error { return nil }
+	_, err := validateAndOrderMigrations([]migration{
+		{version: 6, name: "credential_metadata", up: noop},
+		{version: 6, name: "workflow_state", up: noop},
+	})
+	if err == nil || !strings.Contains(err.Error(), "duplicate database migration version 0006") {
+		t.Fatalf("expected duplicate migration version failure, got %v", err)
+	}
+}
+
+func TestValidateAndOrderMigrationsSortsByVersion(t *testing.T) {
+	noop := func(*sql.Tx) error { return nil }
+	ordered, err := validateAndOrderMigrations([]migration{
+		{version: 7, name: "workflow_state", up: noop},
+		{version: 6, name: "credential_metadata", up: noop},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ordered) != 2 || ordered[0].version != 6 || ordered[1].version != 7 {
+		t.Fatalf("unexpected migration order: %#v", ordered)
+	}
+}
