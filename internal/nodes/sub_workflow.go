@@ -15,6 +15,14 @@ const (
 	maxSubWorkflowPayloadBytes    = 2 << 20
 )
 
+type SubWorkflowLoopErrorPolicy string
+
+const (
+	SubWorkflowStopAll       SubWorkflowLoopErrorPolicy = "stop_all"
+	SubWorkflowContinue      SubWorkflowLoopErrorPolicy = "continue"
+	SubWorkflowCollectErrors SubWorkflowLoopErrorPolicy = "collect_errors"
+)
+
 type SubWorkflowExecutor struct{}
 
 func NewSubWorkflowExecutor() *SubWorkflowExecutor { return &SubWorkflowExecutor{} }
@@ -76,6 +84,20 @@ func parseSubWorkflowPayload(raw interface{}) (interface{}, error) {
 	return raw, nil
 }
 
+func parseSubWorkflowLoopErrorPolicy(raw interface{}) (SubWorkflowLoopErrorPolicy, error) {
+	value := strings.ToLower(strings.TrimSpace(fmt.Sprint(raw)))
+	switch value {
+	case "", "stop all", "stop_all", "stop":
+		return SubWorkflowStopAll, nil
+	case "continue":
+		return SubWorkflowContinue, nil
+	case "collect errors", "collect_errors", "collect":
+		return SubWorkflowCollectErrors, nil
+	default:
+		return "", fmt.Errorf("sub-workflow loop error_policy must be Stop all, Continue, or Collect errors")
+	}
+}
+
 func validateSubWorkflowNode(node *Node) error {
 	subWfID, _ := node.Params["sub_workflow_id"].(string)
 	if strings.TrimSpace(subWfID) == "" {
@@ -87,7 +109,10 @@ func validateSubWorkflowNode(node *Node) error {
 	if text, ok := node.Params["concurrency_limit"].(string); ok && containsTemplateExpression(text) {
 		return nil
 	}
-	_, err := parseSubWorkflowConcurrency(node.Params["concurrency_limit"])
+	if _, err := parseSubWorkflowConcurrency(node.Params["concurrency_limit"]); err != nil {
+		return err
+	}
+	_, err := parseSubWorkflowLoopErrorPolicy(node.Params["error_policy"])
 	return err
 }
 
@@ -113,6 +138,10 @@ func (e *SubWorkflowExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 		return ctx.ExecuteWorkflow(subWfID, payload)
 	}
 
+	policy, err := parseSubWorkflowLoopErrorPolicy(node.Params["error_policy"])
+	if err != nil {
+		return nil, err
+	}
 	slicePayload, isArray := payload.([]interface{})
 	if !isArray {
 		slicePayload = []interface{}{payload}
@@ -120,25 +149,39 @@ func (e *SubWorkflowExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 	if len(slicePayload) > maxSubWorkflowLoopItems {
 		return nil, fmt.Errorf("sub-workflow loop contains %d items; maximum is %d", len(slicePayload), maxSubWorkflowLoopItems)
 	}
+
 	results := make([]interface{}, len(slicePayload))
-	var errorsList []string
-	var errMu sync.Mutex
+	itemErrors := make([]string, len(slicePayload))
+	var stateMu sync.Mutex
+	firstFailure := -1
 
 	runItem := func(idx int, item interface{}) {
 		if err := ctx.Context.Err(); err != nil {
-			errMu.Lock()
-			errorsList = append(errorsList, fmt.Sprintf("Item %d cancelled: %v", idx, err))
-			errMu.Unlock()
+			stateMu.Lock()
+			itemErrors[idx] = err.Error()
+			if firstFailure < 0 {
+				firstFailure = idx
+			}
+			stateMu.Unlock()
 			return
 		}
 		res, err := ctx.ExecuteWorkflow(subWfID, item)
-		errMu.Lock()
-		defer errMu.Unlock()
+		stateMu.Lock()
+		defer stateMu.Unlock()
 		if err != nil {
-			errorsList = append(errorsList, fmt.Sprintf("Item %d failed: %v", idx, err))
-		} else {
-			results[idx] = res
+			itemErrors[idx] = err.Error()
+			if firstFailure < 0 {
+				firstFailure = idx
+			}
+			return
 		}
+		results[idx] = res
+	}
+
+	shouldStop := func() bool {
+		stateMu.Lock()
+		defer stateMu.Unlock()
+		return policy == SubWorkflowStopAll && firstFailure >= 0
 	}
 
 	if parallel {
@@ -149,11 +192,18 @@ func (e *SubWorkflowExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 		sem := make(chan struct{}, maxConcurrency)
 		var wg sync.WaitGroup
 		for i, item := range slicePayload {
+			if shouldStop() {
+				break
+			}
 			select {
 			case sem <- struct{}{}:
 			case <-ctx.Context.Done():
 				wg.Wait()
-				return results, ctx.Context.Err()
+				return nil, ctx.Context.Err()
+			}
+			if shouldStop() {
+				<-sem
+				break
 			}
 			wg.Add(1)
 			go func(idx int, it interface{}) {
@@ -166,13 +216,54 @@ func (e *SubWorkflowExecutor) Execute(ctx *ExecutionContext, node *Node) (interf
 	} else {
 		for i, item := range slicePayload {
 			if err := ctx.Context.Err(); err != nil {
-				return results, err
+				return nil, err
+			}
+			if shouldStop() {
+				break
 			}
 			runItem(i, item)
 		}
 	}
-	if len(errorsList) > 0 {
-		return results, fmt.Errorf("loop execution completed with %d error(s): %s", len(errorsList), strings.Join(errorsList, "; "))
+
+	if err := ctx.Context.Err(); err != nil {
+		return nil, err
+	}
+
+	successes := make([]map[string]interface{}, 0, len(slicePayload))
+	errorsList := make([]map[string]interface{}, 0)
+	continuedItems := make([]interface{}, len(slicePayload))
+	for i := range slicePayload {
+		if itemErrors[i] != "" {
+			errorItem := map[string]interface{}{"index": i, "error": itemErrors[i]}
+			errorsList = append(errorsList, errorItem)
+			continuedItems[i] = map[string]interface{}{"ok": false, "error": itemErrors[i]}
+			continue
+		}
+		if results[i] != nil {
+			successes = append(successes, map[string]interface{}{"index": i, "output": results[i]})
+			continuedItems[i] = map[string]interface{}{"ok": true, "output": results[i]}
+		}
+	}
+
+	if len(errorsList) > 0 && policy == SubWorkflowStopAll {
+		first := errorsList[0]
+		return results, fmt.Errorf("sub-workflow loop stopped at item %v: %v", first["index"], first["error"])
+	}
+	if policy == SubWorkflowContinue {
+		return map[string]interface{}{
+			"items":         continuedItems,
+			"success_count": len(successes),
+			"error_count":   len(errorsList),
+		}, nil
+	}
+	if policy == SubWorkflowCollectErrors {
+		return map[string]interface{}{
+			"results":       results,
+			"successes":     successes,
+			"errors":        errorsList,
+			"success_count": len(successes),
+			"error_count":   len(errorsList),
+		}, nil
 	}
 	return results, nil
 }
@@ -188,6 +279,7 @@ func (e *SubWorkflowExecutor) GetDefinition() NodeDefinition {
 			{Name: "loop_mode", Label: "Loop mode (Run for each item in array)", Type: "boolean", Default: false, Required: false, Description: "Treat the input payload as an array of up to 1,000 items"},
 			{Name: "parallel", Label: "Run loop items in parallel", Type: "boolean", Default: false, Required: false, Description: "Run loop items in bounded parallel execution"},
 			{Name: "concurrency_limit", Label: "Concurrency Limit", Type: "text", Default: "5", Required: false, Description: "Maximum child workflow runs in parallel, between 1 and 32"},
+			{Name: "error_policy", Label: "Loop Error Policy", Type: "select", Default: "Stop all", Options: []string{"Stop all", "Continue", "Collect errors"}, Required: false, Description: "Stop on the first observed failure, continue with per-item status, or return structured success/error collections"},
 		},
 	}
 }
