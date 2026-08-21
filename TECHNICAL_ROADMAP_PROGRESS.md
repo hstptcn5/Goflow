@@ -26,7 +26,7 @@ Current focus: Phase 0 correctness foundation.
 
 | Checkpoint | Phase | Outcome | Status | PR / Commit | Verification / Notes |
 |---|---|---|---|---|---|
-| `GF-CORE-001` | 0 | Operation-aware retry | `IN_PROGRESS` | Branch `goflow-core-roadmap-foundation` | First implementation checkpoint. Existing engine retries every executor whose definition has `Retryable=true`; audit found mixed read/write nodes where retry safety depends on operation. |
+| `GF-CORE-001` | 0 | Operation-aware retry | `IN_PROGRESS` | PR #37; policy `2579f067`; engine wiring `b1c5f6d2`; tests `472609c3` | Implementation complete on branch. Central policy evaluates resolved operation. Read-only operations retain up to 3 attempts; mutating HTTP/SQL/Sheets/Drive/Mongo/Redis operations default to 1. Unit coverage added. Full GitHub Actions verification has not appeared for connector-created commits yet, so checkpoint is intentionally not marked `DONE`. |
 | `GF-CORE-002` | 0 | Node error policy/routing | `PLANNED` | - | Depends on retry semantics baseline. |
 | `GF-DB-001` | 0 | Parameterized PostgreSQL/MySQL queries | `PLANNED` | - | Preserve expression mapping while binding values separately. |
 | `GF-LOGIC-001` | 1 | Typed IF | `PLANNED` | - | Avoid using Python for basic typed comparisons. |
@@ -60,7 +60,7 @@ Current focus: Phase 0 correctness foundation.
 
 Audit performed against current `main` before implementation:
 
-- Engine currently assigns up to 3 attempts whenever `executor.GetDefinition().Retryable` is true.
+- Engine previously assigned up to 3 attempts whenever `executor.GetDefinition().Retryable` was true.
 - PostgreSQL and MySQL node types combine `SELECT` and `EXECUTE` under one retry flag.
 - Google Sheets combines `READ` and `APPEND` under one retry flag.
 - Google Drive combines `LIST` and `UPLOAD` under one retry flag.
@@ -68,7 +68,13 @@ Audit performed against current `main` before implementation:
 - Redis combines read and mutating commands under one retry flag.
 - HTTP Request supports safe and potentially non-idempotent methods under one retry flag.
 
-This is why `GF-CORE-001` is first: retry safety must be decided for the evaluated node operation, not only the executor type.
+Implementation direction:
+
+- `nodes.MaxAttemptsForNode` is the central policy.
+- The engine calls the policy only after dynamic parameters are resolved, so an expression-supplied operation such as `{{$trigger.method}}` is classified correctly.
+- Mixed-operation safety matrix currently treats HTTP GET/HEAD, SQL SELECT, Sheets READ, Drive LIST, Mongo FIND_ONE, and Redis GET/EXISTS/HGET as retryable when the node definition allows retry.
+- Mutating operations covered by the audit are restricted to a single implicit attempt.
+- Uniform node types still retain their existing `Retryable` behavior.
 
 ## Progress Log
 
@@ -79,5 +85,9 @@ This is why `GF-CORE-001` is first: retry safety must be decided for the evaluat
 - Added `TECHNICAL_ROADMAP.md`.
 - Added this progress ledger.
 - Marked `GF-CORE-001` `IN_PROGRESS` after auditing current retry behavior.
+- Added central operation-aware retry policy (`2579f067`).
+- Wired the policy into the engine after expression/parameter resolution (`b1c5f6d2`).
+- Added table-driven coverage for HTTP, PostgreSQL, MySQL, Google Sheets, Google Drive, MongoDB and Redis, plus expression-resolved operation coverage (`472609c3`).
+- Ran local `gofmt` against new Go files before committing formatting fixes. Full repository tests cannot be run in the current container because the public GitHub host is unavailable from that runtime; GitHub Actions verification is still pending/not observed for these connector-created commits.
 
 Future entries should record checkpoint transitions, PR numbers, merge commits and verification commands/results.
