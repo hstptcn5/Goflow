@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -12,11 +13,13 @@ func TestAgentDefinitionsIncludeGroundedRuntimeContracts(t *testing.T) {
 	registry := nodes.NewBuiltinRegistry()
 	handler := NewAIAgentHandler(nil, registry, nil, nil)
 
-	encoded, err := json.Marshal(handler.compactAgentDefinitions())
-	if err != nil {
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(handler.compactAgentDefinitions()); err != nil {
 		t.Fatal(err)
 	}
-	text := string(encoded)
+	text := encoded.String()
 
 	for _, expected := range []string{
 		"{{<node_id>.category}}",
