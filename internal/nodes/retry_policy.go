@@ -40,10 +40,12 @@ func MaxAttemptsForNode(node *Node, definition NodeDefinition) int {
 		return defaultNodeAttempts
 
 	case TypeGoogleDrive:
-		if upperNodeParam(node, "action", "LIST") == "LIST" {
+		switch upperNodeParam(node, "action", "LIST") {
+		case "LIST", "DOWNLOAD":
 			return retryableNodeAttempts
+		default:
+			return defaultNodeAttempts
 		}
-		return defaultNodeAttempts
 
 	case TypeMongoDBCommand:
 		if upperNodeParam(node, "command", "FIND_ONE") == "FIND_ONE" {
