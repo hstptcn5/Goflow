@@ -26,7 +26,7 @@ Current focus: Phase 0 correctness foundation.
 
 | Checkpoint | Phase | Outcome | Status | PR / Commit | Verification / Notes |
 |---|---|---|---|---|---|
-| `GF-CORE-001` | 0 | Operation-aware retry | `IN_PROGRESS` | PR #37; policy `2579f067`; engine wiring `b1c5f6d2`; tests `472609c3` | Implementation complete on branch. Central policy evaluates resolved operation. Read-only operations retain up to 3 attempts; mutating HTTP/SQL/Sheets/Drive/Mongo/Redis operations default to 1. Unit coverage added. Full GitHub Actions verification has not appeared for connector-created commits yet, so checkpoint is intentionally not marked `DONE`. |
+| `GF-CORE-001` | 0 | Operation-aware retry | `IN_PROGRESS` | PR #37; policy `2579f067`; engine wiring `b1c5f6d2`; tests `472609c3`; tracker head `c46fd146` | Implementation complete on branch. Central policy evaluates resolved operation. Read-only operations retain up to 3 attempts; mutating HTTP/SQL/Sheets/Drive/Mongo/Redis operations default to 1. Unit coverage added. Full GitHub Actions verification has not appeared for connector-created commits yet, so checkpoint is intentionally not marked `DONE`. |
 | `GF-CORE-002` | 0 | Node error policy/routing | `PLANNED` | - | Depends on retry semantics baseline. |
 | `GF-DB-001` | 0 | Parameterized PostgreSQL/MySQL queries | `PLANNED` | - | Preserve expression mapping while binding values separately. |
 | `GF-LOGIC-001` | 1 | Typed IF | `PLANNED` | - | Avoid using Python for basic typed comparisons. |
