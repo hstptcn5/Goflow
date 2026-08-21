@@ -64,41 +64,29 @@ func (e *WorkflowStateExecutor) Execute(ctx *ExecutionContext, node *Node) (inte
 
 	switch op {
 	case "GET":
-		if ctx.StateGet == nil {
-			return nil, fmt.Errorf("persistent state is not available in this execution context")
-		}
-		value, found, err := ctx.StateGet(scope, key)
+		value, found, err := workflowStateGet(ctx, scope, key)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]interface{}{"found": found, "value": value, "key": key, "scope": scope}, nil
 	case "SET":
-		if ctx.StateSet == nil {
-			return nil, fmt.Errorf("persistent state is not available in this execution context")
-		}
 		value := stateNodeValue(node.Params["value"])
-		if err := ctx.StateSet(scope, key, value); err != nil {
+		if err := workflowStateSet(ctx, scope, key, value); err != nil {
 			return nil, err
 		}
 		return map[string]interface{}{"stored": true, "value": value, "key": key, "scope": scope}, nil
 	case "DELETE":
-		if ctx.StateDelete == nil {
-			return nil, fmt.Errorf("persistent state is not available in this execution context")
-		}
-		deleted, err := ctx.StateDelete(scope, key)
+		deleted, err := workflowStateDelete(ctx, scope, key)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]interface{}{"deleted": deleted, "key": key, "scope": scope}, nil
 	case "INCREMENT":
-		if ctx.StateIncrement == nil {
-			return nil, fmt.Errorf("persistent state is not available in this execution context")
-		}
 		delta, ok := conditionNumber(node.Params["delta"])
 		if !ok {
 			return nil, fmt.Errorf("state increment delta must be numeric")
 		}
-		value, err := ctx.StateIncrement(scope, key, delta)
+		value, err := workflowStateIncrement(ctx, scope, key, delta)
 		if err != nil {
 			return nil, err
 		}
