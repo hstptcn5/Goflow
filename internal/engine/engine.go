@@ -664,19 +664,63 @@ schedulerLoop:
 				if lastErr != nil {
 					log.Printf("[Engine] Node %s (%s) FAILED after %d attempts: %v", nodeID, nodeObj.Name, attemptsUsed, lastErr)
 					redactedErr := redactError(lastErr)
+					policy := nodes.ErrorPolicyForNode(evaluatedNode)
+					if runCtx.Err() != nil {
+						policy = nodes.ErrorPolicyStop
+					}
+
+					handled := policy != nodes.ErrorPolicyStop
+					if policy == nodes.ErrorPolicyErrorOutput {
+						hasErrorEdge := false
+						for _, edge := range plan.EdgesFrom[nodeID] {
+							if edge.SourceHandle == "error" {
+								hasErrorEdge = true
+								break
+							}
+						}
+						if !hasErrorEdge {
+							handled = false
+						}
+					}
+
+					errorOutput := map[string]interface{}{
+						"failed":   true,
+						"error":    redactedErr,
+						"attempts": attemptsUsed,
+						"policy":   string(policy),
+					}
+					if handled {
+						ctx.SetOutput(nodeID, errorOutput)
+					}
 					nodeLogs = append(nodeLogs, NodeLog{
 						NodeID:     nodeID,
 						Status:     "FAILED",
 						DurationMs: durationMs,
 						Attempts:   attemptsUsed,
+						Output:     redactSensitive(errorOutput),
 						Error:      redactedErr,
 					})
 					nodeStates[nodeID] = StateFailed
-					hasFailed = true
+					if !handled {
+						hasFailed = true
+					}
 
-					// Propagate failure/skip to children
+					// A handled failure activates either the standard output or the explicit
+					// error output. Unhandled failures activate no outgoing path.
 					for _, edge := range plan.EdgesFrom[nodeID] {
 						childID := edge.Target
+						edgeFollowed := false
+						if handled {
+							switch policy {
+							case nodes.ErrorPolicyContinue:
+								edgeFollowed = edge.SourceHandle == ""
+							case nodes.ErrorPolicyErrorOutput:
+								edgeFollowed = edge.SourceHandle == "error"
+							}
+						}
+						if edgeFollowed {
+							hasActiveIncomingPath[childID] = true
+						}
 						inDegrees[childID]--
 						if inDegrees[childID] == 0 {
 							if !hasActiveIncomingPath[childID] {
@@ -692,6 +736,7 @@ schedulerLoop:
 						NodeID:      nodeID,
 						Status:      "FAILED",
 						Timestamp:   time.Now(),
+						Payload:     redactSensitive(errorOutput),
 						Error:       redactedErr,
 						DurationMs:  durationMs,
 					})
@@ -716,13 +761,12 @@ schedulerLoop:
 						}
 					}
 
-					// Update and propagate active paths to dependents
+					// Update and propagate active paths to dependents. The reserved error
+					// handle is only activated by a handled failure, never by normal success.
 					for _, edge := range plan.EdgesFrom[nodeID] {
 						childID := edge.Target
-
-						// If targetHandle is specified, we check if edge SourceHandle matches it
-						edgeFollowed := true
-						if targetHandle != "" {
+						edgeFollowed := edge.SourceHandle != "error"
+						if targetHandle != "" && edgeFollowed {
 							if edge.SourceHandle != "" && edge.SourceHandle != targetHandle {
 								edgeFollowed = false
 							}
