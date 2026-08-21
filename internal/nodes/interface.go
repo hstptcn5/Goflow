@@ -20,6 +20,7 @@ const (
 	TypeJSONTransform        NodeType = "jsonTransform"
 	TypeConditionIF          NodeType = "conditionIf"
 	TypeSwitch               NodeType = "switch"
+	TypeWorkflowState        NodeType = "workflowState"
 	TypeEmailSMTP            NodeType = "emailSMTP"
 	TypeDelaySleep           NodeType = "delaySleep"
 	TypeOpenAIGPT            NodeType = "openAIGPT"
@@ -84,6 +85,12 @@ type ExecutionContext struct {
 
 	// RefreshCredential refreshes an expired credential when the storage layer supports it.
 	RefreshCredential func(id string) (string, error)
+
+	// State callbacks expose persistent state without giving nodes raw database access.
+	StateGet       func(scope, key string) (interface{}, bool, error)
+	StateSet       func(scope, key string, value interface{}) error
+	StateDelete    func(scope, key string) (bool, error)
+	StateIncrement func(scope, key string, delta float64) (float64, error)
 }
 
 func NewExecutionContext(workflowID, executionID string) *ExecutionContext {
