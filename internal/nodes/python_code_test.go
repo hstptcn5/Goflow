@@ -41,6 +41,24 @@ output = {"sum": input["n"] + outputs["source"]["value"], "trigger": trigger["na
 	}
 }
 
+func TestPythonCodeNodeDecodesEditorJSONLiteralInput(t *testing.T) {
+	python := availablePythonForTest(t)
+	out, err := NewPythonCodeExecutor().Execute(NewExecutionContext("wf", "exec"), &Node{Params: map[string]interface{}{
+		"interpreter": python,
+		"input":       `{"numbers":[10,20,30,40]}`,
+		"code": `numbers = input["numbers"]
+output = {"count": len(numbers), "sum": sum(numbers), "average": sum(numbers) / len(numbers)}`,
+		"timeout": 5,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := out.(map[string]interface{})
+	if result["count"] != float64(4) || result["sum"] != float64(100) || result["average"] != float64(25) {
+		t.Fatalf("unexpected Python JSON-literal result %#v", result)
+	}
+}
+
 func TestPythonCodeNodeDoesNotExposeCredentials(t *testing.T) {
 	python := availablePythonForTest(t)
 	ctx := NewExecutionContext("wf", "exec")

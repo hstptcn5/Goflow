@@ -1,0 +1,72 @@
+name: Technical Roadmap Smoke
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "internal/api/**"
+      - "internal/engine/**"
+      - "internal/fileref/**"
+      - "internal/nodes/**"
+      - "internal/pack/**"
+      - "internal/storage/**"
+      - "internal/tablefile/**"
+      - "scripts/technical-roadmap-smoke.ps1"
+      - ".github/workflows/technical-roadmap-smoke.yml"
+      - "main.go"
+      - "static_embed.go"
+  pull_request:
+    paths:
+      - "internal/api/**"
+      - "internal/engine/**"
+      - "internal/fileref/**"
+      - "internal/nodes/**"
+      - "internal/pack/**"
+      - "internal/storage/**"
+      - "internal/tablefile/**"
+      - "scripts/technical-roadmap-smoke.ps1"
+      - ".github/workflows/technical-roadmap-smoke.yml"
+      - "main.go"
+      - "static_embed.go"
+  workflow_dispatch:
+
+concurrency:
+  group: goflow-roadmap-smoke-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  roadmap-smoke:
+    name: One-command runtime smoke
+    runs-on: windows-latest
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up external CPython
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build Goflow
+        shell: pwsh
+        run: go build -o "$env:RUNNER_TEMP\goflow-roadmap-smoke.exe" main.go static_embed.go
+
+      - name: Run technical roadmap smoke
+        shell: pwsh
+        run: >-
+          ./scripts/technical-roadmap-smoke.ps1
+          -Binary "$env:RUNNER_TEMP\goflow-roadmap-smoke.exe"
+          -RequirePython

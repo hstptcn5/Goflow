@@ -2,6 +2,7 @@ package storage
 
 import (
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -60,6 +61,52 @@ func TestStateStoreIncrementIsPersistentAndTyped(t *testing.T) {
 	}
 	if _, err := store.Increment("workflow", "wf", "bad", 1); err == nil {
 		t.Fatal("increment accepted non-numeric state")
+	}
+}
+
+func TestStateStoreIncrementAcrossWriterConnections(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shared-state.db")
+	dbA, err := NewDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dbA.Close()
+	dbB, err := NewDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dbB.Close()
+
+	storeA := NewStateStore(dbA)
+	storeB := NewStateStore(dbB)
+	stores := []*StateStore{storeA, storeB}
+
+	const increments = 20
+	var wg sync.WaitGroup
+	errCh := make(chan error, increments)
+	for i := 0; i < increments; i++ {
+		store := stores[i%len(stores)]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := store.Increment("global", "ignored", "counter", 1)
+			errCh <- err
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("concurrent increment failed: %v", err)
+		}
+	}
+
+	value, found, err := storeA.Get("global", "ignored", "counter")
+	if err != nil || !found {
+		t.Fatalf("counter found=%v err=%v", found, err)
+	}
+	if value != float64(increments) {
+		t.Fatalf("counter = %#v, want %d", value, increments)
 	}
 }
 

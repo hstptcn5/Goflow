@@ -1,6 +1,7 @@
 package nodes
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -64,6 +65,25 @@ func TestFileTriggerDetectsCreatedAndModifiedFiles(t *testing.T) {
 	events = out.(map[string]interface{})["events"].([]map[string]interface{})
 	if len(events) != 1 || events[0]["event"] != "MODIFIED" {
 		t.Fatalf("modified events = %#v", events)
+	}
+}
+
+func TestFileTriggerSnapshotJSONRoundTripPreservesNanoseconds(t *testing.T) {
+	original := map[string]fileTriggerStamp{
+		"a.txt": {Size: 123, ModUnix: 1770000000123456789},
+	}
+	encoded := encodeFileTriggerSnapshot(original)
+	raw, err := json.Marshal(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted interface{}
+	if err := json.Unmarshal(raw, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	decoded := decodeFileTriggerSnapshot(persisted)
+	if decoded["a.txt"] != original["a.txt"] {
+		t.Fatalf("snapshot changed after JSON persistence: got=%#v want=%#v raw=%s", decoded["a.txt"], original["a.txt"], raw)
 	}
 }
 

@@ -130,43 +130,31 @@ func (s *StateStore) Increment(scope, workflowID, key string, delta float64) (fl
 	if err != nil {
 		return 0, err
 	}
-	tx, err := s.db.WriteDB.Begin()
+	initial, err := encodeStateValue(delta)
 	if err != nil {
 		return 0, err
 	}
-	defer func() { _ = tx.Rollback() }()
 
-	var raw string
-	current := float64(0)
-	err = tx.QueryRow(`SELECT value_json FROM workflow_state WHERE scope = ? AND owner_id = ? AND state_key = ?`, scope, owner, key).Scan(&raw)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return 0, err
-	}
-	if err == nil {
-		var value interface{}
-		if err := json.Unmarshal([]byte(raw), &value); err != nil {
-			return 0, err
-		}
-		number, ok := stateNumber(value)
-		if !ok {
-			return 0, fmt.Errorf("state value for %q is not numeric", key)
-		}
-		current = number
-	}
-	next := current + delta
-	encoded, err := encodeStateValue(next)
-	if err != nil {
-		return 0, err
-	}
+	// Increment in one SQLite write statement. The previous read-then-write
+	// transaction could acquire a read snapshot and then fail to upgrade it to
+	// a writer when the main execution store committed concurrently on another
+	// connection (SQLITE_BUSY_SNAPSHOT). A single UPSERT lets SQLite serialize
+	// writers using the configured busy timeout and keeps the increment atomic.
+	var next float64
 	now := time.Now()
-	if _, err := tx.Exec(`
+	err = s.db.WriteDB.QueryRow(`
 		INSERT INTO workflow_state(scope, owner_id, state_key, value_json, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(scope, owner_id, state_key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
-	`, scope, owner, key, encoded, now, now); err != nil {
-		return 0, err
+		ON CONFLICT(scope, owner_id, state_key) DO UPDATE SET
+			value_json = CAST(CAST(workflow_state.value_json AS REAL) + ? AS TEXT),
+			updated_at = excluded.updated_at
+		WHERE json_type(workflow_state.value_json) IN ('integer', 'real')
+		RETURNING CAST(value_json AS REAL)
+	`, scope, owner, key, initial, now, now, delta).Scan(&next)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("state value for %q is not numeric", key)
 	}
-	if err := tx.Commit(); err != nil {
+	if err != nil {
 		return 0, err
 	}
 	return next, nil
