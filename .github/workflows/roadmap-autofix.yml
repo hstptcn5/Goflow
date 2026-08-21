@@ -4,13 +4,14 @@ on:
   push:
     branches:
       - goflow-phase01-workflow-language
+    paths:
+      - scripts/roadmap_patch.py
 
 permissions:
   contents: write
 
 jobs:
   patch-and-format:
-    if: ${{ !contains(github.event.head_commit.message, 'chore: apply roadmap patch') }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout roadmap branch
@@ -22,12 +23,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Apply roadmap patch if present
-        shell: bash
-        run: |
-          if [ -f scripts/roadmap_patch.py ]; then
-            python3 scripts/roadmap_patch.py
-          fi
+      - name: Apply roadmap patch
+        run: python3 scripts/roadmap_patch.py
       - name: Format Go sources
         run: gofmt -w .
       - name: Commit patch if needed
