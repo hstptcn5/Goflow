@@ -1144,6 +1144,10 @@ function handleEditorShortcut(event) {
               <Handle type="target" :position="Position.Top" />
               <Handle type="source" :position="Position.Bottom" />
             </template>
+            <template v-if="data.params?.on_error === 'Continue via error output'">
+              <Handle type="source" id="error" :position="Position.Bottom" class="error-output-handle" />
+              <span class="handle-label handle-label-error">error</span>
+            </template>
           </div>
         </template>
 
