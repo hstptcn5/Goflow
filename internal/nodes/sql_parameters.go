@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	maxSQLParameters       = 1000
-	maxSQLParametersBytes  = 1 << 20
+	maxSQLParameters      = 1000
+	maxSQLParametersBytes = 1 << 20
 )
 
 // parseSQLParameters accepts either a structured array (preferred) or a JSON
