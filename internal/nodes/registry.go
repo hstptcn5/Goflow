@@ -73,6 +73,7 @@ func NewBuiltinRegistryWithTelegramExecutor(telegramExecutor NodeExecutor) *Plug
 	_ = registry.Register(NewJSONTransformExecutor())
 	_ = registry.Register(NewConditionIFExecutor())
 	_ = registry.Register(NewSwitchExecutor())
+	_ = registry.Register(NewWorkflowStateExecutor())
 	_ = registry.Register(NewEmailSMTPExecutor())
 	_ = registry.Register(NewDelaySleepExecutor())
 	_ = registry.Register(NewOpenAIGPTExecutor())
