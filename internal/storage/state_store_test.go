@@ -1,0 +1,83 @@
+package storage
+
+import "testing"
+
+func TestStateStoreWorkflowAndGlobalScopes(t *testing.T) {
+	db, err := NewDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := NewStateStore(db)
+
+	if err := store.Set("workflow", "wf-a", "cursor", map[string]interface{}{"page": 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("workflow", "wf-b", "cursor", "other"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("global", "ignored", "release", "v1"); err != nil {
+		t.Fatal(err)
+	}
+
+	value, found, err := store.Get("workflow", "wf-a", "cursor")
+	if err != nil || !found {
+		t.Fatalf("workflow state get found=%v err=%v", found, err)
+	}
+	if value.(map[string]interface{})["page"] != float64(2) {
+		t.Fatalf("workflow state = %#v", value)
+	}
+	value, found, err = store.Get("global", "any", "release")
+	if err != nil || !found || value != "v1" {
+		t.Fatalf("global state = %#v found=%v err=%v", value, found, err)
+	}
+}
+
+func TestStateStoreIncrementIsPersistentAndTyped(t *testing.T) {
+	db, err := NewDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := NewStateStore(db)
+
+	value, err := store.Increment("workflow", "wf", "count", 2)
+	if err != nil || value != 2 {
+		t.Fatalf("first increment = %v err=%v", value, err)
+	}
+	value, err = store.Increment("workflow", "wf", "count", 0.5)
+	if err != nil || value != 2.5 {
+		t.Fatalf("second increment = %v err=%v", value, err)
+	}
+	if err := store.Set("workflow", "wf", "bad", "not-a-number"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Increment("workflow", "wf", "bad", 1); err == nil {
+		t.Fatal("increment accepted non-numeric state")
+	}
+}
+
+func TestStateStoreDeleteAndValidation(t *testing.T) {
+	db, err := NewDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := NewStateStore(db)
+	if err := store.Set("workflow", "wf", "key", true); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := store.Delete("workflow", "wf", "key")
+	if err != nil || !deleted {
+		t.Fatalf("delete deleted=%v err=%v", deleted, err)
+	}
+	if _, found, err := store.Get("workflow", "wf", "key"); err != nil || found {
+		t.Fatalf("deleted key found=%v err=%v", found, err)
+	}
+	if err := store.Set("unknown", "wf", "key", 1); err == nil {
+		t.Fatal("unknown scope accepted")
+	}
+	if err := store.Set("workflow", "", "key", 1); err == nil {
+		t.Fatal("workflow scope accepted empty workflow id")
+	}
+}
