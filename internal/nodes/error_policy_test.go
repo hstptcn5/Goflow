@@ -38,6 +38,9 @@ func TestDefinitionWithErrorPolicy(t *testing.T) {
 	if param.Name != "on_error" || param.Default != ErrorPolicyStopLabel {
 		t.Fatalf("unexpected error policy param: %#v", param)
 	}
+	if param.Required {
+		t.Fatalf("on_error must stay optional so existing workflows without the field remain valid")
+	}
 	if len(param.Options) != 3 {
 		t.Fatalf("options = %v, want 3 choices", param.Options)
 	}
