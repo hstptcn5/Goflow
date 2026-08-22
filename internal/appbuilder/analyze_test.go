@@ -37,6 +37,19 @@ func TestExternalizeCredentials(t *testing.T) {
 	}
 }
 
+func TestExternalizeCredentialsCreatesMissingAIExtractSlot(t *testing.T) {
+	raw, requirements, bindings, err := ExternalizeCredentials(`[{"id":"extract","type":"aiExtract","name":"AI Extract","params":{"provider":"deepseek","model":"auto","input_type":"text","input":"hello","instructions":"extract","json_schema":"{}","schema_name":"result","max_media_bytes":1024}}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw, `"credential_id":"__goflow_setup_extract_credential"`) {
+		t.Fatalf("portable workflow did not receive a setup credential marker: %s", raw)
+	}
+	if len(requirements) != 1 || requirements[0].Type != "DEEPSEEK_API_KEY" || len(bindings) != 1 || bindings[0].Target.NodeID != "extract" || bindings[0].Target.Param != "credential_id" {
+		t.Fatalf("unexpected AI Extract setup metadata: %#v %#v", requirements, bindings)
+	}
+}
+
 func TestExternalizeCredentialsSkipsUnauthenticatedHTTP(t *testing.T) {
 	raw, requirements, bindings, err := ExternalizeCredentials(`[{"id":"fetch","type":"httpRequest","name":"Fetch","params":{"auth_mode":"none","credential_id":""}}]`)
 	if err != nil || len(requirements) != 0 || len(bindings) != 0 || !strings.Contains(raw, `"credential_id":""`) {
