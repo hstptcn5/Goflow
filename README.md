@@ -13,6 +13,7 @@ Goflow combines four parts in one local-first platform:
 - a workflow engine and embedded Vue studio;
 - Pack Format v1 for declarative, portable workflows;
 - a focused appliance runtime with first-run setup and persistent local state;
+- a workflow App Builder that emits one executable with a generated input/output UI;
 - REST, CLI, and MCP entry points backed by the same execution path.
 
 The default deployment is one Go executable with SQLite. It needs no Docker,
@@ -81,6 +82,19 @@ Runtime state is stored outside the Pack and application directory. Managed
 workflow identity, configuration, credential references, and schedules persist
 across restarts. Host-managed migrations can require setup revalidation before
 execution resumes.
+
+### Build a workflow as an app
+
+Open a workflow in the editor, select **Build App**, review the Green/Yellow/Red
+portability report, configure the generated form and output node, then select
+**Build & tải ứng dụng**. Goflow downloads one executable for the platform on
+which the server is running. The destination machine does not need Go or a
+separate frontend install. Credentials are not copied into the file; supported
+credential-backed nodes request them during first-run setup.
+
+Python, native plugins, sub-workflows, SSH/Git commands, and local file/path
+dependencies are blocked in the one-file MVP. See the
+[App Builder roadmap](APP_BUILDER_ROADMAP.md) for the portability contract.
 
 ## Capabilities
 

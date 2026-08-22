@@ -13,6 +13,7 @@ import (
 	"goflow/config"
 	"goflow/internal/buildinfo"
 	"goflow/internal/cli"
+	"goflow/internal/pack"
 	"goflow/internal/packrun"
 	"goflow/internal/serverapp"
 )
@@ -35,6 +36,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	defer stop()
 
 	if len(args) == 1 {
+		if handled, code := runEmbeddedApp(ctx, identity.Version, stdout, stderr); handled {
+			return code
+		}
 		if bundleDir, ok := detectExtractedBundle(); ok {
 			if err := packrun.RunExtractedBundle(ctx, bundleDir, packrun.Options{
 				UIFS:       getEmbeddedUI(),
@@ -59,6 +63,32 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	log.Println("[INFO] Goflow stopped successfully.")
 	return 0
+}
+
+func runEmbeddedApp(ctx context.Context, appVersion string, stdout, stderr io.Writer) (bool, int) {
+	exePath, err := os.Executable()
+	if err != nil || !pack.IsEmbeddedApp(exePath) {
+		return false, 0
+	}
+	tempDir, err := os.MkdirTemp("", "goflow-embedded-app-*")
+	if err != nil {
+		fmt.Fprintf(stderr, "[ERROR] prepare embedded app: %v\n", err)
+		return true, 1
+	}
+	defer os.RemoveAll(tempDir)
+	packDir, _, err := pack.ExtractEmbeddedApp(exePath, tempDir)
+	if err != nil {
+		fmt.Fprintf(stderr, "[ERROR] embedded app integrity check failed: %v\n", err)
+		return true, 1
+	}
+	if err := packrun.Run(ctx, packrun.Options{
+		PackDir: packDir, UIFS: getEmbeddedUI(), AppVersion: appVersion,
+		IntegrityState: "embedded_verified", Stdout: stdout, Stderr: stderr,
+	}); err != nil {
+		fmt.Fprintf(stderr, "[ERROR] %v\n", err)
+		return true, 1
+	}
+	return true, 0
 }
 
 func detectExtractedBundle() (string, bool) {

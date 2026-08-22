@@ -2,11 +2,14 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { applianceApi } from '@/services/applianceApi';
 import { applianceMessages, optionLabel, packLocaleCopy } from './applianceI18n';
+import { buildRunInput, initialRunValues, outputView } from '@/utils/applianceRunUi';
 
 const props = defineProps({ bootstrap: { type: Object, required: true } });
 const token = props.bootstrap.token;
 const pack = computed(() => props.bootstrap.pack || {});
 const app = computed(() => props.bootstrap.app || {});
+const runUI = computed(() => pack.value.run_ui || null);
+const branding = computed(() => pack.value.branding || {});
 
 function initialLocale() {
   const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('goflow-appliance-locale') : '';
@@ -52,6 +55,8 @@ const configValues = ref({});
 const credentialDrafts = ref({});
 const credentialResults = ref({});
 const runError = ref('');
+const runValues = ref(initialRunValues(runUI.value?.input_fields || []));
+const runErrors = ref({});
 const sourceResults = ref({});
 const schedule = ref(null);
 const scheduleDraft = ref({ enabled: false, local_time: '09:00', timezone: 'UTC' });
@@ -62,6 +67,8 @@ let pollFailures = 0;
 const needsSetup = computed(() => status.value?.state === 'NEEDS_SETUP');
 const latestExecution = computed(() => latest.value?.execution || workflowStatus.value?.latest_execution || null);
 const executionRunning = computed(() => String(latestExecution.value?.status || '').toUpperCase() === 'RUNNING' || workflowStatus.value?.state === 'RUNNING');
+const latestOutput = computed(() => latestExecution.value?.output);
+const renderedOutput = computed(() => outputView(latestOutput.value, runUI.value?.output_mode));
 const manualRunState = computed(() => {
   if (running.value || executionRunning.value) return locale.value === 'vi' ? 'Đang chạy' : 'Running';
   if (latestExecution.value?.trigger_source === 'ui') return latestExecution.value.status || 'Complete';
@@ -249,7 +256,10 @@ async function reopenSetup() {
 async function runNow() {
   if (running.value || executionRunning.value) return;
   runError.value = ''; running.value = true;
-  try { await applianceApi.runNow(token, {}); notice.value = locale.value === 'vi' ? 'Đã bắt đầu chạy quy trình' : 'Report run started'; await refreshRuntime(); startPolling(); }
+  const prepared = buildRunInput(runUI.value?.input_fields || [], runValues.value, runUI.value?.input_mode || 'direct');
+  runErrors.value = prepared.errors;
+  if (Object.keys(prepared.errors).length) { running.value = false; return; }
+  try { await applianceApi.runNow(token, prepared.input); notice.value = locale.value === 'vi' ? 'Đã bắt đầu chạy quy trình' : 'Report run started'; await refreshRuntime(); startPolling(); }
   catch (err) {
     if (err.category === 'already_running') { notice.value = locale.value === 'vi' ? 'Quy trình đang chạy' : 'A report run is already in progress'; await refreshRuntime().catch(() => {}); startPolling(); }
     else runError.value = err.message || 'Report could not be started';
@@ -277,11 +287,11 @@ onBeforeUnmount(stopPolling);
 </script>
 
 <template>
-  <main class="appliance-shell">
+  <main class="appliance-shell" :style="branding.accent_color ? { '--app-accent': branding.accent_color } : undefined">
     <header class="appliance-header">
       <div>
         <div class="shell-kicker">{{ t('packAppliance') }}</div>
-        <h1>{{ packName }}</h1>
+        <h1><span v-if="branding.icon" aria-hidden="true">{{ branding.icon }} </span>{{ packName }}</h1>
         <p>{{ packDescription }}</p>
       </div>
       <div class="appliance-meta" aria-label="Pack identity">
@@ -358,8 +368,20 @@ onBeforeUnmount(stopPolling);
           <div class="panel-heading"><div><div class="shell-kicker">{{ t('dashboard') }}</div><h2 id="dashboard-title">{{ packName }}</h2></div><button class="btn btn-secondary" type="button" @click="reopenSetup">{{ t('reconfigure') }}</button></div>
           <div class="status-strip"><div><span>{{ t('server') }}</span><strong>{{ status?.server || 'ok' }}</strong></div><div><span>{{ t('report') }}</span><strong>{{ workflowStatus?.workflow?.name || status?.workflow_id }}</strong></div><div><span>{{ t('state') }}</span><strong>{{ workflowStatus?.state || status?.state }}</strong></div></div>
           <section class="execution-summary" aria-labelledby="schedule-status-title"><h3 id="schedule-status-title">{{ t('dailySchedule') }}</h3><div class="summary-grid schedule-summary"><div><span>{{ t('schedule') }}</span><strong>{{ schedule?.enabled ? t('enabled') : t('disabled') }}</strong></div><div><span>{{ t('timezone') }}</span><strong>{{ schedule?.timezone || 'UTC' }}</strong></div><div><span>{{ t('nextRun') }}</span><strong>{{ schedule?.enabled ? formatDate(schedule?.next_run_at) : t('notScheduled') }}</strong></div><div><span>{{ t('lastScheduledResult') }}</span><strong>{{ schedule?.last_result?.status || (schedule?.last_scheduled_for ? schedule?.state : t('notRunYet')) }}</strong></div><div><span>{{ t('manualRun') }}</span><strong>{{ manualRunState }}</strong></div><div v-if="schedule?.state === 'NEEDS_ATTENTION'"><span>{{ t('scheduleState') }}</span><strong>{{ schedule?.error_category || t('needsAttention') }}</strong></div></div></section>
-          <form class="run-panel" @submit.prevent="runNow"><p v-if="runError" class="field-error">{{ runError }}</p><button class="btn btn-primary" type="submit" :disabled="running || executionRunning || (workflowStatus?.state || status?.state) === 'NEEDS_SETUP'">{{ running || executionRunning ? t('running') : t('runNow') }}</button></form>
+          <form class="run-panel app-run-form" @submit.prevent="runNow">
+            <h3 v-if="runUI">Dữ liệu đầu vào</h3>
+            <div v-for="field in runUI?.input_fields || []" :key="field.key" class="form-group">
+              <label :for="`run-${field.key}`">{{ field.label }}<span v-if="field.required"> *</span></label>
+              <textarea v-if="field.type === 'textarea' || field.type === 'json'" :id="`run-${field.key}`" v-model="runValues[field.key]" class="form-input" rows="4" :placeholder="field.placeholder" />
+              <select v-else-if="field.type === 'select'" :id="`run-${field.key}`" v-model="runValues[field.key]" class="form-input"><option v-for="option in field.options || []" :key="String(option)" :value="option">{{ option }}</option></select>
+              <label v-else-if="field.type === 'boolean'" class="toggle-row"><input v-model="runValues[field.key]" type="checkbox" /><span>{{ field.description || field.label }}</span></label>
+              <input v-else :id="`run-${field.key}`" v-model="runValues[field.key]" class="form-input" :type="['number','integer'].includes(field.type) ? 'number' : 'text'" :step="field.type === 'integer' ? '1' : 'any'" :placeholder="field.placeholder || (field.type === 'number_list' ? '10, 20, 30' : '')" />
+              <p v-if="field.description && field.type !== 'boolean'" class="field-help">{{ field.description }}</p><p v-if="runErrors[field.key]" class="field-error">{{ runErrors[field.key] }}</p>
+            </div>
+            <p v-if="runError" class="field-error">{{ runError }}</p><button class="btn btn-primary" type="submit" :disabled="running || executionRunning || (workflowStatus?.state || status?.state) === 'NEEDS_SETUP'">{{ running || executionRunning ? t('running') : (runUI?.submit_label || t('runNow')) }}</button>
+          </form>
           <section class="execution-summary" aria-labelledby="latest-title"><h3 id="latest-title">{{ t('latestExecution') }}</h3><div v-if="latestExecution" class="summary-grid"><div><span>{{ t('status') }}</span><strong>{{ latestExecution.status }}</strong></div><div><span>{{ t('duration') }}</span><strong>{{ formatDuration(latestExecution.duration_ms) }}</strong></div><div><span>{{ t('started') }}</span><strong>{{ formatDate(latestExecution.started_at) }}</strong></div><div v-if="latestExecution.error_message"><span>{{ t('error') }}</span><strong>{{ latestExecution.error_message }}</strong></div><div v-if="latestExecution.error_category"><span>{{ t('category') }}</span><strong>{{ latestExecution.error_category }}</strong></div></div><p v-else class="muted-copy">{{ t('noExecutions') }}</p></section>
+          <section v-if="latestExecution && latestOutput !== undefined" class="execution-summary app-output" aria-labelledby="output-title"><div class="panel-heading"><h3 id="output-title">Kết quả</h3><button class="btn btn-secondary" type="button" @click="navigator.clipboard.writeText(JSON.stringify(latestOutput, null, 2))">Sao chép JSON</button></div><div v-if="renderedOutput.mode === 'cards'" class="output-cards"><div v-for="card in renderedOutput.cards" :key="card.key"><span>{{ card.key }}</span><strong>{{ card.value ?? 'null' }}</strong></div></div><div v-else-if="renderedOutput.mode === 'table'" class="table-panel"><div class="table-row output-table-row table-head" :style="{ gridTemplateColumns: `repeat(${renderedOutput.columns.length}, minmax(120px, 1fr))` }"><span v-for="column in renderedOutput.columns" :key="column">{{ column }}</span></div><div v-for="(row, rowIndex) in renderedOutput.rows" :key="rowIndex" class="table-row output-table-row" :style="{ gridTemplateColumns: `repeat(${renderedOutput.columns.length}, minmax(120px, 1fr))` }"><span v-for="column in renderedOutput.columns" :key="column">{{ row[column] }}</span></div></div><pre v-else class="app-output-json">{{ renderedOutput.json }}</pre></section>
           <section class="execution-summary" aria-labelledby="recent-title"><h3 id="recent-title">{{ t('recentExecutions') }}</h3><div class="table-panel"><div class="table-row table-head appliance-execution-row"><span>{{ t('status') }}</span><span>{{ t('started') }}</span><span>{{ t('duration') }}</span><span>{{ t('error') }}</span></div><div v-for="exec in recent" :key="exec.id" class="table-row appliance-execution-row"><span class="badge" :class="`badge-status-${String(exec.status).toLowerCase()}`">{{ exec.status }}</span><span>{{ formatDate(exec.started_at) }}</span><span>{{ formatDuration(exec.duration_ms) }}</span><span>{{ exec.error_message || '' }}</span></div></div></section>
         </section>
       </div>
@@ -373,3 +395,7 @@ onBeforeUnmount(stopPolling);
     <div v-if="notice" class="appliance-toast" role="status">{{ notice }}</div><div v-if="error" class="appliance-error" role="alert">{{ error }}</div>
   </main>
 </template>
+
+<style scoped>
+.app-run-form{display:grid;gap:12px;padding:18px;border:2px solid #0f172a;background:#f8fafc}.app-run-form .btn-primary{background:var(--app-accent,#2563eb)}.output-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}.output-cards>div{display:grid;gap:5px;padding:14px;border:1px solid #cbd5e1;background:#fff}.output-cards span{font-size:12px;color:#64748b;text-transform:uppercase}.output-cards strong{font-size:20px;overflow-wrap:anywhere}.app-output-json{background:#0f172a;color:#e2e8f0;padding:16px;border-radius:8px;overflow:auto;max-height:420px}.output-table-row{min-width:max-content}
+</style>

@@ -133,6 +133,24 @@ export const api = {
     return res.json();
   },
 
+  async analyzeWorkflowApp(id) {
+	const res = await customFetch(`${API_BASE}/workflows/${id}/app/analyze`, { method: 'POST' });
+	if (!res.ok) throw new Error((await res.text()) || 'Không phân tích được khả năng đóng gói');
+	return res.json();
+  },
+
+  async buildWorkflowApp(id, payload) {
+	const res = await customFetch(`${API_BASE}/workflows/${id}/app/build`, {
+	  method: 'POST',
+	  headers: { 'Content-Type': 'application/json' },
+	  body: JSON.stringify(payload),
+	});
+	if (!res.ok) throw new Error((await res.text()) || 'Không build được ứng dụng');
+	const disposition = res.headers.get('Content-Disposition') || '';
+	const match = disposition.match(/filename="?([^";]+)"?/i);
+	return { blob: await res.blob(), filename: match?.[1] || 'goflow-app.exe' };
+  },
+
   async getExecutions(workflowId) {
     const res = await customFetch(`${API_BASE}/workflows/${workflowId}/executions`);
     if (!res.ok) throw new Error('Không tải được lịch sử chạy');

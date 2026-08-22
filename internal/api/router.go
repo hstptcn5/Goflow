@@ -70,6 +70,7 @@ func NewRouter(
 
 	triggerService := application.NewTriggerService(wfStore, eng)
 	wfHandler := NewWorkflowHandler(wfStore, triggerService, webhookRateLimitPerMinute)
+	appBuilderHandler := NewAppBuilderHandler(wfStore)
 	execHandler := NewExecutionHandler(execStore, eng, triggerService)
 	credHandler := NewCredentialHandler(credStore)
 	tokenHandler := NewTokenHandler(tokenStore, auditStore)
@@ -98,6 +99,8 @@ func NewRouter(
 		r.Put("/workflows/{id}/toggle", wfHandler.ToggleActive)
 		r.Post("/workflows/{id}/trigger", wfHandler.TriggerWorkflow)
 		r.Post("/workflows/{id}/executions", wfHandler.CreateExecution)
+		r.Post("/workflows/{id}/app/analyze", appBuilderHandler.Analyze)
+		r.Post("/workflows/{id}/app/build", appBuilderHandler.Build)
 
 		r.Get("/executions/{id}", execHandler.GetExecution)
 		r.Post("/executions/{id}/cancel", execHandler.CancelExecution)
