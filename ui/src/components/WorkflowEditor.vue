@@ -1270,7 +1270,7 @@ function handleEditorShortcut(event) {
   inset: 0 0 auto 0;
   height: var(--workflow-topbar-height);
   display: grid;
-  grid-template-columns: auto minmax(160px, 1fr) auto auto auto auto;
+  grid-template-columns: auto minmax(160px, 1fr) auto auto auto auto auto;
   align-items: center;
   gap: var(--space-2);
   padding: 0 var(--space-4);
