@@ -950,6 +950,13 @@ summary:focus-visible {
   box-shadow: inset 2px 2px 0 var(--pixel-muted);
 }
 
+/* The pixel theme replaces the original dark JSON background, so reset its light text too. */
+.json-code,
+.json-code code {
+  color: var(--pixel-ink) !important;
+  text-shadow: none !important;
+}
+
 .tree-row {
   border-bottom: 2px solid #c7c3b7 !important;
 }
