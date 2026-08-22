@@ -287,7 +287,7 @@ onBeforeUnmount(stopPolling);
 </script>
 
 <template>
-  <main class="appliance-shell" :style="branding.accent_color ? { '--app-accent': branding.accent_color } : undefined">
+  <main class="appliance-shell" :class="{ 'generated-app-shell': runUI }" :style="branding.accent_color ? { '--app-accent': branding.accent_color } : undefined">
     <header class="appliance-header">
       <div>
         <div class="shell-kicker">{{ t('packAppliance') }}</div>
@@ -411,6 +411,25 @@ onBeforeUnmount(stopPolling);
 </template>
 
 <style scoped>
+.generated-app-shell{background:#f4f7fb!important;background-image:none!important;color:#172033!important}
+.generated-app-shell .appliance-header{min-height:88px;padding-left:max(24px,calc((100vw - 1100px)/2));padding-right:max(24px,calc((100vw - 1100px)/2));background:rgba(255,255,255,.96)!important;border-bottom:1px solid #dbe3ef!important;box-shadow:0 6px 24px rgba(15,23,42,.06)!important}
+.generated-app-shell .appliance-header h1{font-size:clamp(1.6rem,2.4vw,2.15rem)!important;text-transform:none!important;letter-spacing:-.025em!important}
+.generated-app-shell .appliance-header p{font-size:.9rem!important;color:#64748b!important}
+.generated-app-shell .shell-kicker{padding:0!important;border:0!important;background:transparent!important;color:var(--app-accent,#2563eb)!important;font-family:inherit!important;font-size:.7rem!important;letter-spacing:.12em!important}
+.generated-app-shell .appliance-meta>.badge-muted,.generated-app-shell .appliance-meta>.badge-warning{display:none!important}
+.generated-app-shell .appliance-panel{padding:22px!important;border:1px solid #dbe3ef!important;border-radius:14px!important;background:#fff!important;box-shadow:0 12px 32px rgba(15,23,42,.07)!important}
+.generated-app-shell .execution-summary,.generated-app-shell .run-panel,.generated-app-shell .setup-section,.generated-app-shell .credential-row{border:0!important;border-radius:10px!important;background:#f8fafc!important;box-shadow:none!important}
+.generated-app-shell .execution-summary{padding:16px!important}
+.generated-app-shell .panel-heading{border-bottom:0!important}
+.generated-app-shell .status-strip,.generated-app-shell .summary-grid{gap:10px;padding:0;border:0;background:transparent}
+.generated-app-shell .status-strip>div,.generated-app-shell .summary-grid>div{padding:12px;border:1px solid #e2e8f0!important;border-radius:8px!important;background:#fff!important}
+.generated-app-shell .table-panel{border:1px solid #e2e8f0!important;border-radius:8px!important;box-shadow:none!important}
+.generated-app-shell .table-head{background:#eef2f7!important;color:#475569!important}
+.generated-app-shell .btn{border-radius:8px!important;box-shadow:none!important}
+.generated-app-shell .btn-primary{border-color:var(--app-accent,#2563eb)!important;background:var(--app-accent,#2563eb)!important;color:#fff!important}
+.generated-app-shell .app-output{background:#fff!important}
+.generated-app-shell .output-field{background:#fff!important}
+.generated-app-shell .appliance-side .appliance-panel{box-shadow:none!important}
 .appliance-grid{width:min(1280px,100%);margin:0 auto;align-items:start}
 .appliance-grid-focused{grid-template-columns:minmax(0,1fr);width:min(1100px,100%)}
 .appliance-grid-focused .appliance-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
