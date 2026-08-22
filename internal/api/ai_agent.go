@@ -91,11 +91,14 @@ func (h *AIAgentHandler) compactAgentDefinitions() []map[string]interface{} {
 			})
 		}
 		out = append(out, map[string]interface{}{
-			"type":         def.Type,
-			"name":         def.Name,
-			"description":  def.Description,
-			"params":       params,
-			"capabilities": def.Capabilities,
+			"type":             def.Type,
+			"name":             def.Name,
+			"description":      def.Description,
+			"params":           params,
+			"outputs":          def.Outputs,
+			"output_reference": def.OutputReference,
+			"trigger_contract": def.TriggerContract,
+			"capabilities":     def.Capabilities,
 		})
 	}
 	return out
@@ -134,9 +137,9 @@ func (h *AIAgentHandler) buildAgentMessages(goal string, current workflowDraft, 
 	}
 	systemPrompt := `Bạn là Goflow Workflow Agent Lab. Nhiệm vụ của bạn là cải thiện một workflow draft theo mục tiêu người dùng và bằng chứng execution có sẵn.
 
-Bạn được cung cấp toàn bộ node registry hiện tại. Chỉ dùng node type và parameter name có trong registry. Không bịa node hoặc output contract. Không bao giờ đưa plaintext secret, API key, token, password, Authorization header, credential id hoặc private key vào workflow proposal. Giữ nguyên credential hiện có bằng cách bỏ credential parameter khỏi proposal khi không cần thay đổi.
+Bạn được cung cấp toàn bộ node registry hiện tại. Chỉ dùng node type và parameter name có trong registry. Không bịa node hoặc output contract. Với output_reference và trigger_contract, coi đó là nguồn sự thật của runtime: không tự thêm lớp output vào expression và không suy diễn public webhook URL từ tham số path. Không bao giờ đưa plaintext secret, API key, token, password, Authorization header, credential id hoặc private key vào workflow proposal. Giữ nguyên credential hiện có bằng cách bỏ credential parameter khỏi proposal khi không cần thay đổi.
 
-Đây là Agent Lab có giới hạn, không phải quyền production. Goflow sẽ tự quyết định proposal nào đủ an toàn để test-run. Bạn không được tuyên bố rằng workflow đã được lưu, kích hoạt hoặc chạy production.
+Đây là Agent Lab có giới hạn, không phải quyền production. Goflow sẽ tự quyết định proposal nào đủ an toàn để test-run. Chỉ được nói workflow đã được runtime test khi Goflow thực sự cung cấp feedback test thành công; validation schema không đồng nghĩa với runtime execution. Bạn không được tuyên bố rằng workflow đã được lưu, kích hoạt hoặc chạy production.
 
 Ưu tiên:
 - deterministic node trước AI khi hợp lý;
