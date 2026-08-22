@@ -47,19 +47,39 @@ export function buildRunInput(fields = [], values = {}, inputMode = 'direct') {
 
 export function outputView(value, requested = 'auto') {
   let mode = requested || 'auto';
-  if (mode === 'auto') {
-    if (Array.isArray(value) && value.every((item) => item && typeof item === 'object' && !Array.isArray(item))) mode = 'table';
-    else if (value && typeof value === 'object' && !Array.isArray(value) && Object.values(value).every(isScalar)) mode = 'cards';
+  let displayValue = value;
+  let detailsJson = '';
+
+  // AI and extractor nodes commonly return a useful `data` object plus
+  // provider/debug metadata. In auto mode, promote that object to the primary
+  // result while preserving the complete envelope in collapsed details.
+  if (mode === 'auto' && isObject(value) && isObject(value.data)) {
+    displayValue = value.data;
+    detailsJson = JSON.stringify(value, null, 2);
+    mode = Object.values(displayValue).every(isScalar) ? 'cards' : 'structured';
+  } else if (mode === 'auto') {
+    if (Array.isArray(value) && value.every((item) => isObject(item))) mode = 'table';
+    else if (isObject(value) && Object.values(value).every(isScalar)) mode = 'cards';
     else mode = 'json';
   }
-  if (mode === 'table' && Array.isArray(value)) {
-    const columns = [...new Set(value.flatMap((row) => Object.keys(row || {})))];
-    return { mode, columns, rows: value };
+
+  if (mode === 'table' && Array.isArray(displayValue)) {
+    const columns = [...new Set(displayValue.flatMap((row) => Object.keys(row || {})))];
+    return { mode, columns, rows: displayValue, detailsJson };
   }
-  if (mode === 'cards' && value && typeof value === 'object' && !Array.isArray(value)) {
-    return { mode, cards: Object.entries(value).map(([key, item]) => ({ key, value: item })) };
+  if (mode === 'cards' && isObject(displayValue)) {
+    return { mode, cards: Object.entries(displayValue).map(([key, item]) => ({ key, value: item })), detailsJson };
   }
-  return { mode: 'json', json: JSON.stringify(value ?? null, null, 2) };
+  if (mode === 'structured' && isObject(displayValue)) {
+    const fields = Object.entries(displayValue).map(([key, item]) => ({
+      key,
+      value: item,
+      kind: Array.isArray(item) ? 'list' : (isObject(item) ? 'json' : 'scalar'),
+    }));
+    return { mode, fields, detailsJson };
+  }
+  return { mode: 'json', json: JSON.stringify(displayValue ?? null, null, 2), detailsJson };
 }
 
+function isObject(value) { return Boolean(value) && typeof value === 'object' && !Array.isArray(value); }
 function isScalar(value) { return value === null || ['string', 'number', 'boolean'].includes(typeof value); }
