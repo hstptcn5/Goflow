@@ -9,6 +9,36 @@ Current product and edition boundaries are defined in
 [COMMERCIAL.md](COMMERCIAL.md). A phase is not evidence that its named product
 is available; availability must be stated separately in current documentation.
 
+## Current Status — 2026-08-22
+
+Product phases are not strictly sequential: capability prototypes may be
+validated while release and commercial gates remain open.
+
+| Area | Status | Current evidence and boundary |
+| :--- | :--- | :--- |
+| Technical capability roadmap | `DONE` | All checkpoints `GF-CORE-001` through `GF-PACK-001` are merged and verified; see [TECHNICAL_ROADMAP_PROGRESS.md](TECHNICAL_ROADMAP_PROGRESS.md). |
+| Agent Lab v0.1 | `DONE` | Bounded improvement loop, grounded node contracts and local persistent chat are merged; manual DeepSeek verification passed; see [AGENT_LAB_PROGRESS.md](AGENT_LAB_PROGRESS.md). |
+| Same-platform App Builder MVP | `DONE` | `GF-APP-001` through `GF-APP-005` are merged. A Windows executable was built, configured with an external AI credential and run successfully; see [APP_BUILDER_PROGRESS.md](APP_BUILDER_PROGRESS.md). |
+| Phase 1 — Community 1.0 release bar | `IN_PROGRESS` | Core, Pack and CI foundations are strong; clean-machine release acceptance and final distribution evidence remain. |
+| Phase 2 — Pro Creator Alpha | `IN_PROGRESS` | The focused App Builder prototype is validated, but a sustained real-workflow pilot and product-boundary review remain before the phase is complete. |
+| Phase 3+ — Entitlements and trusted distribution | `NOT_STARTED` | No billing provider, entitlement system, installer, production signing or update channel has been selected or shipped. |
+
+### Immediate next milestone
+
+Run one generated application as a real pilot rather than adding another broad
+platform feature:
+
+1. choose one narrow workflow with a clear user and repeated task;
+2. test the generated app on a second clean Windows machine;
+3. run it repeatedly with real inputs and record setup/run/output failures;
+4. use that evidence to decide whether to continue Pro Creator Alpha or move
+   first to trusted Windows packaging.
+
+The current achievement is accurately described as **one workflow to one
+same-platform executable with a focused UI and one-time external dependency
+setup**. It is not yet a signed installer, a zero-setup binary for every node,
+or a commercial release.
+
 ## Roadmap Principles
 
 - Keep the public execution core useful and preserve capabilities already
