@@ -305,7 +305,7 @@ onBeforeUnmount(stopPolling);
 
     <div v-if="loading" class="app-loading" aria-live="polite"><div class="spinner"></div><span>{{ t('loading') }}</span></div>
 
-    <section v-else class="appliance-grid">
+    <section v-else class="appliance-grid" :class="{ 'appliance-grid-focused': runUI && !needsSetup }">
       <div class="appliance-main">
         <section v-if="needsSetup" class="appliance-panel" aria-labelledby="setup-title">
           <div class="panel-heading"><div><div class="shell-kicker">{{ t('firstRun') }}</div><h2 id="setup-title">{{ t('setup') }}</h2></div><span class="badge badge-muted">{{ t('integrity') }}</span></div>
@@ -381,7 +381,21 @@ onBeforeUnmount(stopPolling);
             <p v-if="runError" class="field-error">{{ runError }}</p><button class="btn btn-primary" type="submit" :disabled="running || executionRunning || (workflowStatus?.state || status?.state) === 'NEEDS_SETUP'">{{ running || executionRunning ? t('running') : (runUI?.submit_label || t('runNow')) }}</button>
           </form>
           <section class="execution-summary" aria-labelledby="latest-title"><h3 id="latest-title">{{ t('latestExecution') }}</h3><div v-if="latestExecution" class="summary-grid"><div><span>{{ t('status') }}</span><strong>{{ latestExecution.status }}</strong></div><div><span>{{ t('duration') }}</span><strong>{{ formatDuration(latestExecution.duration_ms) }}</strong></div><div><span>{{ t('started') }}</span><strong>{{ formatDate(latestExecution.started_at) }}</strong></div><div v-if="latestExecution.error_message"><span>{{ t('error') }}</span><strong>{{ latestExecution.error_message }}</strong></div><div v-if="latestExecution.error_category"><span>{{ t('category') }}</span><strong>{{ latestExecution.error_category }}</strong></div></div><p v-else class="muted-copy">{{ t('noExecutions') }}</p></section>
-          <section v-if="latestExecution && latestOutput !== undefined" class="execution-summary app-output" aria-labelledby="output-title"><div class="panel-heading"><h3 id="output-title">Kết quả</h3><button class="btn btn-secondary" type="button" @click="navigator.clipboard.writeText(JSON.stringify(latestOutput, null, 2))">Sao chép JSON</button></div><div v-if="renderedOutput.mode === 'cards'" class="output-cards"><div v-for="card in renderedOutput.cards" :key="card.key"><span>{{ card.key }}</span><strong>{{ card.value ?? 'null' }}</strong></div></div><div v-else-if="renderedOutput.mode === 'table'" class="table-panel"><div class="table-row output-table-row table-head" :style="{ gridTemplateColumns: `repeat(${renderedOutput.columns.length}, minmax(120px, 1fr))` }"><span v-for="column in renderedOutput.columns" :key="column">{{ column }}</span></div><div v-for="(row, rowIndex) in renderedOutput.rows" :key="rowIndex" class="table-row output-table-row" :style="{ gridTemplateColumns: `repeat(${renderedOutput.columns.length}, minmax(120px, 1fr))` }"><span v-for="column in renderedOutput.columns" :key="column">{{ row[column] }}</span></div></div><pre v-else class="app-output-json">{{ renderedOutput.json }}</pre></section>
+          <section v-if="latestExecution && latestOutput !== undefined" class="execution-summary app-output" aria-labelledby="output-title">
+            <div class="panel-heading output-heading"><div><div class="shell-kicker">{{ locale === 'vi' ? 'Kết quả mới nhất' : 'Latest result' }}</div><h3 id="output-title">{{ locale === 'vi' ? 'Kết quả' : 'Result' }}</h3></div><button class="btn btn-secondary" type="button" @click="navigator.clipboard.writeText(JSON.stringify(latestOutput, null, 2))">{{ locale === 'vi' ? 'Sao chép JSON' : 'Copy JSON' }}</button></div>
+            <div v-if="renderedOutput.mode === 'cards'" class="output-cards"><div v-for="card in renderedOutput.cards" :key="card.key"><span>{{ card.key }}</span><strong>{{ card.value ?? 'null' }}</strong></div></div>
+            <div v-else-if="renderedOutput.mode === 'structured'" class="output-structured">
+              <article v-for="field in renderedOutput.fields" :key="field.key" class="output-field">
+                <span class="output-label">{{ field.key }}</span>
+                <strong v-if="field.kind === 'scalar'" class="output-value">{{ field.value ?? 'null' }}</strong>
+                <ul v-else-if="field.kind === 'list'" class="output-list"><li v-for="(item, itemIndex) in field.value" :key="itemIndex">{{ typeof item === 'object' ? JSON.stringify(item) : item }}</li></ul>
+                <pre v-else class="output-object">{{ JSON.stringify(field.value, null, 2) }}</pre>
+              </article>
+            </div>
+            <div v-else-if="renderedOutput.mode === 'table'" class="table-panel output-table"><div class="table-row output-table-row table-head" :style="{ gridTemplateColumns: `repeat(${renderedOutput.columns.length}, minmax(120px, 1fr))` }"><span v-for="column in renderedOutput.columns" :key="column">{{ column }}</span></div><div v-for="(row, rowIndex) in renderedOutput.rows" :key="rowIndex" class="table-row output-table-row" :style="{ gridTemplateColumns: `repeat(${renderedOutput.columns.length}, minmax(120px, 1fr))` }"><span v-for="column in renderedOutput.columns" :key="column">{{ row[column] }}</span></div></div>
+            <pre v-else class="app-output-json">{{ renderedOutput.json }}</pre>
+            <details v-if="renderedOutput.detailsJson" class="output-technical"><summary>{{ locale === 'vi' ? 'Chi tiết kỹ thuật' : 'Technical details' }}</summary><pre class="app-output-json">{{ renderedOutput.detailsJson }}</pre></details>
+          </section>
           <section class="execution-summary" aria-labelledby="recent-title"><h3 id="recent-title">{{ t('recentExecutions') }}</h3><div class="table-panel"><div class="table-row table-head appliance-execution-row"><span>{{ t('status') }}</span><span>{{ t('started') }}</span><span>{{ t('duration') }}</span><span>{{ t('error') }}</span></div><div v-for="exec in recent" :key="exec.id" class="table-row appliance-execution-row"><span class="badge" :class="`badge-status-${String(exec.status).toLowerCase()}`">{{ exec.status }}</span><span>{{ formatDate(exec.started_at) }}</span><span>{{ formatDuration(exec.duration_ms) }}</span><span>{{ exec.error_message || '' }}</span></div></div></section>
         </section>
       </div>
@@ -397,5 +411,28 @@ onBeforeUnmount(stopPolling);
 </template>
 
 <style scoped>
-.app-run-form{display:grid;gap:12px;padding:18px;border:2px solid #0f172a;background:#f8fafc}.app-run-form .btn-primary{background:var(--app-accent,#2563eb)}.output-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}.output-cards>div{display:grid;gap:5px;padding:14px;border:1px solid #cbd5e1;background:#fff}.output-cards span{font-size:12px;color:#64748b;text-transform:uppercase}.output-cards strong{font-size:20px;overflow-wrap:anywhere}.app-output-json{background:#0f172a;color:#e2e8f0;padding:16px;border-radius:8px;overflow:auto;max-height:420px}.output-table-row{min-width:max-content}
+.appliance-grid{width:min(1280px,100%);margin:0 auto;align-items:start}
+.appliance-grid-focused{grid-template-columns:minmax(0,1fr);width:min(1100px,100%)}
+.appliance-grid-focused .appliance-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+.app-run-form{display:grid;gap:12px;padding:20px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc}
+.app-run-form .btn-primary{min-height:44px;justify-content:center;background:var(--app-accent,#2563eb)}
+.app-output{min-width:0;padding:20px;border:1px solid #cbd5e1;border-radius:10px;background:#fff}
+.output-heading{margin-bottom:0}
+.output-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.output-cards>div{display:grid;gap:6px;padding:16px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc}
+.output-cards span,.output-label{font-size:12px;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.output-cards strong{font-size:20px;overflow-wrap:anywhere}
+.output-structured{display:grid;gap:12px}
+.output-field{display:grid;gap:8px;padding:16px;border:1px solid #dbe3ef;border-radius:8px;background:#f8fafc}
+.output-value{font-size:17px;line-height:1.55;overflow-wrap:anywhere}
+.output-list{display:grid;gap:8px;margin:0;padding-left:22px;line-height:1.5}
+.output-list li{padding-left:3px;overflow-wrap:anywhere}
+.output-object{margin:0;padding:12px;border-radius:6px;background:#eef2f7;color:#0f172a;white-space:pre-wrap;overflow-wrap:anywhere}
+.app-output-json{width:100%;min-width:0;margin:0;background:#0f172a;color:#e2e8f0;padding:16px;border-radius:8px;overflow:auto;max-height:360px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
+.output-technical{margin-top:4px;border-top:1px solid #e2e8f0;padding-top:12px}
+.output-technical summary{width:fit-content;cursor:pointer;color:#475569;font-size:13px;font-weight:700}
+.output-technical[open] summary{margin-bottom:10px}
+.output-table{max-width:100%;overflow:auto}
+.output-table-row{min-width:max-content}
+@media(max-width:900px){.appliance-grid-focused .appliance-side{grid-template-columns:1fr}.app-output,.app-run-form{padding:14px}}
 </style>
