@@ -97,12 +97,12 @@ func (h *AppBuilderHandler) Build(w http.ResponseWriter, r *http.Request) {
 	}
 	manifest := pack.Manifest{
 		SchemaVersion: pack.SupportedSchema,
-		ID: req.ID, Name: req.Name, Version: req.Version, Description: req.Description,
-		EntryWorkflow: pack.DefaultWorkflowPath,
-		RequiredCredentials: []string{},
-		SupportedPlatforms: []string{pack.Platform(runtime.GOOS, runtime.GOARCH)},
+		ID:            req.ID, Name: req.Name, Version: req.Version, Description: req.Description,
+		EntryWorkflow:        pack.DefaultWorkflowPath,
+		RequiredCredentials:  []string{},
+		SupportedPlatforms:   []string{pack.Platform(runtime.GOOS, runtime.GOARCH)},
 		RequiredCapabilities: []string{pack.CapabilityPackV1, pack.CapabilityAppUIV1},
-		RunUI: req.RunUI, Branding: req.Branding,
+		RunUI:                req.RunUI, Branding: req.Branding,
 	}
 	appWorkflow := *wf
 	appWorkflow.IsActive = true

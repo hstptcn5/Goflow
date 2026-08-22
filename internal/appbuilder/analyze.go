@@ -18,11 +18,11 @@ const (
 )
 
 type NodeResult struct {
-	NodeID  string `json:"node_id"`
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	Level   Level  `json:"level"`
-	Reason  string `json:"reason"`
+	NodeID string `json:"node_id"`
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Level  Level  `json:"level"`
+	Reason string `json:"reason"`
 }
 
 // ExternalizeCredentials removes machine-local credential IDs and replaces
