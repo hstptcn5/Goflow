@@ -92,8 +92,9 @@ which the server is running. The destination machine does not need Go or a
 separate frontend install. Credentials are not copied into the file; supported
 credential-backed nodes request them during first-run setup.
 
-Python, native plugins, sub-workflows, SSH/Git commands, and local file/path
-dependencies are blocked in the one-file MVP. See the
+Python Code workflows can be built with a Yellow portability warning and require
+Python 3 on the destination machine because Python is not embedded. Native plugins,
+sub-workflows, SSH/Git commands, and local file/path dependencies remain blocked. See the
 [App Builder roadmap](APP_BUILDER_ROADMAP.md) for the portability contract.
 
 ## Capabilities
