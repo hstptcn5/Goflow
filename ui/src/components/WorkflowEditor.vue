@@ -14,6 +14,7 @@ import NodePicker from './NodePicker.vue';
 import PropertiesPanel from './PropertiesPanel.vue';
 import AIAssistantDrawer from './AIAssistantDrawer.vue';
 import TemplateGallery from './TemplateGallery.vue';
+import AppBuilderModal from './AppBuilderModal.vue';
 import { getNodeIconSVG, getNavIconSVG } from './NodeIcons';
 import {
   autoLayoutGraph,
@@ -44,6 +45,7 @@ const showAIDrawer = ref(false);
 const showTemplateGallery = ref(false);
 const showNodePicker = ref(false);
 const showPalette = ref(false);
+const showAppBuilder = ref(false);
 const runError = ref('');
 const triggering = ref(false);
 const validationAttempted = ref(false);
@@ -681,6 +683,19 @@ async function saveCanvas({ validateStructure = true } = {}) {
   return saved;
 }
 
+async function openAppBuilder() {
+  runError.value = '';
+  try {
+    if (workflowStore.isDirty) {
+      const saved = await saveCanvas();
+      if (!saved) return;
+    }
+    showAppBuilder.value = true;
+  } catch (err) {
+    runError.value = err.message || 'Không thể lưu workflow trước khi build ứng dụng.';
+  }
+}
+
 async function runWorkflow() {
   if (!workflowStore.currentWorkflow) return;
   if (!validateForTest()) {
@@ -1034,6 +1049,9 @@ function handleEditorShortcut(event) {
       <button class="btn btn-secondary" type="button" :disabled="workflowStore.saveState === 'saving'" @click="saveCanvas">
         Save
       </button>
+      <button class="btn btn-secondary" type="button" @click="openAppBuilder">
+        Build App
+      </button>
       <details class="more-actions">
         <summary class="btn btn-secondary">More actions</summary>
         <div class="more-menu">
@@ -1225,6 +1243,13 @@ function handleEditorShortcut(event) {
       :visible="showNodePicker"
       @close="closeNodePicker"
       @select="addNodeFromPicker"
+    />
+
+    <AppBuilderModal
+      v-if="showAppBuilder && workflowStore.currentWorkflow"
+      :workflow="workflowStore.currentWorkflow"
+      :nodes="nodes"
+      @close="showAppBuilder = false"
     />
   </div>
 </template>

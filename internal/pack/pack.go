@@ -35,6 +35,7 @@ const (
 	MaxRequiredCapabilities    = 32
 	MaxCapabilityLength        = 96
 	MaxOfflineFixtureBytes     = 64 << 10
+	MaxRunFields               = 64
 )
 
 const (
@@ -44,6 +45,7 @@ const (
 	CapabilityDailyScheduleV1 = "goflow.schedule.daily.v1"
 	CapabilityHostMigrationV1 = "goflow.migration.host-managed.v1"
 	CapabilityHTTPAdapterV1   = "goflow.adapter.normalized-http.v1"
+	CapabilityAppUIV1         = "goflow.app.ui.v1"
 )
 
 type Manifest struct {
@@ -63,6 +65,34 @@ type Manifest struct {
 	RequiredCapabilities   []string                `json:"required_capabilities,omitempty"`
 	ExecutionTier          string                  `json:"execution_tier,omitempty"`
 	OfflineTestFixture     string                  `json:"offline_test_fixture,omitempty"`
+	RunUI                  *RunUI                  `json:"run_ui,omitempty"`
+	Branding               *Branding               `json:"branding,omitempty"`
+}
+
+// RunUI describes the focused input and output surface shown by a generated app.
+// It is intentionally data-only so a Pack never ships executable UI code.
+type RunUI struct {
+	InputMode    string     `json:"input_mode,omitempty"`
+	InputFields  []RunField `json:"input_fields,omitempty"`
+	OutputNodeID string     `json:"output_node_id,omitempty"`
+	OutputMode   string     `json:"output_mode,omitempty"`
+	SubmitLabel  string     `json:"submit_label,omitempty"`
+}
+
+type RunField struct {
+	Key         string        `json:"key"`
+	Label       string        `json:"label"`
+	Description string        `json:"description,omitempty"`
+	Type        string        `json:"type"`
+	Required    bool          `json:"required,omitempty"`
+	Default     interface{}   `json:"default,omitempty"`
+	Options     []interface{} `json:"options,omitempty"`
+	Placeholder string        `json:"placeholder,omitempty"`
+}
+
+type Branding struct {
+	Icon        string `json:"icon,omitempty"`
+	AccentColor string `json:"accent_color,omitempty"`
 }
 
 type Pack struct {
@@ -94,6 +124,8 @@ type CredentialRequirement struct {
 	Label       string `json:"label"`
 	Description string `json:"description,omitempty"`
 	Type        string `json:"type"`
+	Kind        string `json:"kind,omitempty"`
+	Provider    string `json:"provider,omitempty"`
 	Required    bool   `json:"required"`
 	TestKind    string `json:"test_kind,omitempty"`
 	DisplayOnly bool   `json:"display_only,omitempty"`
@@ -172,6 +204,9 @@ func Load(dir string) (*Pack, error) {
 		return nil, fmt.Errorf("workflow: %w", err)
 	}
 	if err := validateSetupMetadata(manifest, workflowDef.NodesJSON); err != nil {
+		return nil, err
+	}
+	if err := validateRunUI(manifest, workflowDef.NodesJSON); err != nil {
 		return nil, err
 	}
 	if err := rejectPackEmbeddedSecrets(workflowDef.NodesJSON); err != nil {
@@ -566,6 +601,30 @@ func validateCredentialRequirement(index int, req CredentialRequirement) error {
 	if !isKnownCredentialType(req.Type) {
 		return fmt.Errorf("%s.type must be a known credential type", prefix)
 	}
+	if req.Kind != "" {
+		switch req.Kind {
+		case "API_KEY", "BEARER_TOKEN", "BASIC_AUTH", "OAUTH2", "USERNAME_PASSWORD", "SERVICE_ACCOUNT", "CUSTOM":
+		default:
+			return fmt.Errorf("%s.kind must be a known credential kind", prefix)
+		}
+		if strings.TrimSpace(req.Provider) == "" {
+			return fmt.Errorf("%s.provider is required when kind is declared", prefix)
+		}
+	}
+	if req.Provider != "" {
+		if req.Kind == "" {
+			return fmt.Errorf("%s.kind is required when provider is declared", prefix)
+		}
+		if len(req.Provider) > 80 {
+			return fmt.Errorf("%s.provider exceeds 80 character limit", prefix)
+		}
+		for _, r := range req.Provider {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+				continue
+			}
+			return fmt.Errorf("%s.provider must use lowercase letters, numbers, dot, dash, or underscore", prefix)
+		}
+	}
 	if req.TestKind != "" && !isKnownConnectionTest(req.TestKind) {
 		return fmt.Errorf("%s.test_kind must be allowlisted", prefix)
 	}
@@ -881,6 +940,7 @@ var supportedCapabilities = map[string]struct{}{
 	CapabilityDailyScheduleV1: {},
 	CapabilityHostMigrationV1: {},
 	CapabilityHTTPAdapterV1:   {},
+	CapabilityAppUIV1:         {},
 }
 
 var supportedPlatforms = map[string]struct{}{
@@ -924,7 +984,13 @@ func validateCapabilities(manifest Manifest) error {
 	}
 	// A nil declaration is a legacy Pack Format v1 manifest. Preserve it as-is.
 	if manifest.RequiredCapabilities == nil {
+		if manifest.RunUI != nil || manifest.Branding != nil {
+			return fmt.Errorf("manifest: required_capabilities must include %q when app UI metadata is declared", CapabilityAppUIV1)
+		}
 		return nil
+	}
+	if (manifest.RunUI != nil || manifest.Branding != nil) && !seen[CapabilityAppUIV1] {
+		return fmt.Errorf("manifest: required_capabilities must include %q when app UI metadata is declared", CapabilityAppUIV1)
 	}
 	if len(manifest.Bindings) > 0 && !seen[CapabilitySetupBindingsV1] {
 		return fmt.Errorf("manifest: required_capabilities must include %q when bindings are declared", CapabilitySetupBindingsV1)
@@ -940,6 +1006,83 @@ func validateCapabilities(manifest Manifest) error {
 		}
 	}
 	return nil
+}
+
+func validateRunUI(manifest Manifest, nodesJSON string) error {
+	if manifest.RunUI == nil && manifest.Branding == nil {
+		return nil
+	}
+	if manifest.Branding != nil {
+		if len(manifest.Branding.Icon) > 8 {
+			return fmt.Errorf("manifest: branding.icon exceeds 8 character limit")
+		}
+		color := strings.TrimSpace(manifest.Branding.AccentColor)
+		if color != "" && (len(color) != 7 || color[0] != '#' || !isHex(color[1:])) {
+			return fmt.Errorf("manifest: branding.accent_color must be a #RRGGBB color")
+		}
+	}
+	if manifest.RunUI == nil {
+		return nil
+	}
+	runUI := manifest.RunUI
+	if runUI.InputMode != "" && runUI.InputMode != "direct" && runUI.InputMode != "webhook_body" {
+		return fmt.Errorf("manifest: run_ui.input_mode must be direct or webhook_body")
+	}
+	if runUI.OutputMode != "" && runUI.OutputMode != "auto" && runUI.OutputMode != "json" && runUI.OutputMode != "cards" && runUI.OutputMode != "table" {
+		return fmt.Errorf("manifest: run_ui.output_mode must be auto, json, cards, or table")
+	}
+	if len(runUI.SubmitLabel) > MaxSetupLabelLength {
+		return fmt.Errorf("manifest: run_ui.submit_label exceeds %d character limit", MaxSetupLabelLength)
+	}
+	if len(runUI.InputFields) > MaxRunFields {
+		return fmt.Errorf("manifest: run_ui.input_fields exceeds %d item limit", MaxRunFields)
+	}
+	seen := map[string]bool{}
+	allowed := map[string]bool{"string": true, "textarea": true, "number": true, "integer": true, "boolean": true, "select": true, "json": true, "number_list": true}
+	for i, field := range runUI.InputFields {
+		if err := validateSetupKey(field.Key, fmt.Sprintf("manifest: run_ui.input_fields[%d].key", i)); err != nil {
+			return err
+		}
+		if seen[field.Key] {
+			return fmt.Errorf("manifest: run_ui.input_fields[%d] duplicates key %q", i, field.Key)
+		}
+		seen[field.Key] = true
+		if strings.TrimSpace(field.Label) == "" || len(field.Label) > MaxSetupLabelLength {
+			return fmt.Errorf("manifest: run_ui.input_fields[%d].label is required and bounded", i)
+		}
+		if !allowed[field.Type] {
+			return fmt.Errorf("manifest: run_ui.input_fields[%d].type %q is not supported", i, field.Type)
+		}
+		if field.Type == "select" && len(field.Options) == 0 {
+			return fmt.Errorf("manifest: run_ui.input_fields[%d].options is required for select", i)
+		}
+	}
+	if strings.TrimSpace(runUI.OutputNodeID) != "" {
+		var nodeList []nodes.Node
+		if err := json.Unmarshal([]byte(nodesJSON), &nodeList); err != nil {
+			return fmt.Errorf("manifest: validate run_ui.output_node_id: %w", err)
+		}
+		found := false
+		for _, node := range nodeList {
+			if node.ID == runUI.OutputNodeID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("manifest: run_ui.output_node_id references missing node %q", runUI.OutputNodeID)
+		}
+	}
+	return nil
+}
+
+func isHex(value string) bool {
+	for _, r := range value {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 func isValidCapability(value string) bool {

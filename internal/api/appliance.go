@@ -47,6 +47,8 @@ type ApplianceContext struct {
 	CredentialRequirements []pack.CredentialRequirement
 	LegacyRequiredCreds    []string
 	Bindings               []pack.Binding
+	RunUI                  *pack.RunUI
+	Branding               *pack.Branding
 	TelegramAPIBaseURL     string
 	ConnectionTestClient   *http.Client
 	ScheduleStore          *storage.WorkflowScheduleStore
@@ -400,7 +402,7 @@ func buildApplianceDiagnostics(appliance *ApplianceContext, wfStore *storage.Wor
 		}
 	}
 	integrity := appliance.IntegrityState
-	if integrity != "verified" && integrity != "source_validated" {
+	if integrity != "verified" && integrity != "source_validated" && integrity != "embedded_verified" {
 		integrity = "unknown"
 	}
 	return applianceDiagnostics{
@@ -531,7 +533,13 @@ func applianceCreateCredentialHandler(appliance *ApplianceContext, credStore *st
 			}
 		}
 		if credentialID == "" {
-			cred, err := credStore.Create(req.Name, requirement.Type, req.Value)
+			var cred *storage.Credential
+			var err error
+			if requirement.Kind != "" {
+				cred, err = credStore.CreateWithMetadata(req.Name, requirement.Kind, requirement.Provider, req.Value)
+			} else {
+				cred, err = credStore.Create(req.Name, requirement.Type, req.Value)
+			}
 			if err != nil {
 				http.Error(w, "credential could not be saved", http.StatusInternalServerError)
 				return
@@ -597,7 +605,7 @@ func applianceWorkflowStatusHandler(appliance *ApplianceContext, wfStore *storag
 			"missing":        missing,
 			"setup_complete": completed,
 			"latest_execution": func() interface{} {
-				latest, _ := applianceLatestExecution(execStore, appliance.WorkflowID)
+				latest, _ := applianceLatestExecution(execStore, appliance.WorkflowID, applianceOutputNodeID(appliance))
 				return latest
 			}(),
 		}
@@ -662,7 +670,7 @@ func applianceRunWorkflowHandler(appliance *ApplianceContext, credStore *storage
 
 func applianceLatestExecutionHandler(appliance *ApplianceContext, execStore *storage.ExecutionStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		latest, err := applianceLatestExecution(execStore, appliance.WorkflowID)
+		latest, err := applianceLatestExecution(execStore, appliance.WorkflowID, applianceOutputNodeID(appliance))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -685,7 +693,7 @@ func applianceRecentExecutionsHandler(appliance *ApplianceContext, execStore *st
 		if limit > 50 {
 			limit = 50
 		}
-		executions, err := applianceRecentExecutions(execStore, appliance.WorkflowID, limit)
+		executions, err := applianceRecentExecutions(execStore, appliance.WorkflowID, limit, applianceOutputNodeID(appliance))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -842,13 +850,22 @@ func applianceNotImplementedMutation(w http.ResponseWriter, r *http.Request) {
 	renderJSON(w, http.StatusNotImplemented, map[string]string{"error": "appliance mutation is not implemented yet"})
 }
 
-func applianceIdentity(appliance *ApplianceContext) map[string]string {
-	return map[string]string{
+func applianceIdentity(appliance *ApplianceContext) map[string]interface{} {
+	return map[string]interface{}{
 		"id":          appliance.PackID,
 		"name":        appliance.PackName,
 		"version":     appliance.PackVersion,
 		"description": appliance.Description,
+		"run_ui":      appliance.RunUI,
+		"branding":    appliance.Branding,
 	}
+}
+
+func applianceOutputNodeID(appliance *ApplianceContext) string {
+	if appliance == nil || appliance.RunUI == nil {
+		return ""
+	}
+	return appliance.RunUI.OutputNodeID
 }
 
 func applianceHostMiddleware(appliance *ApplianceContext) func(http.Handler) http.Handler {
@@ -929,6 +946,8 @@ func applianceManifest(appliance *ApplianceContext) pack.Manifest {
 		CredentialRequirements: appliance.CredentialRequirements,
 		RequiredCredentials:    appliance.LegacyRequiredCreds,
 		Bindings:               appliance.Bindings,
+		RunUI:                  appliance.RunUI,
+		Branding:               appliance.Branding,
 	}
 }
 
@@ -1044,19 +1063,20 @@ type applianceExecutionSummary struct {
 	TriggerPrincipal string      `json:"trigger_principal,omitempty"`
 	RequestID        string      `json:"request_id,omitempty"`
 	Input            interface{} `json:"input,omitempty"`
+	Output           interface{} `json:"output,omitempty"`
 	ErrorMessage     string      `json:"error_message,omitempty"`
 	ErrorCategory    string      `json:"error_category,omitempty"`
 }
 
-func applianceLatestExecution(execStore *storage.ExecutionStore, workflowID string) (*applianceExecutionSummary, error) {
-	executions, err := applianceRecentExecutions(execStore, workflowID, 1)
+func applianceLatestExecution(execStore *storage.ExecutionStore, workflowID string, outputNodeID ...string) (*applianceExecutionSummary, error) {
+	executions, err := applianceRecentExecutions(execStore, workflowID, 1, outputNodeID...)
 	if err != nil || len(executions) == 0 {
 		return nil, err
 	}
 	return &executions[0], nil
 }
 
-func applianceRecentExecutions(execStore *storage.ExecutionStore, workflowID string, limit int) ([]applianceExecutionSummary, error) {
+func applianceRecentExecutions(execStore *storage.ExecutionStore, workflowID string, limit int, outputNodeID ...string) ([]applianceExecutionSummary, error) {
 	if execStore == nil {
 		return []applianceExecutionSummary{}, nil
 	}
@@ -1066,12 +1086,12 @@ func applianceRecentExecutions(execStore *storage.ExecutionStore, workflowID str
 	}
 	result := make([]applianceExecutionSummary, 0, len(list))
 	for _, exec := range list {
-		result = append(result, applianceExecutionSummaryFromExecution(exec))
+		result = append(result, applianceExecutionSummaryFromExecution(exec, outputNodeID...))
 	}
 	return result, nil
 }
 
-func applianceExecutionSummaryFromExecution(exec storage.Execution) applianceExecutionSummary {
+func applianceExecutionSummaryFromExecution(exec storage.Execution, outputNodeID ...string) applianceExecutionSummary {
 	dto := executionInspectorDTOFromExecution(exec)
 	errorCategory, errorMessage := appliancePublicExecutionError(dto.Status, dto.ErrorMessage)
 	return applianceExecutionSummary{
@@ -1085,9 +1105,37 @@ func applianceExecutionSummaryFromExecution(exec storage.Execution) applianceExe
 		TriggerPrincipal: engine.RedactSensitiveString(dto.TriggerPrincipal),
 		RequestID:        engine.RedactSensitiveString(dto.RequestID),
 		Input:            dto.Input,
+		Output:           applianceOutput(dto.NodeLogs, firstString(outputNodeID)),
 		ErrorMessage:     errorMessage,
 		ErrorCategory:    errorCategory,
 	}
+}
+
+func firstString(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func applianceOutput(logs []interface{}, outputNodeID string) interface{} {
+	var last interface{}
+	for _, raw := range logs {
+		log, ok := raw.(map[string]interface{})
+		if !ok || !strings.EqualFold(fmt.Sprint(log["status"]), "SUCCESS") {
+			continue
+		}
+		if output, exists := log["output"]; exists {
+			last = output
+			if outputNodeID != "" && fmt.Sprint(log["node_id"]) == outputNodeID {
+				return output
+			}
+		}
+	}
+	if outputNodeID != "" {
+		return nil
+	}
+	return last
 }
 
 func applianceCredentialResolver(credStore *storage.CredentialStore) packsetup.CredentialResolver {

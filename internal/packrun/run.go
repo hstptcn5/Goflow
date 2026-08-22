@@ -187,6 +187,8 @@ func Run(ctx context.Context, opts Options) error {
 			CredentialRequirements: loaded.Manifest.CredentialRequirements,
 			LegacyRequiredCreds:    loaded.Manifest.RequiredCredentials,
 			Bindings:               loaded.Manifest.Bindings,
+			RunUI:                  loaded.Manifest.RunUI,
+			Branding:               loaded.Manifest.Branding,
 			TelegramAPIBaseURL:     opts.TelegramAPIBaseURL,
 			ConnectionTestClient:   opts.ConnectionTestClient,
 		},
