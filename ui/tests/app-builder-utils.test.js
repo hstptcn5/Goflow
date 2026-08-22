@@ -28,4 +28,21 @@ describe('app builder contracts', () => {
     expect(outputView([{ id: 1 }, { id: 2 }], 'auto')).toMatchObject({ mode: 'table', columns: ['id'] });
     expect(outputView({ nested: { ok: true } }, 'auto').mode).toBe('json');
   });
+
+  it('promotes AI Extract data and keeps provider metadata in technical details', () => {
+    const view = outputView({
+      data: { summary: 'Báo cáo hợp lệ', facts: ['125 đơn hàng', '48.500.000 VND'] },
+      model_used: 'deepseek-v4-flash',
+      response_id: 'response-1',
+      raw_text: '{"summary":"Báo cáo hợp lệ"}',
+    }, 'auto');
+
+    expect(view.mode).toBe('structured');
+    expect(view.fields).toMatchObject([
+      { key: 'summary', kind: 'scalar', value: 'Báo cáo hợp lệ' },
+      { key: 'facts', kind: 'list' },
+    ]);
+    expect(view.detailsJson).toContain('deepseek-v4-flash');
+    expect(view.detailsJson).toContain('response-1');
+  });
 });

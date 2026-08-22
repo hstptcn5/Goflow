@@ -62,11 +62,11 @@ onMounted(async () => {
 <template>
   <div class="builder-backdrop" role="presentation" @click.self="emit('close')">
     <section class="builder-modal" role="dialog" aria-modal="true" aria-labelledby="app-builder-title">
-      <header><div><span class="builder-kicker">GF-APP</span><h2 id="app-builder-title">Xuất workflow thành ứng dụng</h2><p>Một file chạy độc lập, có form nhập và màn hình kết quả.</p></div><button class="btn btn-secondary" type="button" @click="emit('close')">Đóng</button></header>
+      <header><div><span class="builder-kicker">GF-APP</span><h2 id="app-builder-title">Xuất workflow thành ứng dụng</h2><p>Một file ứng dụng có form nhập và màn hình kết quả. Phụ thuộc YELLOW cần có trên máy chạy app.</p></div><button class="btn btn-secondary" type="button" @click="emit('close')">Đóng</button></header>
       <div v-if="loading" class="builder-state">Đang kiểm tra portability…</div>
       <div v-else-if="report" class="portability" :data-level="report.level"><strong>{{ report.level.toUpperCase() }}</strong><span>{{ report.summary }}</span></div>
       <ul v-if="report?.blockers?.length" class="builder-issues"><li v-for="item in report.blockers" :key="item">{{ item }}</li></ul>
-      <details v-if="report?.warnings?.length"><summary>{{ report.warnings.length }} cảnh báo cần cấu hình ở máy đích</summary><ul class="builder-issues"><li v-for="item in report.warnings" :key="item">{{ item }}</li></ul></details>
+      <details v-if="report?.warnings?.length" :open="report?.level === 'yellow'"><summary>{{ report.warnings.length }} yêu cầu cần chuẩn bị ở máy đích</summary><ul class="builder-issues"><li v-for="item in report.warnings" :key="item">{{ item }}</li></ul></details>
 
       <form class="builder-form" @submit.prevent="build">
         <div class="builder-grid"><label>Tên ứng dụng<input v-model="form.name" class="form-input" required /></label><label>App ID<input v-model="form.id" class="form-input" placeholder="Tự tạo từ tên" /></label><label>Phiên bản<input v-model="form.version" class="form-input" required /></label><label>Màu chủ đạo<input v-model="form.accent" class="form-input" type="color" /></label><label class="wide">Mô tả<textarea v-model="form.description" class="form-input" rows="2" /></label></div>
@@ -76,7 +76,7 @@ onMounted(async () => {
         <h3>Kết quả</h3>
         <div class="builder-grid"><label>Node output<select v-model="form.outputNodeID" class="form-input"><option value="">Node thành công cuối cùng</option><option v-for="node in nodes" :key="node.id" :value="node.id">{{ nodeLabel(node) }}</option></select></label><label>Kiểu hiển thị<select v-model="form.outputMode" class="form-input"><option value="auto">Tự nhận diện</option><option value="cards">Thẻ chỉ số</option><option value="table">Bảng</option><option value="json">JSON</option></select></label></div>
         <p v-if="error" class="builder-error" role="alert">{{ error }}</p>
-        <footer><span>Build cho hệ điều hành đang chạy Goflow; không cần Go trên máy người dùng.</span><button class="btn btn-primary" type="submit" :disabled="building || !report?.can_build">{{ building ? 'Đang đóng gói…' : 'Build & tải ứng dụng' }}</button></footer>
+        <footer><span>{{ report?.level === 'yellow' ? 'Có thể build. Máy người dùng không cần Go, nhưng phải có các phụ thuộc YELLOW liệt kê phía trên.' : 'Build cho hệ điều hành đang chạy Goflow; không cần Go trên máy người dùng.' }}</span><button class="btn btn-primary" type="submit" :disabled="building || !report?.can_build">{{ building ? 'Đang đóng gói…' : 'Build & tải ứng dụng' }}</button></footer>
       </form>
     </section>
   </div>

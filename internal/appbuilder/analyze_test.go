@@ -14,7 +14,11 @@ func TestAnalyzePortabilityLevels(t *testing.T) {
 	if err != nil || yellow.Level != Yellow || !yellow.CanBuild || len(yellow.Warnings) != 1 {
 		t.Fatalf("expected yellow report, got %#v, %v", yellow, err)
 	}
-	red, err := Analyze(`[{"id":"python","type":"pythonCode","name":"Python","params":{}}]`)
+	python, err := Analyze(`[{"id":"python","type":"pythonCode","name":"Python","params":{}}]`)
+	if err != nil || python.Level != Yellow || !python.CanBuild || len(python.Warnings) != 1 || !strings.Contains(python.Warnings[0], "Python 3") {
+		t.Fatalf("expected buildable yellow Python report, got %#v, %v", python, err)
+	}
+	red, err := Analyze(`[{"id":"file","type":"localFile","name":"Local file","params":{}}]`)
 	if err != nil || red.Level != Red || red.CanBuild || len(red.Blockers) != 1 {
 		t.Fatalf("expected red report, got %#v, %v", red, err)
 	}
@@ -30,6 +34,19 @@ func TestExternalizeCredentials(t *testing.T) {
 	}
 	if len(requirements) != 1 || requirements[0].Type != "DEEPSEEK_API_KEY" || len(bindings) != 1 || bindings[0].Target.NodeID != "deepseek-main" {
 		t.Fatalf("unexpected setup metadata: %#v %#v", requirements, bindings)
+	}
+}
+
+func TestExternalizeCredentialsCreatesMissingAIExtractSlot(t *testing.T) {
+	raw, requirements, bindings, err := ExternalizeCredentials(`[{"id":"extract","type":"aiExtract","name":"AI Extract","params":{"provider":"deepseek","model":"auto","input_type":"text","input":"hello","instructions":"extract","json_schema":"{}","schema_name":"result","max_media_bytes":1024}}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw, `"credential_id":"__goflow_setup_extract_credential"`) {
+		t.Fatalf("portable workflow did not receive a setup credential marker: %s", raw)
+	}
+	if len(requirements) != 1 || requirements[0].Type != "DEEPSEEK_API_KEY" || len(bindings) != 1 || bindings[0].Target.NodeID != "extract" || bindings[0].Target.Param != "credential_id" {
+		t.Fatalf("unexpected AI Extract setup metadata: %#v %#v", requirements, bindings)
 	}
 }
 

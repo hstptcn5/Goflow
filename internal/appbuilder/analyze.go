@@ -36,11 +36,17 @@ func ExternalizeCredentials(nodesJSON string) (string, []pack.CredentialRequirem
 	requirements := []pack.CredentialRequirement{}
 	bindings := []pack.Binding{}
 	for i := range list {
-		if _, exists := list[i].Params["credential_id"]; !exists || !needsCredential(list[i]) {
+		if !needsCredential(list[i]) {
 			continue
 		}
+		if list[i].Params == nil {
+			list[i].Params = map[string]interface{}{}
+		}
 		slot := safeSlot(list[i].ID) + "_credential"
-		list[i].Params["credential_id"] = ""
+		// A non-secret setup marker satisfies required credential parameters while
+		// Pack validation runs. First-run bindings always replace it with the
+		// destination machine's encrypted credential ID before execution.
+		list[i].Params["credential_id"] = "__goflow_setup_" + slot
 		for _, secretParam := range []string{"api_key", "token", "password", "webhook_url", "connection_string", "notion_token"} {
 			if _, exists := list[i].Params[secretParam]; exists {
 				list[i].Params[secretParam] = ""
@@ -161,7 +167,7 @@ func Analyze(nodesJSON string) (Report, error) {
 	case Green:
 		report.Summary = "Workflow dùng các thành phần có thể đóng gói cùng Goflow runtime."
 	case Yellow:
-		report.Summary = "Có thể build, nhưng ứng dụng cần mạng hoặc cấu hình kết nối ở máy đích."
+		report.Summary = "Có thể build, nhưng ứng dụng cần các kết nối hoặc runtime YELLOW được liệt kê ở máy đích."
 	case Red:
 		report.Summary = "Chưa thể build thành ứng dụng độc lập vì có phụ thuộc cục bộ hoặc runtime ngoài."
 	}
@@ -171,7 +177,7 @@ func Analyze(nodesJSON string) (Report, error) {
 func classify(nodeType nodes.NodeType) (Level, string) {
 	switch nodeType {
 	case nodes.TypePythonCode:
-		return Red, "cần Python được cài bên ngoài ứng dụng"
+		return Yellow, "cần Python 3 trên máy đích; Python không được nhúng trong file ứng dụng"
 	case nodes.TypeSubWorkflow:
 		return Red, "workflow con chưa được gom vào một file ứng dụng"
 	case nodes.TypeGoflowPlugin:
