@@ -36,11 +36,17 @@ func ExternalizeCredentials(nodesJSON string) (string, []pack.CredentialRequirem
 	requirements := []pack.CredentialRequirement{}
 	bindings := []pack.Binding{}
 	for i := range list {
-		if _, exists := list[i].Params["credential_id"]; !exists || !needsCredential(list[i]) {
+		if !needsCredential(list[i]) {
 			continue
 		}
+		if list[i].Params == nil {
+			list[i].Params = map[string]interface{}{}
+		}
 		slot := safeSlot(list[i].ID) + "_credential"
-		list[i].Params["credential_id"] = ""
+		// A non-secret setup marker satisfies required credential parameters while
+		// Pack validation runs. First-run bindings always replace it with the
+		// destination machine's encrypted credential ID before execution.
+		list[i].Params["credential_id"] = "__goflow_setup_" + slot
 		for _, secretParam := range []string{"api_key", "token", "password", "webhook_url", "connection_string", "notion_token"} {
 			if _, exists := list[i].Params[secretParam]; exists {
 				list[i].Params[secretParam] = ""
