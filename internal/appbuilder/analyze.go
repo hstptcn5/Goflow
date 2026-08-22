@@ -161,7 +161,7 @@ func Analyze(nodesJSON string) (Report, error) {
 	case Green:
 		report.Summary = "Workflow dùng các thành phần có thể đóng gói cùng Goflow runtime."
 	case Yellow:
-		report.Summary = "Có thể build, nhưng ứng dụng cần mạng hoặc cấu hình kết nối ở máy đích."
+		report.Summary = "Có thể build, nhưng ứng dụng cần các kết nối hoặc runtime YELLOW được liệt kê ở máy đích."
 	case Red:
 		report.Summary = "Chưa thể build thành ứng dụng độc lập vì có phụ thuộc cục bộ hoặc runtime ngoài."
 	}
@@ -171,7 +171,7 @@ func Analyze(nodesJSON string) (Report, error) {
 func classify(nodeType nodes.NodeType) (Level, string) {
 	switch nodeType {
 	case nodes.TypePythonCode:
-		return Red, "cần Python được cài bên ngoài ứng dụng"
+		return Yellow, "cần Python 3 trên máy đích; Python không được nhúng trong file ứng dụng"
 	case nodes.TypeSubWorkflow:
 		return Red, "workflow con chưa được gom vào một file ứng dụng"
 	case nodes.TypeGoflowPlugin:
