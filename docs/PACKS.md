@@ -49,7 +49,7 @@ Known fields:
 | `plugins` | No | Optional JSON array of portable slash paths to plugin resource files. Listed files must exist, resolve inside the pack, and be regular files. The validator does not execute plugins. |
 | `assets` | No | Optional JSON array of portable slash paths to asset files. Listed files must exist, resolve inside the pack, and be regular files. The validator does not interpret asset contents. |
 | `config_schema` | No | Optional setup metadata for non-secret pack configuration. |
-| `credential_requirements` | No | Optional structured credential slots without values. |
+| `credential_requirements` | No | Optional structured credential slots without values. Generated apps may add canonical `kind` and `provider` metadata so destination credentials retain node compatibility. |
 | `bindings` | No | Optional declarative mappings from setup values to existing workflow node parameters. |
 | `required_capabilities` | No | Closed list of runtime behaviors required by the Pack. Omission preserves legacy Pack Format v1 compatibility. Unknown, duplicate, malformed, or unavailable capabilities fail closed. |
 | `offline_test_fixture` | No | Portable path to bounded strict JSON used only by `pack test`. The file is excluded from runtime bundles. |

@@ -124,6 +124,8 @@ type CredentialRequirement struct {
 	Label       string `json:"label"`
 	Description string `json:"description,omitempty"`
 	Type        string `json:"type"`
+	Kind        string `json:"kind,omitempty"`
+	Provider    string `json:"provider,omitempty"`
 	Required    bool   `json:"required"`
 	TestKind    string `json:"test_kind,omitempty"`
 	DisplayOnly bool   `json:"display_only,omitempty"`
@@ -598,6 +600,30 @@ func validateCredentialRequirement(index int, req CredentialRequirement) error {
 	}
 	if !isKnownCredentialType(req.Type) {
 		return fmt.Errorf("%s.type must be a known credential type", prefix)
+	}
+	if req.Kind != "" {
+		switch req.Kind {
+		case "API_KEY", "BEARER_TOKEN", "BASIC_AUTH", "OAUTH2", "USERNAME_PASSWORD", "SERVICE_ACCOUNT", "CUSTOM":
+		default:
+			return fmt.Errorf("%s.kind must be a known credential kind", prefix)
+		}
+		if strings.TrimSpace(req.Provider) == "" {
+			return fmt.Errorf("%s.provider is required when kind is declared", prefix)
+		}
+	}
+	if req.Provider != "" {
+		if req.Kind == "" {
+			return fmt.Errorf("%s.kind is required when provider is declared", prefix)
+		}
+		if len(req.Provider) > 80 {
+			return fmt.Errorf("%s.provider exceeds 80 character limit", prefix)
+		}
+		for _, r := range req.Provider {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+				continue
+			}
+			return fmt.Errorf("%s.provider must use lowercase letters, numbers, dot, dash, or underscore", prefix)
+		}
 	}
 	if req.TestKind != "" && !isKnownConnectionTest(req.TestKind) {
 		return fmt.Errorf("%s.test_kind must be allowlisted", prefix)

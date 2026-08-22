@@ -36,7 +36,7 @@ func ExternalizeCredentials(nodesJSON string) (string, []pack.CredentialRequirem
 	requirements := []pack.CredentialRequirement{}
 	bindings := []pack.Binding{}
 	for i := range list {
-		if _, exists := list[i].Params["credential_id"]; !exists {
+		if _, exists := list[i].Params["credential_id"]; !exists || !needsCredential(list[i]) {
 			continue
 		}
 		slot := safeSlot(list[i].ID) + "_credential"
@@ -46,9 +46,10 @@ func ExternalizeCredentials(nodesJSON string) (string, []pack.CredentialRequirem
 				list[i].Params[secretParam] = ""
 			}
 		}
+		credentialType, kind, provider := credentialSpec(list[i])
 		requirements = append(requirements, pack.CredentialRequirement{
 			Key: slot, Label: displayName(list[i]), Description: "Thông tin xác thực cho " + displayName(list[i]),
-			Type: credentialType(list[i].Type), Required: true,
+			Type: credentialType, Kind: kind, Provider: provider, Required: true,
 		})
 		bindings = append(bindings, pack.Binding{Source: "credential." + slot, Target: pack.BindingTarget{NodeID: list[i].ID, Param: "credential_id"}})
 	}
@@ -56,22 +57,52 @@ func ExternalizeCredentials(nodesJSON string) (string, []pack.CredentialRequirem
 	return string(encoded), requirements, bindings, err
 }
 
-func credentialType(nodeType nodes.NodeType) string {
-	switch nodeType {
+func credentialSpec(node nodes.Node) (credentialType, kind, provider string) {
+	switch node.Type {
 	case nodes.TypeTelegramBot:
-		return "TELEGRAM_BOT"
+		return "TELEGRAM_BOT", "", ""
 	case nodes.TypeOpenAIGPT:
-		return "OPENAI_API_KEY"
+		return "OPENAI_API_KEY", "", ""
 	case nodes.TypeDeepSeekAI:
-		return "DEEPSEEK_API_KEY"
+		return "DEEPSEEK_API_KEY", "", ""
+	case nodes.TypeAIExtract:
+		if strings.EqualFold(fmt.Sprint(node.Params["provider"]), "deepseek") {
+			return "DEEPSEEK_API_KEY", "", ""
+		}
+		return "OPENAI_API_KEY", "", ""
 	case nodes.TypeEmailSMTP:
-		return "SMTP_ACCOUNT"
+		return "SMTP_ACCOUNT", "", ""
 	case nodes.TypePostgresQuery, nodes.TypeMySQLQuery, nodes.TypeMongoDBCommand, nodes.TypeRedisCommand:
-		return "DATABASE_URL"
+		return "DATABASE_URL", "", ""
 	case nodes.TypeGoogleSheets, nodes.TypeGoogleDrive, nodes.TypeGmailREST:
-		return "GOOGLE_SERVICE_ACCOUNT"
+		return "GOOGLE_SERVICE_ACCOUNT", "", ""
+	case nodes.TypeSlackBot:
+		return "API_KEY", "API_KEY", "slack"
+	case nodes.TypeDiscordBot:
+		return "API_KEY", "API_KEY", "discord"
+	case nodes.TypeNotionPage:
+		return "API_KEY", "API_KEY", "notion"
+	case nodes.TypeZaloOA:
+		return "BEARER_TOKEN", "BEARER_TOKEN", "zalo"
 	default:
-		return "API_KEY"
+		return "API_KEY", "", ""
+	}
+}
+
+func needsCredential(node nodes.Node) bool {
+	for _, param := range []string{"credential_id", "api_key", "token", "password", "webhook_url", "connection_string", "notion_token"} {
+		if strings.TrimSpace(fmt.Sprint(node.Params[param])) != "" && fmt.Sprint(node.Params[param]) != "<nil>" {
+			return true
+		}
+	}
+	switch node.Type {
+	case nodes.TypeTelegramBot, nodes.TypeEmailSMTP, nodes.TypeOpenAIGPT, nodes.TypeDeepSeekAI, nodes.TypeAIExtract,
+		nodes.TypeDiscordBot, nodes.TypeSlackBot, nodes.TypePostgresQuery, nodes.TypeRedisCommand,
+		nodes.TypeGoogleSheets, nodes.TypeMySQLQuery, nodes.TypeMongoDBCommand, nodes.TypeGoogleDrive,
+		nodes.TypeGmailREST, nodes.TypeNotionPage, nodes.TypeZaloOA:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -151,6 +182,7 @@ func classify(nodeType nodes.NodeType) (Level, string) {
 		return Red, "phụ thuộc đường dẫn hoặc file cục bộ chưa portable"
 	case nodes.TypeHTTPRequest, nodes.TypeNormalizedHTTPSource, nodes.TypeRSSFeedSource,
 		nodes.TypeTelegramBot, nodes.TypeEmailSMTP, nodes.TypeOpenAIGPT, nodes.TypeDeepSeekAI,
+		nodes.TypeAIExtract, nodes.TypeZaloOA,
 		nodes.TypeDiscordBot, nodes.TypeSlackBot, nodes.TypePostgresQuery, nodes.TypeRedisCommand,
 		nodes.TypeGoogleSheets, nodes.TypeMySQLQuery, nodes.TypeMongoDBCommand, nodes.TypeGoogleDrive,
 		nodes.TypeGmailREST, nodes.TypeNotionPage, nodes.TypeGithubWebhook:

@@ -533,7 +533,13 @@ func applianceCreateCredentialHandler(appliance *ApplianceContext, credStore *st
 			}
 		}
 		if credentialID == "" {
-			cred, err := credStore.Create(req.Name, requirement.Type, req.Value)
+			var cred *storage.Credential
+			var err error
+			if requirement.Kind != "" {
+				cred, err = credStore.CreateWithMetadata(req.Name, requirement.Kind, requirement.Provider, req.Value)
+			} else {
+				cred, err = credStore.Create(req.Name, requirement.Type, req.Value)
+			}
 			if err != nil {
 				http.Error(w, "credential could not be saved", http.StatusInternalServerError)
 				return

@@ -32,3 +32,17 @@ func TestExternalizeCredentials(t *testing.T) {
 		t.Fatalf("unexpected setup metadata: %#v %#v", requirements, bindings)
 	}
 }
+
+func TestExternalizeCredentialsSkipsUnauthenticatedHTTP(t *testing.T) {
+	raw, requirements, bindings, err := ExternalizeCredentials(`[{"id":"fetch","type":"httpRequest","name":"Fetch","params":{"auth_mode":"none","credential_id":""}}]`)
+	if err != nil || len(requirements) != 0 || len(bindings) != 0 || !strings.Contains(raw, `"credential_id":""`) {
+		t.Fatalf("unexpected unauthenticated HTTP externalization: %s %#v %#v %v", raw, requirements, bindings, err)
+	}
+}
+
+func TestExternalizeCredentialsPreservesProviderMetadata(t *testing.T) {
+	_, requirements, _, err := ExternalizeCredentials(`[{"id":"notify","type":"slackBot","name":"Slack","params":{"credential_id":"old"}}]`)
+	if err != nil || len(requirements) != 1 || requirements[0].Kind != "API_KEY" || requirements[0].Provider != "slack" {
+		t.Fatalf("unexpected provider metadata: %#v %v", requirements, err)
+	}
+}
