@@ -14,7 +14,11 @@ func TestAnalyzePortabilityLevels(t *testing.T) {
 	if err != nil || yellow.Level != Yellow || !yellow.CanBuild || len(yellow.Warnings) != 1 {
 		t.Fatalf("expected yellow report, got %#v, %v", yellow, err)
 	}
-	red, err := Analyze(`[{"id":"python","type":"pythonCode","name":"Python","params":{}}]`)
+	python, err := Analyze(`[{"id":"python","type":"pythonCode","name":"Python","params":{}}]`)
+	if err != nil || python.Level != Yellow || !python.CanBuild || len(python.Warnings) != 1 || !strings.Contains(python.Warnings[0], "Python 3") {
+		t.Fatalf("expected buildable yellow Python report, got %#v, %v", python, err)
+	}
+	red, err := Analyze(`[{"id":"file","type":"localFile","name":"Local file","params":{}}]`)
 	if err != nil || red.Level != Red || red.CanBuild || len(red.Blockers) != 1 {
 		t.Fatalf("expected red report, got %#v, %v", red, err)
 	}
