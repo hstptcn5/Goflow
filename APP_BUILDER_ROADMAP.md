@@ -15,7 +15,7 @@ Non-goals for this checkpoint: cross-compilation, code signing, native plugins, 
 ## Portability policy
 
 - Green: Goflow-native triggers, transforms, conditions, switches, state, delay, and embedded JS.
-- Yellow: network, AI, database, SaaS, or credential-backed nodes. Build is allowed after machine-local credentials are replaced with first-run slots.
-- Red: Python, native plugins, sub-workflows, SSH/Git commands, and local file/path dependencies. Build is blocked with the exact node reason.
+- Yellow: network, AI, database, SaaS, credential-backed nodes, or Python Code. Build is allowed, but the destination must provide the listed connection or runtime dependency; Python Code requires Python 3 because Python is not embedded.
+- Red: native plugins, sub-workflows, SSH/Git commands, and local file/path dependencies. Build is blocked with the exact node reason.
 
 The stopping point is a safe same-platform MVP. Cross-platform matrices and signed Windows installers require separate release engineering evidence.
